@@ -1,0 +1,24 @@
+build/
+
+# Node-generated files
+node_modules/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables file
+.env
+
+# Rust-generated files
+debug
+target
+
+# JetBrains IDEs
+.idea
