@@ -1,0 +1,113 @@
+# AI Documentation Index
+# Token-efficient reference files for AI assistants
+# Format: YAML for structured lookup, minimal prose
+
+files:
+  chromadb.yaml:
+    purpose: ChromaDB vector database schema, operations, metadata patterns
+    topics:
+      - persistence and client setup
+      - collection configuration (HNSW, distance metrics)
+      - metadata schema and filtering operators
+      - batch operations and performance
+      - interlinking via metadata (wiki-style relationships)
+    use_when:
+      - designing database schema
+      - implementing ingestion pipeline
+      - writing query/search logic
+      - optimizing performance
+
+  chromadb-schema.yaml:
+    status: DRAFT - iterate before implementation
+    purpose: Concrete ChromaDB schema definition for ProleWiki
+    topics:
+      - collection definitions (prolewiki_chunks, prolewiki_references)
+      - field schemas with types and examples
+      - HNSW and embedding configuration
+      - ID format patterns
+      - metadata constraints (JSON arrays, indexing)
+      - query patterns with code examples
+      - INFOBOX METADATA (biographical, political, organizational fields)
+      - LIBRARY WORK METADATA (bibliographic fields for Library namespace)
+      - CHAPTER NAVIGATION (book structure metadata)
+      - ARTICLE STATUS FLAGS (is_stub, citation_needed_count)
+      - CONTENT FLAGS (has_blockquote, has_foreword)
+    sections:
+      collections: Collection definitions and field schemas
+      collections.infobox_metadata: 25+ fields from infobox extraction
+      collections.library_work_metadata: 11 fields for Library namespace bibliographic data
+      collections.chapter_navigation: Chapter navigation for multi-chapter works
+      collections.article_status: Quality/completeness indicators
+      collections.content_flags: Content type markers (blockquotes, forewords)
+      constraints: ChromaDB metadata limitations
+      query_patterns: Common query code examples
+      migration: Schema change strategies
+      open_questions: Design decisions to resolve
+    use_when:
+      - implementing ChromaDB loading
+      - writing search/query code
+      - reviewing what metadata is available
+      - debugging query results
+      - understanding infobox field mappings
+      - understanding Library namespace metadata
+      - filtering by article quality
+
+  pipeline.yaml:
+    status: DRAFT - brainstorming phase
+    purpose: Full ingestion pipeline architecture from MediaWiki to ChromaDB
+    topics:
+      - 7-stage pipeline (extract → graph → clean → sembr → chunk → embed → load)
+      - normalized reference table (single source of truth)
+      - backlink computation (wiki-style bidirectional links)
+      - intermediate file formats for debuggability
+      - CLI interface design
+      - INFOBOX EXTRACTION (21 types, field mapping, date parsing, link extraction)
+      - ADDITIONAL TEMPLATES (Library work, Book_Navigation, citations, status markers)
+    sections:
+      stage_1_extraction: MediaWiki parsing, ref/link/category extraction
+      stage_1_extraction.infoboxes: |
+        Infobox type detection and field extraction
+        - 21 infobox types (politician, country, party, etc.)
+        - Field mapping (extract vs discard)
+        - Date template parsing
+        - Link extraction from values
+        - Removal from clean_text before sembr
+      stage_1_extraction.additional_templates: |
+        All other MediaWiki templates beyond infoboxes:
+        - {{Library work}} - bibliographic metadata for Library namespace
+        - {{Foreword}} - editorial forewords (keep in text)
+        - {{Book_Navigation}}, {{Book_TOC}} - chapter navigation
+        - {{Main article}} - links to main articles (valuable for graph)
+        - {{Stub}}, {{Citation needed}} - article status markers
+        - Citation variants (Web, News, Library, Video, YouTube)
+        - Display control (DEFAULTSORT, DISPLAYTITLE, TOC limit)
+        - Sidebars and navboxes (remove, no extraction)
+        - Transclusion markers (noinclude, onlyinclude)
+      stage_1_extraction.structural_sections: |
+        Section-based extraction:
+        - == See also == - related article links
+        - == External links == - external URLs
+        - == References ==, == Footnotes == - reference sections (remove)
+      stage_1_extraction.blockquotes: |
+        <blockquote> handling:
+        - Keep in clean_text (semantically valuable)
+        - Extract attribution patterns
+        - Tag has_blockquote flag
+      stage_2_graph: Backlinks, link counts, category graph
+      stage_3_cleaning: Markup removal, quote preservation
+      stage_4_sembr: Semantic linebreaking
+      stage_5_chunking: Chunk creation with metadata attachment
+      stage_6_embedding: Ollama embeddinggemma vector generation
+      stage_7_loading: ChromaDB ingestion
+      open_questions: Unresolved design decisions
+    use_when:
+      - planning pipeline implementation
+      - understanding data flow
+      - debugging intermediate outputs
+      - understanding infobox extraction rules
+      - understanding additional template handling
+
+# Future entries (add as needed):
+# mediawiki.yaml: MediaWiki parsing patterns, template extraction
+# sembr.yaml: Semantic linebreaking integration, server mode
+# mcp.yaml: FastMCP server patterns, tool definitions

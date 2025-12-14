@@ -1,0 +1,531 @@
+# ChromaDB Reference for pw-mcp
+# Source: Context7 research 2024-12
+# Purpose: Token-efficient AI reference for vector DB operations
+
+# =============================================================================
+# CLIENT SETUP
+# =============================================================================
+
+client:
+  persistent:
+    code: |
+      import chromadb
+      client = chromadb.PersistentClient(path="./chroma_data")
+    notes:
+      - data survives process restarts
+      - path relative to working directory
+      - not for production (use HttpClient for scale)
+
+  max_batch_size:
+    access: client.max_batch_size
+    typical: 5461  # varies by storage engine
+    use: chunk large ingestions
+
+# =============================================================================
+# COLLECTION CONFIGURATION
+# =============================================================================
+
+collection:
+  create:
+    code: |
+      collection = client.create_collection(
+          name="prolewiki",
+          metadata={"hnsw:space": "cosine"},
+          configuration={
+              "hnsw": {
+                  "space": "cosine",        # distance metric
+                  "ef_construction": 200,   # index build quality (higher=better recall, slower build)
+                  "ef_search": 100,         # search quality (higher=better recall, slower query)
+              }
+          }
+      )
+
+  get_or_create:
+    code: |
+      collection = client.get_or_create_collection(
+          name="prolewiki",
+          metadata={"hnsw:space": "cosine"}
+      )
+    notes: idempotent, safe for repeated runs
+
+  distance_metrics:
+    cosine:
+      config: {"hnsw:space": "cosine"}
+      use: semantic similarity (normalized vectors)
+      recommended: true  # best for text embeddings
+    l2:
+      config: {"hnsw:space": "l2"}
+      use: euclidean distance
+    ip:
+      config: {"hnsw:space": "ip"}
+      use: inner product (dot product)
+
+  hnsw_tuning:
+    ef_construction:
+      default: 100
+      higher: better recall, slower index build
+      recommendation: 200 for quality corpus
+    ef_search:
+      default: 100
+      higher: better recall, slower queries
+      tunable: post-creation via rebuild
+    m:
+      default: 16
+      purpose: connections per node in graph
+      higher: better recall, more memory
+
+# =============================================================================
+# DATA OPERATIONS
+# =============================================================================
+
+add:
+  with_precomputed_embeddings:
+    code: |
+      collection.add(
+          ids=["chunk_001", "chunk_002"],
+          embeddings=[[0.1, 0.2, ...], [0.3, 0.4, ...]],  # 768-dim for embeddinggemma
+          documents=["text content 1", "text content 2"],
+          metadatas=[
+              {"article": "Five-Year Plans", "namespace": "Main", "section": "Overview"},
+              {"article": "Five-Year Plans", "namespace": "Main", "section": "Implementation"}
+          ]
+      )
+    notes:
+      - ids must be unique strings
+      - embeddings dimensions must match collection
+      - documents stored for retrieval (optional if only doing vector search)
+
+  auto_embed:
+    code: |
+      # If collection has embedding_function configured
+      collection.add(
+          ids=["id1"],
+          documents=["text to embed automatically"]
+      )
+    notes: slower, requires embedding function on collection
+
+upsert:
+  code: |
+    collection.upsert(
+        ids=["chunk_001"],
+        embeddings=[[...]],
+        documents=["updated content"],
+        metadatas=[{"article": "Updated Title"}]
+    )
+  notes: creates if not exists, updates if exists
+
+update:
+  code: |
+    collection.update(
+        ids=["chunk_001"],
+        metadatas=[{"section": "New Section"}]
+    )
+  notes: only updates specified fields
+
+delete:
+  by_ids:
+    code: collection.delete(ids=["chunk_001", "chunk_002"])
+  by_filter:
+    code: 'collection.delete(where={"namespace": "ProleWiki"})'
+
+# =============================================================================
+# QUERYING
+# =============================================================================
+
+query:
+  semantic_search:
+    code: |
+      results = collection.query(
+          query_embeddings=[[0.1, 0.2, ...]],  # precomputed query embedding
+          n_results=10,
+          include=["documents", "metadatas", "distances"]
+      )
+    returns:
+      ids: list of matched chunk IDs
+      documents: original text content
+      metadatas: associated metadata dicts
+      distances: similarity scores (lower=closer for cosine)
+
+  with_text:
+    code: |
+      # Requires embedding function on collection
+      results = collection.query(
+          query_texts=["What were the Five-Year Plans?"],
+          n_results=5
+      )
+
+get:
+  by_ids:
+    code: |
+      results = collection.get(
+          ids=["chunk_001", "chunk_002"],
+          include=["documents", "metadatas", "embeddings"]
+      )
+
+  with_filter:
+    code: |
+      results = collection.get(
+          where={"namespace": "Main"},
+          limit=100,
+          offset=0
+      )
+
+  pagination:
+    code: |
+      batch_size = 100
+      for offset in range(0, collection.count(), batch_size):
+          batch = collection.get(
+              limit=batch_size,
+              offset=offset,
+              include=["documents", "metadatas"]
+          )
+
+# =============================================================================
+# METADATA FILTERING
+# =============================================================================
+
+operators:
+  comparison:
+    $eq: {"field": {"$eq": "value"}}      # equals (default, can omit)
+    $ne: {"field": {"$ne": "value"}}      # not equals
+    $gt: {"count": {"$gt": 10}}           # greater than (numbers only)
+    $gte: {"count": {"$gte": 10}}         # greater than or equal
+    $lt: {"count": {"$lt": 10}}           # less than
+    $lte: {"count": {"$lte": 10}}         # less than or equal
+
+  set_membership:
+    $in: {"namespace": {"$in": ["Main", "Library"]}}
+    $nin: {"namespace": {"$nin": ["ProleWiki"]}}
+
+  string:
+    $contains: {"$contains": "keyword"}   # document content only via where_document
+    notes: metadata string search not yet supported
+
+  logical:
+    $and:
+      code: |
+        {"$and": [
+            {"namespace": "Main"},
+            {"chunk_index": {"$gte": 0}}
+        ]}
+    $or:
+      code: |
+        {"$or": [
+            {"namespace": "Main"},
+            {"namespace": "Library"}
+        ]}
+    nested:
+      code: |
+        {"$and": [
+            {"$or": [
+                {"namespace": "Main"},
+                {"namespace": "Essays"}
+            ]},
+            {"has_refs": True}
+        ]}
+
+document_filtering:
+  where_document:
+    code: |
+      collection.query(
+          query_embeddings=[[...]],
+          where_document={"$contains": "Stalin"},
+          n_results=10
+      )
+    operators:
+      - $contains
+      - $not_contains
+      - $regex (FTS)
+
+combined_filtering:
+  code: |
+    collection.query(
+        query_embeddings=[[...]],
+        where={"namespace": "Main"},
+        where_document={"$contains": "industrialization"},
+        n_results=10
+    )
+
+# =============================================================================
+# OLLAMA EMBEDDING INTEGRATION
+# =============================================================================
+
+ollama:
+  embedding_function:
+    code: |
+      from chromadb.utils.embedding_functions.ollama_embedding_function import (
+          OllamaEmbeddingFunction,
+      )
+
+      ollama_ef = OllamaEmbeddingFunction(
+          url="http://localhost:11434",
+          model_name="embeddinggemma",  # 768-dim
+      )
+
+      # Generate embeddings directly
+      embeddings = ollama_ef(["text to embed", "another text"])
+
+  with_collection:
+    code: |
+      collection = client.create_collection(
+          name="prolewiki",
+          embedding_function=ollama_ef,
+          metadata={"hnsw:space": "cosine"}
+      )
+      # Now add() can auto-embed documents
+      collection.add(ids=["id1"], documents=["auto-embedded text"])
+
+  custom_function:
+    code: |
+      from chromadb import Documents, EmbeddingFunction, Embeddings
+      import httpx
+
+      class OllamaEmbedder(EmbeddingFunction):
+          def __init__(self, model: str = "embeddinggemma", url: str = "http://localhost:11434"):
+              self.model = model
+              self.url = url
+
+          def __call__(self, input: Documents) -> Embeddings:
+              embeddings = []
+              for doc in input:
+                  resp = httpx.post(
+                      f"{self.url}/api/embeddings",
+                      json={"model": self.model, "prompt": doc}
+                  )
+                  embeddings.append(resp.json()["embedding"])
+              return embeddings
+
+# =============================================================================
+# BATCH OPERATIONS
+# =============================================================================
+
+batching:
+  utility:
+    code: |
+      from chromadb.utils.batch_utils import create_batches
+
+      batches = create_batches(
+          api=client,
+          ids=all_ids,
+          documents=all_docs,
+          embeddings=all_embeddings,
+          metadatas=all_metadatas
+      )
+
+      for batch in batches:
+          collection.add(
+              ids=batch[0],
+              embeddings=batch[1],
+              metadatas=batch[2],
+              documents=batch[3]
+          )
+
+  manual:
+    code: |
+      BATCH_SIZE = 5000  # below max_batch_size
+      for i in range(0, len(chunks), BATCH_SIZE):
+          batch = chunks[i:i + BATCH_SIZE]
+          collection.add(
+              ids=[c.id for c in batch],
+              embeddings=[c.embedding for c in batch],
+              documents=[c.text for c in batch],
+              metadatas=[c.metadata for c in batch]
+          )
+
+  performance_debugging:
+    code: |
+      import time
+
+      # Measure embedding time separately
+      start = time.perf_counter()
+      embeddings = ollama_ef(documents)
+      embed_time = time.perf_counter() - start
+
+      # Measure add time
+      start = time.perf_counter()
+      collection.add(ids=ids, embeddings=embeddings, documents=documents)
+      add_time = time.perf_counter() - start
+
+      print(f"Embed: {embed_time:.2f}s, Add: {add_time:.2f}s")
+
+# =============================================================================
+# PROLEWIKI METADATA SCHEMA
+# =============================================================================
+
+pw_schema:
+  chunk_metadata:
+    article_title:
+      type: str
+      example: "Five-Year Plans"
+      filterable: true
+      purpose: group chunks by source article
+
+    namespace:
+      type: str
+      values: ["Main", "Library", "Essays", "ProleWiki"]
+      filterable: true
+      purpose: filter by content type
+
+    section:
+      type: str | null
+      example: "Implementation"
+      source: '"== Header ==" in MediaWiki'
+      purpose: sub-article navigation
+
+    categories:
+      type: list[str]
+      storage: JSON string (ChromaDB limitation)
+      example: '["Soviet economy", "Stalin era"]'
+      purpose: topic classification
+      query_pattern: |
+        # Categories stored as JSON string
+        # Use $contains for partial match
+        where_document={"$contains": "Soviet economy"}
+
+    internal_links:
+      type: list[str]
+      storage: JSON string
+      example: '["Joseph Stalin", "USSR"]'
+      purpose: wiki-style interlinking
+      query_pattern: |
+        # Find chunks that link to specific article
+        collection.get(where_document={"$contains": '"Joseph Stalin"'})
+
+    source_file:
+      type: str
+      example: "Main/Five-Year Plans.txt"
+      purpose: provenance tracking
+
+    line_range:
+      type: str  # stored as "start-end"
+      example: "45-52"
+      purpose: precise citation back to source
+      notes: tuple not supported in metadata, use string
+
+    chunk_index:
+      type: int
+      example: 0
+      purpose: ordering chunks within article
+
+    has_refs:
+      type: bool
+      example: true
+      purpose: filter scholarly content with citations
+
+    word_count:
+      type: int
+      example: 342
+      purpose: filter by content density
+
+  id_format:
+    pattern: "{namespace}/{article_title}#{chunk_index}"
+    examples:
+      - "Main/Five-Year_Plans#0"
+      - "Library/Capital_Vol1#127"
+      - "Essays/On_Imperialism#3"
+    notes: URL-safe, deterministic for upsert
+
+# =============================================================================
+# INTERLINKING PATTERNS (WIKI-STYLE)
+# =============================================================================
+
+interlinking:
+  concept: |
+    ProleWiki articles link to each other via [[Internal Links]].
+    Store these relationships in metadata to enable:
+    1. "See also" recommendations
+    2. Graph traversal queries
+    3. Related content discovery
+
+  store_outbound_links:
+    code: |
+      # Extract [[links]] during parsing
+      links = ["Joseph Stalin", "USSR", "Industrialization"]
+
+      collection.add(
+          ids=["Main/Five-Year_Plans#0"],
+          metadatas=[{
+              "article_title": "Five-Year Plans",
+              "internal_links": json.dumps(links)  # store as JSON
+          }]
+      )
+
+  find_related:
+    code: |
+      # Find all chunks that link TO a specific article
+      results = collection.get(
+          where_document={"$contains": '"Joseph Stalin"'}
+      )
+
+  build_link_index:
+    strategy: |
+      Maintain separate collection or external index:
+      1. Parse all articles for [[links]]
+      2. Build adjacency list: article -> [linked_articles]
+      3. Invert: article -> [articles_linking_here]
+      4. Store backlinks in metadata for fast lookup
+
+    code: |
+      # During ingestion, track bidirectional links
+      links_to = defaultdict(set)    # article -> articles it links to
+      links_from = defaultdict(set)  # article -> articles that link to it
+
+      for article in articles:
+          for link in article.internal_links:
+              links_to[article.title].add(link)
+              links_from[link].add(article.title)
+
+      # Add backlinks to metadata
+      metadata["backlinks"] = json.dumps(list(links_from[article.title]))
+
+  category_graph:
+    concept: |
+      Categories form a hierarchy/graph.
+      Store category relationships for faceted search.
+
+    code: |
+      # Category membership as filterable metadata
+      metadatas=[{
+          "categories": json.dumps(["Soviet history", "Economic policy"]),
+          "primary_category": "Soviet history"  # single value for exact match
+      }]
+
+      # Query by category
+      collection.query(
+          query_embeddings=[...],
+          where={"primary_category": "Soviet history"}
+      )
+
+# =============================================================================
+# MAINTENANCE
+# =============================================================================
+
+maintenance:
+  count:
+    code: collection.count()
+
+  rebuild_hnsw:
+    command: chops hnsw rebuild ./chroma_data --collection prolewiki
+    options:
+      - "--construction-ef 200"
+      - "--search-ef 100"
+      - "--m 32"
+
+  copy_collection:
+    code: |
+      source = client.get_collection("prolewiki")
+      target = client.get_or_create_collection("prolewiki_backup")
+
+      batch_size = 1000
+      for i in range(0, source.count(), batch_size):
+          batch = source.get(
+              limit=batch_size,
+              offset=i,
+              include=["documents", "metadatas", "embeddings"]
+          )
+          target.add(
+              ids=batch["ids"],
+              documents=batch["documents"],
+              metadatas=batch["metadatas"],
+              embeddings=batch["embeddings"]
+          )

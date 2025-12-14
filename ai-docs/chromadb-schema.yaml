@@ -1,0 +1,847 @@
+# ProleWiki ChromaDB Schema Definition
+# Status: DRAFT - iterate before implementation
+# Purpose: Contract for what gets loaded into ChromaDB
+
+# =============================================================================
+# COLLECTIONS
+# =============================================================================
+
+collections:
+  # ---------------------------------------------------------------------------
+  # PRIMARY COLLECTION: Chunks
+  # ---------------------------------------------------------------------------
+  prolewiki_chunks:
+    purpose: |
+      Main searchable collection.
+      Each record = one chunk of text with full metadata.
+      Supports semantic search + metadata filtering.
+
+    hnsw_config:
+      space: cosine
+      ef_construction: 200
+      ef_search: 100
+      # m: 16 (default)
+
+    embedding:
+      provider: ollama
+      model: embeddinggemma
+      dimensions: 768
+
+    id_format:
+      pattern: "{namespace}/{article_title}#{chunk_index}"
+      examples:
+        - "Main/Five-Year_Plans#0"
+        - "Main/Five-Year_Plans#1"
+        - "Library/Capital_Vol_1#127"
+        - "Essays/On_Imperialism#3"
+      notes: |
+        - URL-safe (spaces → underscores)
+        - Deterministic for upsert idempotency
+        - Sortable by article then chunk order
+
+    fields:
+      # -------------------------
+      # DOCUMENT (embedded text)
+      # -------------------------
+      document:
+        type: str
+        purpose: Clean text content of chunk (what gets embedded)
+        max_length: ~2000 tokens
+        notes: |
+          - MediaWiki markup removed
+          - Quotes from references preserved inline
+          - Section headers preserved for context
+
+      # -------------------------
+      # ARTICLE-LEVEL METADATA
+      # -------------------------
+      article_title:
+        type: str
+        example: "Five-Year Plans"
+        indexed: true
+        purpose: Group chunks by source article
+
+      namespace:
+        type: str
+        enum: ["Main", "Library", "Essays", "ProleWiki"]
+        indexed: true
+        purpose: Filter by content type
+
+      categories:
+        type: str  # JSON array
+        example: '["Soviet economy", "Stalin era", "Economic planning"]'
+        indexed: false  # Use $contains on document or parse JSON
+        purpose: Topic classification from [[Category:...]]
+        query_pattern: |
+          # Filter by category (partial match)
+          where_document={"$contains": "Soviet economy"}
+          # Or exact category match requires parsing
+
+      internal_links:
+        type: str  # JSON array
+        example: '["Joseph Stalin", "USSR", "Industrialization"]'
+        indexed: false
+        purpose: Articles this chunk's article links TO
+        notes: Enables "related articles" recommendations
+
+      backlinks:
+        type: str  # JSON array
+        example: '["Marxism–Leninism", "Soviet history"]'
+        indexed: false
+        purpose: Articles that link TO this chunk's article
+        notes: Enables "what links here" queries
+
+      backlink_count:
+        type: int
+        example: 42
+        indexed: true
+        purpose: Importance metric (like PageRank)
+        query_pattern: |
+          # Find "important" articles
+          where={"backlink_count": {"$gte": 10}}
+
+      # -------------------------
+      # INFOBOX METADATA (article-level)
+      # -------------------------
+      # Extracted from {{Infobox TYPE|...}} templates
+      # All chunks from same article share these fields
+      # Links within infobox fields are added to internal_links
+
+      infobox_type:
+        type: str | null
+        enum: [politician, country, political_party, person, revolutionary,
+               essay, philosopher, company, settlement, military_person,
+               organization, guerilla_organization, youtuber, military_conflict,
+               book, religion, website, transcript, library_work, null]
+        indexed: true
+        purpose: What kind of entity this article describes
+        examples:
+          - politician  # 621 articles
+          - country     # 408 articles
+          - political_party  # 386 articles
+          - person      # 228 articles
+        query_pattern: |
+          # Find all politician articles
+          where={"infobox_type": "politician"}
+          # Find articles with any infobox
+          where={"infobox_type": {"$ne": None}}
+
+      # --- Biographical fields (people) ---
+      subject_name:
+        type: str | null
+        example: "Mirsaid Sultan-Galiev"
+        indexed: true
+        purpose: Canonical name from infobox (may differ from article_title)
+
+      native_name:
+        type: str | null
+        example: "Мирсәет улы Солтангалиев"
+        indexed: false
+        purpose: Name in original script (Cyrillic, Arabic, Chinese, etc.)
+
+      birth_date:
+        type: str | null
+        example: "1892-07-13"
+        indexed: false
+        purpose: ISO date string for birth
+        notes: Parsed from {{birth date|Y|M|D}} template
+
+      death_date:
+        type: str | null
+        example: "1940-01-28"
+        indexed: false
+        purpose: ISO date string for death
+
+      birth_year:
+        type: int | null
+        example: 1892
+        indexed: true
+        purpose: Birth year for range queries
+        query_pattern: |
+          # Find people born in 19th century
+          where={"$and": [
+              {"birth_year": {"$gte": 1800}},
+              {"birth_year": {"$lt": 1900}}
+          ]}
+
+      death_year:
+        type: int | null
+        example: 1940
+        indexed: true
+        purpose: Death year for range queries
+
+      birth_place:
+        type: str | null
+        example: "Elembetyevo, Russian Empire"
+        indexed: false
+        purpose: Place of birth (links extracted separately)
+
+      death_place:
+        type: str | null
+        example: "Moscow, Soviet Union"
+        indexed: false
+        purpose: Place of death
+
+      nationality:
+        type: str | null
+        example: "Tatar"
+        indexed: true
+        purpose: Nationality/ethnicity
+
+      death_cause:
+        type: str | null
+        example: "Assassination"
+        indexed: true
+        purpose: Cause of death (useful for historical patterns)
+
+      # --- Political/Ideological fields ---
+      political_orientation:
+        type: str  # JSON array
+        example: '["Islamic socialism", "Marxism-Leninism"]'
+        indexed: false
+        purpose: Ideological classification (HIGHLY valuable for ProleWiki!)
+        notes: |
+          Extracted from political_orientation, political_line fields.
+          Links within values added to internal_links.
+        query_pattern: |
+          # Find Marxist-Leninist subjects
+          where_document={"$contains": "Marxism-Leninism"}
+
+      political_party:
+        type: str  # JSON array
+        example: '["CPSU", "Arab Socialist Union"]'
+        indexed: false
+        purpose: Party affiliations
+        notes: Multiple parties possible (career changes)
+
+      # --- Organization fields (parties, orgs, countries) ---
+      founded_date:
+        type: str | null
+        example: "1951-06-28"
+        indexed: false
+        purpose: When organization was founded
+
+      founded_year:
+        type: int | null
+        example: 1951
+        indexed: true
+        purpose: Founding year for range queries
+
+      dissolved_date:
+        type: str | null
+        example: "1981-12-06"
+        indexed: false
+        purpose: When organization was dissolved
+
+      dissolved_year:
+        type: int | null
+        example: 1981
+        indexed: true
+        purpose: Dissolution year
+
+      life_span:
+        type: str | null
+        example: "1390–1914"
+        indexed: false
+        purpose: For historical entities (countries, dynasties)
+
+      successor:
+        type: str | null
+        example: "Party of Democratic Kampuchea"
+        indexed: false
+        purpose: Successor organization (link extracted)
+
+      predecessor:
+        type: str | null
+        example: "Indochinese Communist Party"
+        indexed: false
+        purpose: Predecessor/split-from organization
+
+      # --- Geographic fields (countries, settlements) ---
+      capital:
+        type: str | null
+        example: "Nkumba a Ngudi"
+        indexed: false
+        purpose: Capital city for countries
+
+      government_type:
+        type: str | null
+        example: "Elective monarchy"
+        indexed: true
+        purpose: Form of government
+
+      # --- Essay fields ---
+      essay_author:
+        type: str | null
+        example: "CriticalResist"
+        indexed: true
+        purpose: ProleWiki username of essay author
+
+      essay_date:
+        type: str | null
+        example: "2024-03-16"
+        indexed: false
+        purpose: Publication date of essay
+
+      essay_excerpt:
+        type: str | null
+        example: "A guide to writing SEO content..."
+        indexed: false
+        purpose: Short summary/teaser from essay infobox
+
+      # --- Conflict fields ---
+      conflict_date:
+        type: str | null
+        example: "1939-09-01 to 1945-09-02"
+        indexed: false
+        purpose: Duration of military conflict
+
+      conflict_result:
+        type: str | null
+        example: "Allied victory"
+        indexed: true
+        purpose: Outcome of conflict
+
+      # -------------------------
+      # LIBRARY WORK METADATA (Library namespace)
+      # -------------------------
+      # Extracted from {{Library work|...}} templates
+      # Provides rich bibliographic metadata for Library documents
+
+      library_work_title:
+        type: str | null
+        example: "The CIA's Shining Path: Political Warfare"
+        indexed: true
+        purpose: Title from Library work template (may differ from article_title)
+
+      library_work_author:
+        type: str | null
+        example: "Andreo Matías"
+        indexed: true
+        purpose: Primary author of the work
+        notes: Valuable for "works by author" queries
+
+      library_work_type:
+        type: str | null
+        enum: [Book, Speech, Research paper, Article, Essay, Letter, Pamphlet, null]
+        indexed: true
+        purpose: Type of library work
+        query_pattern: |
+          # Find all speeches in Library
+          where={"$and": [
+              {"namespace": "Library"},
+              {"library_work_type": "Speech"}
+          ]}
+
+      library_work_published_date:
+        type: str | null
+        example: "1988"
+        indexed: false
+        purpose: Publication date (may be year only)
+
+      library_work_published_year:
+        type: int | null
+        example: 1988
+        indexed: true
+        purpose: Publication year for range queries
+
+      library_work_source_url:
+        type: str | null
+        example: "https://es.prolewiki.org/wiki/..."
+        indexed: false
+        purpose: Source URL for original work
+
+      library_work_translator:
+        type: str | null
+        example: "ProleWiki"
+        indexed: true
+        purpose: Who translated the work
+
+      library_work_original_language:
+        type: str | null
+        example: "Spanish"
+        indexed: true
+        purpose: Original language before translation
+        notes: Valuable for finding translations from specific languages
+
+      library_work_publisher:
+        type: str | null
+        example: "Documenta Mathematica Series"
+        indexed: false
+        purpose: Publisher name
+
+      library_work_audiobook_url:
+        type: str | null
+        example: "https://www.youtube.com/watch?v=..."
+        indexed: false
+        purpose: Link to audiobook version if available
+
+      # -------------------------
+      # CHAPTER NAVIGATION (Library chapters)
+      # -------------------------
+      # Extracted from {{Book_Navigation|...}} templates
+      # Enables reconstruction of book structure
+
+      chapter_previous:
+        type: str | null
+        example: "Library:Manifesto_of_the_Communist_Party/Conservative or bourgeois socialism"
+        indexed: false
+        purpose: Link to previous chapter
+        notes: Enables "previous chapter" navigation
+
+      chapter_next:
+        type: str | null
+        example: "Library:Manifesto_of_the_Communist_Party/Position of the communists"
+        indexed: false
+        purpose: Link to next chapter
+
+      chapter_current:
+        type: str | null
+        example: "Critical utopian socialism and communism"
+        indexed: false
+        purpose: Current chapter title
+
+      book_chapters:
+        type: str  # JSON array
+        example: '["Chapter 1: Introduction", "Chapter 2: Bourgeois and Proletarians"]'
+        indexed: false
+        purpose: Full chapter list from Book_TOC (for multi-chapter works)
+
+      # -------------------------
+      # ARTICLE STATUS FLAGS
+      # -------------------------
+      is_stub:
+        type: bool
+        example: false
+        indexed: true
+        purpose: Article marked as incomplete ({{Stub}} template)
+        query_pattern: |
+          # Exclude stub articles from results
+          where={"is_stub": False}
+          # Find stubs that need expansion
+          where={"is_stub": True}
+        notes: May want to lower ranking for stub content in search
+
+      citation_needed_count:
+        type: int
+        example: 0
+        indexed: true
+        purpose: Number of {{Citation needed}} markers in article
+        query_pattern: |
+          # Find well-cited articles (no missing citations)
+          where={"citation_needed_count": {"$eq": 0}}
+        notes: Higher counts indicate lower editorial quality
+
+      # -------------------------
+      # RELATED CONTENT LINKS
+      # -------------------------
+      see_also:
+        type: str  # JSON array
+        example: '["Daoism", "Legalism"]'
+        indexed: false
+        purpose: Articles from "See also" section
+        notes: |
+          High-quality related content indicators.
+          Manually curated by editors.
+
+      main_article:
+        type: str | null
+        example: "Roman Kingdom (753–509 BCE)"
+        indexed: false
+        purpose: Main article reference from {{Main article}} template
+        notes: |
+          Indicates "this section summarizes X, see full article"
+          Valuable for content relationships
+
+      external_links:
+        type: str  # JSON array
+        example: '["https://youtube.com/...", "https://archive.org/..."]'
+        indexed: false
+        purpose: External URLs from "External links" section
+
+      # -------------------------
+      # CONTENT FLAGS
+      # -------------------------
+      has_blockquote:
+        type: bool
+        example: true
+        indexed: true
+        purpose: Chunk contains <blockquote> content
+        notes: |
+          Blockquotes are often primary source material.
+          May want to boost these in search.
+
+      has_foreword:
+        type: bool
+        example: false
+        indexed: true
+        purpose: Article has {{Foreword}} content
+        notes: Common in Library works with editorial context
+
+      # -------------------------
+      # CHUNK-LEVEL METADATA
+      # -------------------------
+      section:
+        type: str | null
+        example: "Implementation"
+        indexed: true
+        purpose: Section header this chunk falls under
+        notes: null if chunk is before first header
+
+      chunk_index:
+        type: int
+        example: 0
+        indexed: true
+        purpose: Order within article (0-indexed)
+
+      line_range:
+        type: str
+        example: "45-67"
+        indexed: false
+        purpose: Line numbers in sembr'd source for citation
+        notes: Format "start-end" (ChromaDB doesn't support tuples)
+
+      word_count:
+        type: int
+        example: 287
+        indexed: true
+        purpose: Filter by content density
+        query_pattern: |
+          # Skip very short chunks
+          where={"word_count": {"$gte": 50}}
+
+      # -------------------------
+      # REFERENCE-DERIVED METADATA
+      # -------------------------
+      ref_ids:
+        type: str  # JSON array
+        example: '["ref:a1b2c3", "ref:d4e5f6"]'
+        indexed: false
+        purpose: References cited in this chunk
+        notes: Links to prolewiki_references collection
+
+      cited_authors:
+        type: str  # JSON array
+        example: '["Vladimir Lenin", "Karl Marx"]'
+        indexed: false
+        purpose: Authors cited in this chunk (aggregated from refs)
+        query_pattern: |
+          # Find chunks citing Lenin
+          where_document={"$contains": "Vladimir Lenin"}
+
+      cited_years:
+        type: str  # JSON array
+        example: '[1909, 1917, 1924]'
+        indexed: false
+        purpose: Publication years of cited works
+
+      cited_sources:
+        type: str  # JSON array
+        example: '["Great Soviet Encyclopedia", "Pravda"]'
+        indexed: false
+        purpose: Publications/sources cited
+
+      has_refs:
+        type: bool
+        example: true
+        indexed: true
+        purpose: Quick filter for scholarly content
+        query_pattern: |
+          where={"has_refs": True}
+
+      ref_count:
+        type: int
+        example: 3
+        indexed: true
+        purpose: Citation density metric
+
+      has_quotes:
+        type: bool
+        example: true
+        indexed: true
+        purpose: Filter for chunks with direct quotations
+        notes: Quotes are often the most semantically rich content
+
+      # -------------------------
+      # PROVENANCE
+      # -------------------------
+      source_file:
+        type: str
+        example: "Main/Five-Year Plans.txt"
+        indexed: false
+        purpose: Path in prolewiki-exports/ for debugging
+
+  # ---------------------------------------------------------------------------
+  # REFERENCE COLLECTION (Optional - for ref-specific queries)
+  # ---------------------------------------------------------------------------
+  prolewiki_references:
+    purpose: |
+      Normalized reference table.
+      Single source of truth for all cited works.
+      Enables queries like "all works by Lenin" without scanning chunks.
+
+    hnsw_config: null  # No vector search needed
+
+    embedding: null  # Exact match queries only
+
+    id_format:
+      pattern: "ref:{hash}"
+      example: "ref:a1b2c3d4e5f6"
+      notes: |
+        Hash generated from normalized fields:
+        - lowercase(authors) + year + lowercase(title)
+        - Ensures same work cited differently → same ID
+
+    fields:
+      ref_type:
+        type: str
+        enum: ["citation", "web", "book", "journal", "encyclopedia"]
+        indexed: true
+        purpose: Type of source
+
+      authors:
+        type: str  # JSON array
+        example: '["Vladimir Lenin"]'
+        indexed: false
+        purpose: Author(s) of the work
+
+      year:
+        type: int | null
+        example: 1909
+        indexed: true
+        purpose: Publication year
+
+      title:
+        type: str
+        example: "The Attitude of the Workers' Party to Religion"
+        indexed: false
+        purpose: Work title
+
+      source_publication:
+        type: str | null
+        example: "Proletary"
+        indexed: true
+        purpose: Journal, newspaper, encyclopedia name
+
+      urls:
+        type: str  # JSON array
+        example: '["https://marxists.org/archive/lenin/works/1909/may/13.htm"]'
+        indexed: false
+        purpose: All URLs (mia, pdf, archive, etc.)
+
+      citing_articles:
+        type: str  # JSON array
+        example: '["Main/Atheism", "Main/Religion"]'
+        indexed: false
+        purpose: Which articles cite this reference
+        notes: Enables "cited by" queries
+
+      citation_count:
+        type: int
+        example: 7
+        indexed: true
+        purpose: How many articles cite this work
+
+      quotes:
+        type: str  # JSON array of quote objects
+        example: '[{"text": "Fear made the gods...", "article": "Main/Atheism"}]'
+        indexed: false
+        purpose: All quotes extracted from this reference
+
+      first_seen_in:
+        type: str
+        example: "Main/Atheism"
+        indexed: false
+        purpose: First article where we encountered this ref
+
+# =============================================================================
+# METADATA CONSTRAINTS
+# =============================================================================
+
+constraints:
+  json_arrays: |
+    ChromaDB metadata values must be: str, int, float, bool
+    Lists stored as JSON strings, parsed on retrieval.
+    Query via $contains for partial match.
+
+  string_length: |
+    Keep metadata strings reasonable (<1KB each).
+    Large arrays (many categories/links) may hit limits.
+
+  null_handling: |
+    Use null for missing optional fields.
+    ChromaDB supports null in metadata.
+
+  boolean_indexing: |
+    Boolean fields are efficient for filtering.
+    Use for has_refs, has_quotes type flags.
+
+  numeric_range: |
+    Integer fields support $gt, $gte, $lt, $lte.
+    Use for word_count, ref_count, backlink_count filtering.
+
+# =============================================================================
+# QUERY PATTERNS
+# =============================================================================
+
+query_patterns:
+  semantic_search:
+    description: Basic similarity search
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          include=["documents", "metadatas", "distances"]
+      )
+
+  search_with_namespace:
+    description: Semantic search filtered to Main articles
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          where={"namespace": "Main"}
+      )
+
+  search_with_citations:
+    description: Only return chunks with references
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          where={"has_refs": True}
+      )
+
+  search_citing_author:
+    description: Find chunks citing specific author
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          where_document={"$contains": "Vladimir Lenin"}
+      )
+    notes: Searches in document text; cited_authors is JSON so $contains works
+
+  get_article_chunks:
+    description: Retrieve all chunks for an article (in order)
+    code: |
+      results = collection.get(
+          where={"article_title": "Five-Year Plans"},
+          include=["documents", "metadatas"]
+      )
+      # Sort by chunk_index
+      sorted_chunks = sorted(
+          zip(results["ids"], results["documents"], results["metadatas"]),
+          key=lambda x: x[2]["chunk_index"]
+      )
+
+  find_related_articles:
+    description: Find articles that link to a given article
+    code: |
+      # Get chunks from articles that link here
+      results = collection.get(
+          where_document={"$contains": '"Five-Year Plans"'},
+          include=["metadatas"]
+      )
+      # Extract unique article_titles
+      related = set(m["article_title"] for m in results["metadatas"])
+
+  important_articles:
+    description: Find articles with many backlinks
+    code: |
+      results = collection.get(
+          where={"backlink_count": {"$gte": 20}},
+          include=["metadatas"]
+      )
+
+  scholarly_content:
+    description: Find well-cited chunks
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          where={"$and": [
+              {"has_refs": True},
+              {"ref_count": {"$gte": 2}}
+          ]}
+      )
+
+  combined_filters:
+    description: Complex multi-filter query
+    code: |
+      results = collection.query(
+          query_embeddings=[embedding],
+          n_results=10,
+          where={"$and": [
+              {"namespace": {"$in": ["Main", "Essays"]}},
+              {"word_count": {"$gte": 100}},
+              {"has_quotes": True}
+          ]},
+          where_document={"$contains": "imperialism"}
+      )
+
+# =============================================================================
+# MIGRATION NOTES
+# =============================================================================
+
+migration:
+  from_scratch: |
+    1. Create collections with specified config
+    2. Run full pipeline
+    3. Batch load chunks
+    4. Optionally load references
+
+  incremental: |
+    TODO: Design delta update strategy
+    - Track file modification times
+    - Re-extract changed files only
+    - Upsert changed chunks (IDs are deterministic)
+    - Update reference citation counts
+
+  schema_changes: |
+    Adding new metadata fields:
+    - Add to pipeline extraction
+    - Existing chunks won't have field (query with default)
+
+    Changing field semantics:
+    - Full re-ingestion required
+    - Or add new field, deprecate old
+
+# =============================================================================
+# OPEN DESIGN QUESTIONS
+# =============================================================================
+
+open_questions:
+  - question: "Primary category field?"
+    context: |
+      Categories is a JSON array. For exact match filtering,
+      might want a single `primary_category` field.
+    options:
+      - Add primary_category (first category)
+      - Keep only array, use $contains
+      - Both
+
+  - question: "Store embeddings in chunks JSONL?"
+    context: |
+      Currently plan: separate .npy files
+      Alternative: base64 embeddings in JSONL
+    tradeoffs:
+      npy: Smaller files, need to coordinate, efficient numpy ops
+      jsonl: Self-contained, larger files, simpler loading
+
+  - question: "Separate references collection worth it?"
+    context: |
+      prolewiki_references enables ref-specific queries
+      but adds complexity. Alternative: just store in chunk metadata.
+    recommendation: |
+      Start without it. Add later if ref queries are common.
+
+  - question: "Denormalize backlink articles into chunks?"
+    context: |
+      Currently: backlinks array per chunk
+      This duplicates data across chunks of same article.
+    options:
+      - Keep denormalized (simpler queries)
+      - Only store at article level (separate lookup)
+    recommendation: |
+      Denormalize for now. Storage is cheap, query simplicity wins.
