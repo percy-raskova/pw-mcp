@@ -47,6 +47,8 @@ TEMPLATE_TYPE_MAP: dict[str, CitationType] = {
     "news citation": "news",
     "youtube citation": "youtube",
     "library citation": "library",
+    "video citation": "video",
+    "textcite": "book",  # Textcite is a text/book citation format
 }
 
 # Field name mappings from template params to Citation attributes
@@ -72,6 +74,11 @@ FIELD_MAPPINGS: dict[str, str] = {
     "channel": "channel",
     "quote": "quote",
     "link": "link",
+    # Textcite-specific field mappings
+    "city": "published_location",  # City of publication
+    "web": "url",  # Alternative URL field in Textcite
+    "trans": "translation_title",  # Translated title
+    "translang": "translation_language",  # Original language
 }
 
 

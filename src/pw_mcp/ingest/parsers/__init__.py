@@ -6,23 +6,20 @@ MediaWiki markup used in ProleWiki:
 - **Links**: Internal [[links]], [[Category:]] links, and external [url] links
 - **Citations**: {{Citation}}, {{Web citation}}, {{News citation}}, etc.
 - **Infoboxes**: {{Infobox politician}}, {{Infobox country}}, etc.
-
-All parsers are currently stubs that raise NotImplementedError.
-This allows tests to transition from "skip" to "fail with NotImplementedError"
-as part of the TDD Green Phase setup.
+- **Quotes**: {{Quote}} block quote templates
 
 Example usage::
 
     from pw_mcp.ingest.parsers import parse_links, Link
 
     links = parse_links("See [[Article]] for more.")
-    # Currently raises NotImplementedError
 
 Public API:
     Types:
         - Link: Dataclass for parsed links
         - Citation: Dataclass for parsed citations
         - InfoboxData: Dataclass for parsed infobox data
+        - QuoteData: Dataclass for parsed quote templates
         - LinkType: Literal type for link categories
         - CitationType: Literal type for citation categories
         - InfoboxType: Literal type for infobox categories
@@ -36,6 +33,7 @@ Public API:
         - parse_ref_tags: Extract citations from <ref> tags
         - parse_infobox: Extract infobox data from text
         - detect_infobox_type: Detect infobox type without full parsing
+        - parse_quotes: Extract block quotes from text
 """
 
 from pw_mcp.ingest.parsers.citation import (
@@ -55,6 +53,9 @@ from pw_mcp.ingest.parsers.link import (
     get_unique_targets,
     parse_links,
 )
+from pw_mcp.ingest.parsers.quote import (
+    parse_quotes,
+)
 from pw_mcp.ingest.parsers.types import (
     ArticleData,
     Citation,
@@ -64,6 +65,7 @@ from pw_mcp.ingest.parsers.types import (
     LibraryWorkData,
     Link,
     LinkType,
+    QuoteData,
 )
 
 __all__ = [
@@ -75,6 +77,7 @@ __all__ = [
     "LibraryWorkData",
     "Link",
     "LinkType",
+    "QuoteData",
     "count_categories",
     "count_internal_links",
     "detect_infobox_type",
@@ -83,5 +86,6 @@ __all__ = [
     "parse_infobox",
     "parse_library_work",
     "parse_links",
+    "parse_quotes",
     "parse_ref_tags",
 ]

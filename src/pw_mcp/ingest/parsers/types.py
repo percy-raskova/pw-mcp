@@ -11,10 +11,11 @@ from typing import Literal
 LinkType = Literal["internal", "category", "external"]
 """Type of MediaWiki link: internal [[]], category [[Category:]], or external []."""
 
-CitationType = Literal["book", "web", "news", "library", "youtube"]
+CitationType = Literal["book", "web", "news", "library", "youtube", "video"]
 """Type of citation template used in ProleWiki.
 
-Note: "book" corresponds to {{Citation|...}} template.
+Note: "book" corresponds to {{Citation|...}} and {{Textcite|...}} templates.
+      "video" corresponds to {{Video citation|...}} template.
 """
 
 InfoboxType = Literal[
@@ -67,7 +68,7 @@ class Citation:
     """Represents a citation/reference from MediaWiki.
 
     Attributes:
-        type: Type of citation template (book, web, news, youtube, library).
+        type: Type of citation template (book, web, news, youtube, video, library).
         title: Title of the cited work.
         author: Primary author name (wiki links stripped).
         year: Publication year as string.
@@ -83,10 +84,13 @@ class Citation:
         isbn: ISBN number.
         date: Publication date (ISO format YYYY-MM-DD).
         retrieved: Date content was retrieved (ISO format).
-        channel: YouTube channel name.
+        channel: YouTube/video channel name.
         quote: Quoted text from the source.
         ref_name: Named reference identifier (for <ref name="...">).
         link: Link to Library namespace article.
+        published_location: City/location of publication (from Textcite city field).
+        translation_title: Translated title (from Textcite trans field).
+        translation_language: Original language of the work (from Textcite translang).
     """
 
     type: CitationType
@@ -109,6 +113,9 @@ class Citation:
     quote: str | None = None
     ref_name: str | None = None
     link: str | None = None
+    published_location: str | None = None
+    translation_title: str | None = None
+    translation_language: str | None = None
 
 
 @dataclass
@@ -203,3 +210,19 @@ class ArticleData:
     is_stub: bool
     citation_needed_count: int
     has_blockquote: bool
+
+
+@dataclass
+class QuoteData:
+    """Represents a parsed {{Quote}} template from MediaWiki.
+
+    Quote templates are used in ProleWiki to display block quotes with
+    optional attribution. Format: {{Quote | text | attribution}}
+
+    Attributes:
+        text: The quoted text content (with surrounding quotation marks stripped).
+        attribution: Source attribution (author, work, date). None if not provided.
+    """
+
+    text: str
+    attribution: str | None = None

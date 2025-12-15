@@ -281,3 +281,155 @@ with line breaks.}}"""
         assert results[0].url is not None
         assert "param=value" in results[0].url
         assert "123%20test" in results[0].url
+
+
+class TestVideoCitationDetection:
+    """Tests for detecting {{Video citation}} templates."""
+
+    @pytest.mark.unit
+    def test_detect_video_citation(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should detect {{Video citation}} template."""
+        content = load_fixture("citations", "video_citation.txt")
+        results = parse_citations(content)
+        assert len(results) == 1
+        assert results[0].type == "video"
+
+
+class TestVideoCitationFields:
+    """Tests for extracting fields from {{Video citation}} templates."""
+
+    @pytest.mark.unit
+    def test_extract_video_url(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract video URL."""
+        content = load_fixture("citations", "video_citation.txt")
+        results = parse_citations(content)
+        assert results[0].url is not None
+        assert "youtube.com" in results[0].url
+        assert "9TYK9Mu_dzA" in results[0].url
+
+    @pytest.mark.unit
+    def test_extract_video_channel(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract channel name."""
+        content = load_fixture("citations", "video_citation.txt")
+        results = parse_citations(content)
+        assert results[0].channel == "Second Thought"
+
+    @pytest.mark.unit
+    def test_extract_video_title(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract video title."""
+        content = load_fixture("citations", "video_citation.txt")
+        results = parse_citations(content)
+        assert results[0].title is not None
+        assert "Neither Left Nor Right" in results[0].title
+
+    @pytest.mark.unit
+    def test_extract_video_date(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract publication date."""
+        content = load_fixture("citations", "video_citation.txt")
+        results = parse_citations(content)
+        assert results[0].date == "2022-03-18"
+
+
+class TestTextciteDetection:
+    """Tests for detecting {{Textcite}} templates."""
+
+    @pytest.mark.unit
+    def test_detect_textcite(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should detect {{Textcite}} template as book type."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert len(results) == 1
+        assert results[0].type == "book"
+
+
+class TestTextciteFields:
+    """Tests for extracting fields from {{Textcite}} templates."""
+
+    @pytest.mark.unit
+    def test_extract_textcite_author(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract author from Textcite."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].author == "Fabio Giovannini"
+
+    @pytest.mark.unit
+    def test_extract_textcite_year(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract year from Textcite."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].year == "2004"
+
+    @pytest.mark.unit
+    def test_extract_textcite_title(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract title from Textcite."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].title == "Breve storia dell'anticomunismo"
+
+    @pytest.mark.unit
+    def test_extract_textcite_city_as_published_location(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Should map city field to published_location."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].published_location == "Roma"
+
+    @pytest.mark.unit
+    def test_extract_textcite_publisher(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract publisher from Textcite."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].publisher == "Datanews Editrice"
+
+    @pytest.mark.unit
+    def test_extract_textcite_isbn(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract ISBN from Textcite."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].isbn == "9788879812511"
+
+    @pytest.mark.unit
+    def test_extract_textcite_lg_url(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract lg field as lg_url."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].lg_url is not None
+        assert "libgen.rs" in results[0].lg_url
+
+    @pytest.mark.unit
+    def test_extract_textcite_translation_title(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Should extract trans field as translation_title."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].translation_title == "Brief history of anti-communism"
+
+    @pytest.mark.unit
+    def test_extract_textcite_translation_language(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Should extract translang field as translation_language."""
+        content = load_fixture("citations", "textcite.txt")
+        results = parse_citations(content)
+        assert results[0].translation_language == "Italian"
+
+
+class TestTextciteWebFields:
+    """Tests for extracting fields from {{Textcite}} with web URL."""
+
+    @pytest.mark.unit
+    def test_extract_textcite_web_url(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should map web field to url."""
+        content = load_fixture("citations", "textcite_web.txt")
+        results = parse_citations(content)
+        assert results[0].url is not None
+        assert "pcb.org.br" in results[0].url
+
+    @pytest.mark.unit
+    def test_extract_textcite_web_author(self, load_fixture: "Callable[[str, str], str]") -> None:
+        """Should extract author from Textcite with web URL."""
+        content = load_fixture("citations", "textcite_web.txt")
+        results = parse_citations(content)
+        assert results[0].author == "Partido Comunista Brasileiro"
