@@ -107,6 +107,66 @@ files:
       - understanding infobox extraction rules
       - understanding additional template handling
 
+  testing-plan.yaml:
+    status: DRAFT - ready for implementation
+    purpose: Comprehensive testing strategy for RAG database
+    topics:
+      - test pyramid (unit, integration, E2E)
+      - property-based testing with Hypothesis
+      - retrieval quality metrics (P@K, MRR, NDCG)
+      - performance benchmarks
+      - MCP server tests
+      - CI/CD configuration
+    sections:
+      infrastructure: pytest setup, markers, directory structure
+      stage_1_extraction_tests: 21 infobox types, citations, links, templates
+      stage_2_graph_tests: backlinks, link counts, category graph
+      stage_3_cleaning_tests: markup removal, transforms
+      stage_4_sembr_tests: server mode, output validation
+      stage_5_chunking_tests: token boundaries, metadata attachment
+      stage_6_embedding_tests: Ollama integration, quality checks
+      stage_7_loading_tests: ChromaDB operations, integrity
+      integration_tests: cross-stage data flow validation
+      retrieval_tests: semantic search quality, filter tests, golden test set
+      property_tests: Hypothesis-based parser robustness
+      benchmarks: extraction, sembr, embedding, query performance
+      mcp_tests: tool tests, protocol compliance, concurrency
+      implementation_phases: 4-phase rollout plan
+    use_when:
+      - setting up test infrastructure
+      - writing new tests
+      - understanding test coverage requirements
+      - configuring CI/CD
+
+  project-status.yaml:
+    status: ACTIVE - primary tracking document
+    purpose: Track implementation progress and next steps
+    topics:
+      - implementation phases (7 phases from foundation to MCP)
+      - current focus and next actions
+      - key decisions made
+      - file locations reference
+      - useful commands
+    sections:
+      phases: All 7 implementation phases with status
+      phase_1_foundation: Test infrastructure (COMPLETE)
+      phase_2_parsers: TDD Green Phase - parser implementation (NEXT)
+      phase_3_sembr: Semantic linebreaking integration
+      phase_4_chunking: Text chunking for embeddings
+      phase_5_embedding: Vector embedding generation
+      phase_6_loading: ChromaDB ingestion
+      phase_7_mcp: MCP server implementation
+      current_focus: What to work on next
+      decisions: Key architectural/process decisions
+      key_files: Where everything lives
+      useful_commands: Common development commands
+    use_when:
+      - starting a new session
+      - understanding project state
+      - deciding what to work on next
+      - finding file locations
+      - running common commands
+
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
 # sembr.yaml: Semantic linebreaking integration, server mode

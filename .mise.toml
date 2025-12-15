@@ -1,0 +1,120 @@
+# pw-mcp task runner configuration
+# Run tasks with: mise run <task>
+
+[tools]
+python = "3.12"
+
+[env]
+PYTHONPATH = "src"
+
+# =============================================================================
+# SEMBR - Semantic Line Breaking
+# =============================================================================
+
+[tasks.sembr-server]
+description = "Start sembr server (loads model once, accepts HTTP requests)"
+run = """
+uv run sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased
+"""
+
+[tasks.sembr-test]
+description = "Test sembr with sample text"
+run = """
+echo "Stalin implemented the Five-Year Plans. These transformed the Soviet Union." | \
+  uv run sembr -m admko/sembr2023-distilbert-base-multilingual-cased
+"""
+
+# =============================================================================
+# CODE QUALITY
+# =============================================================================
+
+[tasks.lint]
+description = "Run ruff linter"
+run = "uv run ruff check src/ tests/"
+
+[tasks.format]
+description = "Format code with ruff"
+run = "uv run ruff format src/ tests/"
+
+[tasks.typecheck]
+description = "Run mypy type checker"
+run = "uv run mypy src/pw_mcp/"
+
+[tasks.check]
+description = "Run all code quality checks"
+depends = ["lint", "typecheck"]
+
+# =============================================================================
+# TESTING
+# =============================================================================
+
+[tasks.test]
+description = "Run all tests"
+run = "uv run pytest"
+
+[tasks.test-fast]
+description = "Run unit tests only"
+run = "uv run pytest -m unit"
+
+[tasks.test-cov]
+description = "Run tests with coverage"
+run = "uv run pytest --cov"
+
+[tasks.test-integration]
+description = "Run integration tests only"
+run = "uv run pytest -m integration"
+
+[tasks.test-property]
+description = "Run property-based tests"
+run = "uv run pytest -m property --hypothesis-profile=dev"
+
+[tasks.test-benchmark]
+description = "Run benchmark tests"
+run = "uv run pytest -m benchmark --benchmark-only"
+
+[tasks.test-retrieval]
+description = "Run retrieval quality tests"
+run = "uv run pytest -m retrieval"
+
+# =============================================================================
+# PRE-COMMIT
+# =============================================================================
+
+[tasks.hooks]
+description = "Install pre-commit hooks"
+run = "uv run pre-commit install"
+
+[tasks.pre-commit]
+description = "Run pre-commit on all files"
+run = "uv run pre-commit run --all-files"
+
+# =============================================================================
+# INGESTION
+# =============================================================================
+
+[tasks.ingest]
+description = "Run corpus ingestion pipeline"
+run = "uv run pw-ingest --source prolewiki-exports --output chroma_data"
+
+# =============================================================================
+# MCP SERVER
+# =============================================================================
+
+[tasks.serve]
+description = "Start the MCP server"
+run = "uv run pw-mcp"
+
+# =============================================================================
+# DEVELOPMENT
+# =============================================================================
+
+[tasks.install]
+description = "Install all dependencies including dev"
+run = "uv sync --group dev"
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = """
+rm -rf .venv .mypy_cache .ruff_cache .pytest_cache dist build *.egg-info
+rm -rf prolewiki-sembr-sample
+"""

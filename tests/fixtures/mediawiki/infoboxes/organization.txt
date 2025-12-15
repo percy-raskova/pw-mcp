@@ -1,0 +1,4 @@
+{{Infobox organization
+|name=Central Military Commission
+|website=[https://eng.mod.gov.cn/cmc/index.htm eng.mod.gov.cn/cmc]
+}}

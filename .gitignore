@@ -22,3 +22,12 @@ target
 
 # JetBrains IDEs
 .idea
+
+# ProleWiki source data (large corpus - not versioned)
+prolewiki-exports/
+
+# ChromaDB data
+chroma_data/
+
+# Sembr sample output (for testing)
+prolewiki-sembr-sample/

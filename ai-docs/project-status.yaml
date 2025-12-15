@@ -1,0 +1,241 @@
+# Project Status - pw-mcp
+# Purpose: Track implementation progress and next steps
+# Updated: 2024-12-14
+
+overview:
+  project: ProleWiki MCP Server
+  goal: Semantic vector search over ProleWiki corpus via MCP
+  artifact: ChromaDB database distributable independently of source corpus
+  corpus_size: ~5,222 files in prolewiki-exports/
+
+# =============================================================================
+# IMPLEMENTATION PHASES
+# =============================================================================
+
+phases:
+  phase_1_foundation:
+    status: COMPLETE
+    description: Test infrastructure and TDD Red Phase
+    completed:
+      - pyproject.toml updated (hypothesis, new markers)
+      - .mise.toml updated (test-integration, test-property, test-benchmark, test-retrieval)
+      - Test directory structure created
+      - tests/conftest.py with shared fixtures
+      - Fixture files extracted from prolewiki-exports/
+      - test_infobox_parser.py (24 tests, all skip)
+      - test_citation_parser.py (28 tests, all skip)
+      - test_link_parser.py (30 tests, all skip)
+      - test_extraction_pipeline.py (22 tests, all skip)
+    test_counts:
+      total: 104
+      unit: 82
+      integration: 22
+      status: all skip (TDD Red Phase complete)
+
+  phase_2_parsers:
+    status: NEXT
+    description: TDD Green Phase - implement parsers to pass tests
+    tasks:
+      - id: 2.1
+        name: Create parser module structure
+        details: |
+          src/pw_mcp/ingest/parsers/
+          ├── __init__.py
+          ├── infobox.py    # parse_infobox() -> InfoboxData
+          ├── citation.py   # parse_citations() -> list[Citation]
+          └── link.py       # parse_links() -> list[Link]
+        status: pending
+
+      - id: 2.2
+        name: Implement link parser
+        details: |
+          Simplest parser, good starting point.
+          - Extract [[Target]] simple links
+          - Extract [[Target|Display]] piped links
+          - Extract [[Category:Name]] category links
+          - Extract [url text] external links
+          - Return Link dataclass with target, display, type, position
+        tests: tests/unit/extraction/test_link_parser.py (30 tests)
+        status: pending
+
+      - id: 2.3
+        name: Implement citation parser
+        details: |
+          Parse MediaWiki citation templates:
+          - {{Citation|...}} book citations
+          - {{Web citation|...}} web articles
+          - {{News citation|...}} news articles
+          - {{YouTube citation|...}} video citations
+          - {{Library citation|...}} internal Library links
+          Handle <ref name="..."> named refs and ref reuse.
+        tests: tests/unit/extraction/test_citation_parser.py (28 tests)
+        status: pending
+
+      - id: 2.4
+        name: Implement infobox parser
+        details: |
+          Most complex parser. Uses mwparserfromhell.
+          - Detect infobox type (politician, country, party, etc.)
+          - Extract all fields as dict
+          - Handle nested templates in values
+          - Handle <br> separated multi-values
+          - Strip [[links]] from field values
+          - Return remaining text after infobox removal
+        tests: tests/unit/extraction/test_infobox_parser.py (24 tests)
+        status: pending
+
+      - id: 2.5
+        name: Implement extraction pipeline
+        details: |
+          Orchestrate parsers into full extraction:
+          - extract_article(text, source_path) -> ArticleData
+          - Combine infobox, citations, links, categories
+          - Generate clean_text with markup removed
+          - Detect namespace from source_path
+          - Extract section headers
+          - Count references, detect stubs, etc.
+        tests: tests/integration/test_extraction_pipeline.py (22 tests)
+        status: pending
+
+  phase_3_sembr:
+    status: future
+    description: Semantic linebreaking integration
+    tasks:
+      - Integrate sembr server mode for batch processing
+      - Create linebreaker.py wrapper
+      - Add sembr tests
+
+  phase_4_chunking:
+    status: future
+    description: Text chunking for embeddings
+    tasks:
+      - Implement chunker.py
+      - Respect section boundaries
+      - Target 200-500 tokens per chunk
+      - Store line offsets for citations
+      - Add chunking tests
+
+  phase_5_embedding:
+    status: future
+    description: Vector embedding generation
+    tasks:
+      - Integrate Ollama embeddinggemma
+      - Batch embedding with progress
+      - Add embedding quality tests
+
+  phase_6_loading:
+    status: future
+    description: ChromaDB ingestion
+    tasks:
+      - Implement chroma.py loader
+      - Batch upsert with metadata
+      - Add loading tests
+
+  phase_7_mcp:
+    status: future
+    description: MCP server implementation
+    tasks:
+      - Implement search tool
+      - Implement get_article tool
+      - Implement list_categories tool
+      - Add MCP protocol tests
+
+# =============================================================================
+# CURRENT FOCUS
+# =============================================================================
+
+current_focus:
+  phase: 2 (Green Phase - Parsers)
+  next_action: |
+    Implement parsers in order of complexity:
+    1. link.py (simplest, foundation)
+    2. citation.py (template parsing)
+    3. infobox.py (most complex)
+    4. extraction pipeline (orchestration)
+
+    For each parser:
+    1. Remove pytest.skip() from tests
+    2. Uncomment assertions
+    3. Implement code to pass tests
+    4. Run tests to verify
+    5. Refactor if needed
+
+# =============================================================================
+# KEY DECISIONS
+# =============================================================================
+
+decisions:
+  tdd_approach:
+    decision: Use pytest.skip() for Red Phase tests
+    rationale: Tests pass as "skipped" rather than failing with ImportError
+    date: 2024-12-14
+
+  fixture_source:
+    decision: Use prolewiki-exports/ for fixture extraction
+    rationale: Real corpus data, prolewiki-sembr-sample/ was only for exploration
+    date: 2024-12-14
+
+  parser_order:
+    decision: Implement link -> citation -> infobox
+    rationale: Increasing complexity, link parser is foundation for others
+    date: 2024-12-14
+
+# =============================================================================
+# FILE LOCATIONS
+# =============================================================================
+
+key_files:
+  source_code:
+    - src/pw_mcp/ingest/parsers/  # To be created
+    - src/pw_mcp/ingest/cli.py
+    - src/pw_mcp/server.py
+    - src/pw_mcp/config.py
+
+  tests:
+    - tests/conftest.py
+    - tests/unit/extraction/test_infobox_parser.py
+    - tests/unit/extraction/test_citation_parser.py
+    - tests/unit/extraction/test_link_parser.py
+    - tests/integration/test_extraction_pipeline.py
+
+  fixtures:
+    - tests/fixtures/mediawiki/infoboxes/  # 7 types
+    - tests/fixtures/mediawiki/citations/  # 5 types
+    - tests/fixtures/mediawiki/links/      # 3 types
+    - tests/fixtures/mediawiki/edge_cases/ # unicode, nested, multiline
+
+  corpus:
+    - prolewiki-exports/Main/      # ~4000+ encyclopedia articles
+    - prolewiki-exports/Library/   # Full books (Marx, Lenin, etc.)
+    - prolewiki-exports/Essays/    # User-contributed essays
+    - prolewiki-exports/ProleWiki/ # Meta/admin pages
+
+  documentation:
+    - ai-docs/index.yaml           # This index
+    - ai-docs/chromadb.yaml        # ChromaDB reference
+    - ai-docs/chromadb-schema.yaml # Schema definition
+    - ai-docs/pipeline.yaml        # Pipeline architecture
+    - ai-docs/testing-plan.yaml    # Testing strategy
+    - ai-docs/project-status.yaml  # This file
+
+# =============================================================================
+# COMMANDS
+# =============================================================================
+
+useful_commands:
+  testing:
+    all_tests: mise run test
+    unit_only: mise run test-fast
+    integration: mise run test-integration
+    with_coverage: mise run test-cov
+
+  code_quality:
+    lint: uv run ruff check src/ tests/
+    format: uv run ruff format src/ tests/
+    typecheck: uv run mypy src/pw_mcp/
+    all_checks: mise run check
+    pre_commit: mise run pre-commit
+
+  development:
+    install: mise run install
+    sembr_server: mise run sembr-server

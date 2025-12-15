@@ -1,0 +1,1 @@
+{{Infobox politician|name=Test Person|birth_date={{birth date|1809|2|12}}|death_date={{death date and age|1865|4|15|1809|2|12}}|political_party=[[Test Party]] {{small|(1834–1856)}}}}

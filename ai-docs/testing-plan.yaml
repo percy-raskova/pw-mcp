@@ -1,0 +1,732 @@
+# ProleWiki RAG Database - Comprehensive Testing Plan
+# Status: DRAFT - ready for implementation
+# Purpose: Define complete test strategy for pw-mcp
+
+# =============================================================================
+# TESTING PHILOSOPHY
+# =============================================================================
+
+philosophy:
+  principles:
+    - Test pyramid: Many unit tests, fewer integration tests, few E2E tests
+    - Property-based testing for parsers handling arbitrary MediaWiki input
+    - Golden test sets for retrieval quality measurement
+    - Performance benchmarks to prevent regressions
+    - Every bug fix adds a regression test
+
+  coverage_targets:
+    unit_tests: 80%  # Core modules
+    integration_tests: Key data flows between stages
+    retrieval_quality: "Precision@5 >= 0.65"
+    query_latency: "<100ms for semantic search"
+
+# =============================================================================
+# TEST INFRASTRUCTURE
+# =============================================================================
+
+infrastructure:
+  framework: pytest
+
+  dependencies:
+    - pytest
+    - pytest-cov
+    - pytest-asyncio
+    - hypothesis  # Property-based testing
+    - pytest-benchmark  # Performance testing
+
+  markers:
+    unit: "Fast unit tests (no external deps)"
+    integration: "Integration tests (may use fixtures)"
+    slow: "Slow tests (embedding, full pipeline)"
+    property: "Property-based tests (hypothesis)"
+    benchmark: "Performance benchmarks"
+    regression: "Regression tests for fixed bugs"
+    retrieval: "RAG retrieval quality tests"
+
+  directory_structure: |
+    tests/
+    ├── conftest.py                 # Shared fixtures
+    ├── fixtures/
+    │   ├── mediawiki/              # Raw MediaWiki samples
+    │   │   ├── infoboxes/          # 21 infobox type samples
+    │   │   ├── citations/          # Citation template samples
+    │   │   ├── links/              # Link format samples
+    │   │   ├── templates/          # Additional template samples
+    │   │   ├── articles/           # Full article samples
+    │   │   └── edge_cases/         # Malformed/unusual input
+    │   ├── extracted/              # Expected Stage 1 output
+    │   ├── chunks/                 # Expected Stage 5 output
+    │   ├── embeddings/             # Pre-computed test embeddings
+    │   └── golden/                 # Retrieval test cases
+    ├── unit/
+    │   ├── extraction/
+    │   │   ├── test_infobox_parser.py
+    │   │   ├── test_citation_parser.py
+    │   │   ├── test_link_parser.py
+    │   │   ├── test_section_parser.py
+    │   │   ├── test_template_parser.py
+    │   │   └── test_blockquote_parser.py
+    │   ├── graph/
+    │   │   ├── test_backlinks.py
+    │   │   ├── test_link_counts.py
+    │   │   └── test_category_graph.py
+    │   ├── cleaning/
+    │   │   ├── test_markup_removal.py
+    │   │   ├── test_transforms.py
+    │   │   └── test_quote_insertion.py
+    │   ├── chunking/
+    │   │   ├── test_token_boundaries.py
+    │   │   ├── test_section_boundaries.py
+    │   │   ├── test_metadata_attachment.py
+    │   │   └── test_id_generation.py
+    │   └── db/
+    │       ├── test_chromadb_operations.py
+    │       └── test_metadata_schema.py
+    ├── integration/
+    │   ├── test_extraction_pipeline.py
+    │   ├── test_graph_computation.py
+    │   ├── test_cleaning_pipeline.py
+    │   ├── test_chunking_pipeline.py
+    │   └── test_loading_pipeline.py
+    ├── property/
+    │   ├── test_parser_properties.py
+    │   ├── test_chunker_properties.py
+    │   └── test_id_properties.py
+    ├── slow/
+    │   ├── test_sembr_integration.py
+    │   ├── test_embedding_integration.py
+    │   └── test_full_pipeline.py
+    ├── retrieval/
+    │   ├── test_semantic_search.py
+    │   ├── test_filtered_search.py
+    │   └── test_retrieval_quality.py
+    ├── mcp/
+    │   ├── test_mcp_tools.py
+    │   ├── test_mcp_protocol.py
+    │   └── test_mcp_concurrency.py
+    ├── benchmark/
+    │   ├── test_extraction_perf.py
+    │   ├── test_embedding_perf.py
+    │   └── test_query_perf.py
+    └── regression/
+        ├── test_parser_regressions.py
+        └── test_quality_regressions.py
+
+# =============================================================================
+# STAGE 1: EXTRACTION TESTS
+# =============================================================================
+
+stage_1_extraction_tests:
+  infobox_parsing:
+    test_cases:
+      - test_politician_infobox
+      - test_country_infobox
+      - test_political_party_infobox
+      - test_person_infobox
+      - test_revolutionary_infobox
+      - test_essay_infobox
+      - test_philosopher_infobox
+      - test_company_infobox
+      - test_settlement_infobox
+      - test_military_person_infobox
+      - test_organization_infobox
+      - test_guerilla_organization_infobox
+      - test_youtuber_infobox
+      - test_military_conflict_infobox
+      - test_book_infobox
+      - test_religion_infobox
+      - test_website_infobox
+      - test_transcript_infobox
+      - test_library_work_infobox
+
+    field_extraction:
+      - test_subject_name_extraction
+      - test_native_name_extraction
+      - test_birth_date_parsing
+      - test_death_date_parsing
+      - test_birth_year_extraction
+      - test_death_year_extraction
+      - test_political_orientation_list
+      - test_political_party_list
+      - test_founded_date_parsing
+      - test_dissolved_date_parsing
+      - test_life_span_parsing
+      - test_essay_fields
+      - test_conflict_fields
+
+    edge_cases:
+      - test_missing_fields_handled
+      - test_nested_templates_in_values
+      - test_malformed_infobox_recovery
+      - test_multiline_infobox
+      - test_single_line_infobox
+
+  date_template_parsing:
+    templates:
+      - test_birth_date_template: "{{birth date|YYYY|MM|DD}} -> YYYY-MM-DD"
+      - test_death_date_template: "{{death date|YYYY|MM|DD}} -> YYYY-MM-DD"
+      - test_death_date_and_age: "{{death date and age|...}} -> YYYY-MM-DD"
+      - test_plain_date_dmy: "DD Month YYYY -> YYYY-MM-DD"
+      - test_plain_date_mdy: "Month DD, YYYY -> YYYY-MM-DD"
+      - test_year_only: "YYYY -> year field"
+      - test_year_range: "YYYY-YYYY -> life_span"
+
+  link_extraction:
+    test_cases:
+      - test_simple_link: "[[Target]] -> target, display"
+      - test_piped_link: "[[Target|Display]] -> target, display"
+      - test_sectioned_link: "[[Target#Section]] -> target, section"
+      - test_category_link: "[[Category:Name]] -> category extraction"
+      - test_file_link_ignored: "[[File:...]] -> ignored"
+      - test_interwiki_link: "[[ru:...]] -> handled"
+      - test_link_count_in_article
+      - test_links_from_infobox_values
+
+  citation_parsing:
+    templates:
+      - test_citation_template
+      - test_web_citation_template
+      - test_news_citation_template
+      - test_library_citation_template
+      - test_video_citation_template
+      - test_youtube_citation_template
+
+    ref_handling:
+      - test_named_ref
+      - test_inline_ref
+      - test_ref_reuse
+      - test_quote_extraction
+      - test_ref_id_generation_deterministic
+      - test_ref_id_case_insensitive
+      - test_ref_deduplication
+
+  additional_templates:
+    test_cases:
+      - test_library_work_extraction
+      - test_main_article_extraction
+      - test_book_navigation_extraction
+      - test_book_toc_extraction
+      - test_stub_detection
+      - test_citation_needed_counting
+      - test_defaultsort_removal
+      - test_displaytitle_removal
+      - test_toc_limit_removal
+      - test_sidebar_removal
+      - test_navbox_removal
+      - test_noinclude_handling
+      - test_onlyinclude_handling
+
+  structural_sections:
+    test_cases:
+      - test_see_also_extraction
+      - test_external_links_extraction
+      - test_references_section_removal
+      - test_footnotes_section_removal
+      - test_blockquote_preservation
+      - test_blockquote_attribution
+
+# =============================================================================
+# STAGE 2: GRAPH TESTS
+# =============================================================================
+
+stage_2_graph_tests:
+  backlinks:
+    - test_forward_link_creates_backlink
+    - test_multiple_sources_same_target
+    - test_self_link_handling
+    - test_red_link_handling
+    - test_backlink_output_format
+
+  link_counts:
+    - test_in_degree_calculation
+    - test_out_degree_calculation
+    - test_zero_link_articles
+    - test_hub_articles
+    - test_link_count_sum_invariant
+
+  category_graph:
+    - test_category_article_counts
+    - test_category_co_occurrence
+    - test_empty_category_handling
+
+# =============================================================================
+# STAGE 3: CLEANING TESTS
+# =============================================================================
+
+stage_3_cleaning_tests:
+  markup_removal:
+    - test_ref_tags_removed
+    - test_self_closing_ref_removed
+    - test_templates_removed
+    - test_category_markup_removed
+    - test_references_section_removed
+    - test_html_comments_removed
+    - test_nowiki_tags_removed
+    - test_blank_line_normalization
+
+  transforms:
+    - test_simple_link_to_text
+    - test_piped_link_to_display
+    - test_bold_markup_removed
+    - test_italic_markup_removed
+    - test_list_formatting
+    - test_headers_preserved
+
+  quote_insertion:
+    - test_quote_at_ref_location
+    - test_quote_attribution_format
+    - test_multiple_quotes_per_ref
+
+# =============================================================================
+# STAGE 4: SEMBR TESTS
+# =============================================================================
+
+stage_4_sembr_tests:
+  server_mode:
+    - test_server_connection
+    - test_batch_processing
+    - test_fallback_to_cli
+
+  output_validation:
+    - test_headers_unchanged
+    - test_blank_lines_preserved
+    - test_tab_continuation
+    - test_unicode_handling
+    - test_multilingual_text
+
+  edge_cases:
+    - test_very_long_paragraph
+    - test_single_word_lines
+    - test_idempotency
+    - test_empty_input
+
+# =============================================================================
+# STAGE 5: CHUNKING TESTS
+# =============================================================================
+
+stage_5_chunking_tests:
+  token_boundaries:
+    - test_target_tokens_respected
+    - test_min_tokens_enforced
+    - test_max_tokens_enforced
+    - test_token_counting_accuracy
+
+  section_boundaries:
+    - test_no_split_mid_section
+    - test_paragraph_break_preference
+    - test_large_section_splitting
+
+  metadata_attachment:
+    - test_article_title_propagated
+    - test_namespace_propagated
+    - test_section_tracked
+    - test_chunk_index_sequential
+    - test_line_range_accurate
+    - test_word_count_calculated
+    - test_infobox_fields_attached
+    - test_categories_json_format
+    - test_internal_links_json_format
+    - test_backlinks_attached
+    - test_ref_metadata_attached
+    - test_status_flags_attached
+
+  id_generation:
+    - test_id_format_correct
+    - test_id_url_safe
+    - test_id_deterministic
+    - test_id_unique
+
+# =============================================================================
+# STAGE 6: EMBEDDING TESTS
+# =============================================================================
+
+stage_6_embedding_tests:
+  ollama_integration:
+    - test_connection
+    - test_model_available
+    - test_dimension_768
+
+  embedding_quality:
+    - test_non_zero_vectors
+    - test_normalized_vectors
+    - test_similar_text_similar_vectors
+    - test_different_text_different_vectors
+
+  batching:
+    - test_batch_size_32
+    - test_memory_handling
+    - test_partial_batch_failure
+
+  output_format:
+    - test_numpy_array_shape
+    - test_float32_dtype
+    - test_order_matches_jsonl
+
+# =============================================================================
+# STAGE 7: LOADING TESTS
+# =============================================================================
+
+stage_7_loading_tests:
+  collection_config:
+    - test_hnsw_cosine_space
+    - test_ef_construction_200
+    - test_ef_search_100
+    - test_idempotent_creation
+
+  data_loading:
+    - test_batch_size_5000
+    - test_upsert_idempotency
+    - test_metadata_fields_correct
+    - test_documents_stored
+    - test_id_format_matches
+
+  integrity:
+    - test_count_matches_expected
+    - test_random_sample_validates
+    - test_metadata_types_correct
+    - test_json_arrays_parseable
+
+# =============================================================================
+# INTEGRATION TESTS
+# =============================================================================
+
+integration_tests:
+  stage_transitions:
+    extraction_to_graph:
+      - test_links_correctly_inverted
+      - test_all_articles_in_backlinks
+      - test_link_count_invariant
+
+    extraction_to_cleaning:
+      - test_clean_text_matches_output
+      - test_refs_extracted_before_removal
+      - test_quotes_preserved
+
+    cleaning_to_sembr:
+      - test_input_properly_formatted
+      - test_headers_pass_through
+      - test_output_line_count_reasonable
+
+    sembr_to_chunking:
+      - test_all_output_consumed
+      - test_no_text_lost
+      - test_line_range_maps_correctly
+
+    chunking_to_embedding:
+      - test_one_embedding_per_chunk
+      - test_indices_match_jsonl
+      - test_no_missing_embeddings
+
+    all_to_loading:
+      - test_chromadb_count_matches
+      - test_spot_check_retrieval
+      - test_query_returns_expected
+
+  pipeline_invariants:
+    - test_deterministic_output
+    - test_partial_rerun_same_output
+    - test_no_data_loss
+
+# =============================================================================
+# RETRIEVAL QUALITY TESTS
+# =============================================================================
+
+retrieval_tests:
+  semantic_search_quality:
+    metrics:
+      - precision_at_k
+      - recall_at_k
+      - mrr  # Mean Reciprocal Rank
+      - ndcg_at_10  # Normalized Discounted Cumulative Gain
+
+    baseline_thresholds:
+      precision_at_5: 0.65
+      mrr: 0.70
+      ndcg_at_10: 0.60
+
+  query_types:
+    factual:
+      - query: "When was the USSR founded?"
+        expected_content: "1922"
+      - query: "Who wrote Das Kapital?"
+        expected_articles: ["Karl Marx"]
+
+    biographical:
+      - query: "Tell me about Lenin"
+        expected_articles: ["Vladimir Lenin"]
+        expected_infobox_type: ["politician", "revolutionary"]
+
+    comparative:
+      - query: "Difference between Marxism and Leninism"
+        expected_articles: ["Marxism", "Leninism"]
+
+    temporal:
+      - query: "Soviet policies in the 1930s"
+        expected_year_range: [1930, 1939]
+
+    topical:
+      - query: "Imperialism in Latin America"
+        expected_categories: ["Imperialism", "Latin America"]
+
+  filter_tests:
+    - name: namespace_filter
+      filter: '{"namespace": "Library"}'
+      assert: all results have namespace=Library
+
+    - name: scholarly_content
+      filter: '{"has_refs": true}'
+      assert: all results have has_refs=true
+
+    - name: combined_filter
+      filter: '{"$and": [{"namespace": "Main"}, {"word_count": {"$gte": 100}}]}'
+      assert: all results match both conditions
+
+  edge_cases:
+    - test_empty_query
+    - test_very_long_query
+    - test_special_characters
+    - test_cyrillic_query
+    - test_chinese_query
+    - test_no_matches
+    - test_too_many_matches
+
+# =============================================================================
+# PROPERTY-BASED TESTS (HYPOTHESIS)
+# =============================================================================
+
+property_tests:
+  parser_properties:
+    - property: "Parser never crashes on arbitrary input"
+      generator: st.text()
+
+    - property: "Infobox type preserved after parsing"
+      generator: infobox_type from INFOBOX_TYPES
+
+    - property: "Date parsing roundtrip"
+      generator: st.dates()
+
+    - property: "Piped link extracts both parts"
+      generator: wiki_article_names(), st.text()
+
+  chunker_properties:
+    - property: "Chunking preserves all content"
+      generator: st.text(min_size=100)
+
+    - property: "Chunk sizes within bounds"
+      generator: st.text(min_size=100)
+
+    - property: "Chunk indices sequential"
+      generator: st.text(min_size=100)
+
+  id_properties:
+    - property: "Chunk ID format correct"
+      generator: namespace, title, index
+
+    - property: "Chunk ID URL-safe"
+      generator: st.text()
+
+    - property: "Ref ID deterministic"
+      generator: author, year, title
+
+    - property: "Ref ID case-insensitive"
+      generator: author, year, title
+
+# =============================================================================
+# PERFORMANCE BENCHMARKS
+# =============================================================================
+
+benchmarks:
+  extraction:
+    - name: extraction_throughput
+      target: ">10 articles/second"
+      sample_size: 100
+
+    - name: infobox_parsing_speed
+      target: ">1000 parses/second"
+      iterations: 1000
+
+  sembr:
+    - name: sembr_server_throughput
+      target: ">1 article/second"
+      sample_size: 50
+
+    - name: sembr_startup_time
+      target: "<30 seconds"
+
+  embedding:
+    - name: embedding_batch_throughput
+      target: ">100 chunks/minute"
+      sample_size: 100
+
+    - name: ollama_connection_time
+      target: "<1 second"
+
+  chromadb:
+    - name: batch_insert_performance
+      target: "5000 chunks in <10 seconds"
+      batch_size: 5000
+
+    - name: query_latency
+      target: "<100ms average"
+      iterations: 10
+
+    - name: filtered_query_latency
+      target: "<200ms"
+
+  memory:
+    - name: extraction_memory
+      target: "<1GB for 100 articles"
+
+    - name: chromadb_memory_stability
+      target: "No unbounded growth"
+      iterations: 100
+
+  full_pipeline:
+    - name: sample_pipeline
+      target: "<5 minutes for 100 articles"
+      sample_size: 100
+
+# =============================================================================
+# MCP SERVER TESTS
+# =============================================================================
+
+mcp_tests:
+  tool_tests:
+    search_tool:
+      - test_basic_search
+      - test_search_with_limit
+      - test_search_with_namespace_filter
+      - test_search_returns_metadata
+
+    get_article_tool:
+      - test_get_existing_article
+      - test_get_nonexistent_article
+      - test_get_returns_full_content
+
+    list_categories_tool:
+      - test_returns_list
+      - test_non_empty
+      - test_all_strings
+
+  protocol_tests:
+    - test_tool_list
+    - test_tool_schemas_valid
+    - test_error_handling
+    - test_invalid_params_handled
+
+  integration_tests:
+    - test_typical_research_flow
+    - test_category_browsing_flow
+
+  concurrency_tests:
+    - test_concurrent_searches
+    - test_mixed_concurrent_calls
+
+# =============================================================================
+# CI/CD CONFIGURATION
+# =============================================================================
+
+ci_config:
+  github_actions:
+    jobs:
+      unit_tests:
+        runs_on: ubuntu-latest
+        timeout: 5m
+        command: "uv run pytest tests/unit -v"
+
+      integration_tests:
+        runs_on: ubuntu-latest
+        needs: unit_tests
+        timeout: 10m
+        command: "uv run pytest tests/integration -v"
+
+      property_tests:
+        runs_on: ubuntu-latest
+        needs: unit_tests
+        timeout: 10m
+        command: "uv run pytest tests/property -v --hypothesis-profile=ci"
+
+      slow_tests:
+        runs_on: ubuntu-latest
+        needs: integration_tests
+        condition: "push to main only"
+        services: [ollama]
+        timeout: 30m
+        command: "uv run pytest tests/slow -v -m slow"
+
+  hypothesis_profiles:
+    ci:
+      max_examples: 50
+      deadline: 10000ms
+    dev:
+      max_examples: 100
+      deadline: null
+    thorough:
+      max_examples: 500
+      deadline: null
+
+# =============================================================================
+# IMPLEMENTATION PRIORITY
+# =============================================================================
+
+implementation_phases:
+  phase_1_foundation:
+    description: "Test infrastructure and core parser tests"
+    tasks:
+      - Set up pytest configuration with markers
+      - Create fixture directory structure
+      - Create sample MediaWiki fixtures (21 infobox types)
+      - Unit tests for infobox parser
+      - Unit tests for citation parser
+      - Unit tests for link parser
+      - Basic extraction integration test
+
+  phase_2_pipeline:
+    description: "Complete pipeline test coverage"
+    tasks:
+      - Unit tests for all 7 stages
+      - Integration tests for stage transitions
+      - Property-based tests for parsers
+      - ID generation tests
+
+  phase_3_quality:
+    description: "Retrieval quality and performance"
+    tasks:
+      - Create golden retrieval test set
+      - Implement retrieval metrics (P@K, MRR, NDCG)
+      - Performance benchmarks
+      - MCP server tests
+
+  phase_4_robustness:
+    description: "Edge cases and CI/CD"
+    tasks:
+      - Edge case test coverage
+      - Regression test framework
+      - CI/CD pipeline configuration
+      - Documentation
+
+# =============================================================================
+# OPEN QUESTIONS
+# =============================================================================
+
+open_questions:
+  - question: "How to test sembr without running the model?"
+    options:
+      - Mock sembr server responses
+      - Create golden input/output pairs
+      - Use a simpler regex-based approximation for tests
+    recommendation: "Mock server + golden pairs for integration tests"
+
+  - question: "How to test Ollama embeddings without the server?"
+    options:
+      - Mock with random 768-dim vectors
+      - Pre-compute and cache test embeddings
+      - Use a simpler local embedding model
+    recommendation: "Pre-computed fixtures for unit tests, real Ollama for slow tests"
+
+  - question: "How large should the sample corpus be?"
+    options:
+      - 50 articles (fast but may miss edge cases)
+      - 100 articles (good balance)
+      - 500 articles (comprehensive but slow)
+    recommendation: "100 articles for integration, 500 for release testing"

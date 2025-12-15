@@ -1,0 +1,63 @@
+# Pre-commit hooks for pw-mcp
+# Install: uv run pre-commit install
+# Run manually: uv run pre-commit run --all-files
+
+repos:
+  # ==========================================================================
+  # RUFF - Linting and Formatting
+  # ==========================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+        name: ruff (format)
+
+  # ==========================================================================
+  # MYPY - Type Checking
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: mypy (typecheck)
+        additional_dependencies:
+          - pydantic>=2.0
+          - types-PyYAML
+          - chromadb>=1.0
+          - httpx>=0.28
+        args: [--config-file=pyproject.toml]
+        exclude: ^tests/
+
+  # ==========================================================================
+  # GENERAL HYGIENE
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^prolewiki-exports/
+      - id: end-of-file-fixer
+        exclude: ^prolewiki-exports/
+      - id: check-yaml
+        args: [--unsafe]  # Allow custom tags in GitHub Actions
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+        exclude: ^(prolewiki-exports/|uv\.lock)$
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  # ==========================================================================
+  # YAML LINTING
+  # ==========================================================================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: yamllint (yaml lint)
+        args: [-c, .yamllint.yaml]
+        exclude: ^prolewiki-exports/
