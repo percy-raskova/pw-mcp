@@ -1,6 +1,6 @@
 # Project Status - pw-mcp
 # Purpose: Track implementation progress and next steps
-# Updated: 2024-12-14
+# Updated: 2025-12-14
 
 overview:
   project: ProleWiki MCP Server
@@ -33,30 +33,54 @@ phases:
       status: all skip (TDD Red Phase complete)
 
   phase_2_parsers:
-    status: NEXT
+    status: IN_PROGRESS
     description: TDD Green Phase - implement parsers to pass tests
     tasks:
       - id: 2.1
         name: Create parser module structure
+        status: COMPLETE
+        completed_date: 2025-12-14
         details: |
           src/pw_mcp/ingest/parsers/
-          ├── __init__.py
-          ├── infobox.py    # parse_infobox() -> InfoboxData
+          ├── __init__.py   # Public API exports
+          ├── types.py      # Shared dataclasses (Link, Citation, InfoboxData)
+          ├── infobox.py    # parse_infobox() -> InfoboxData | None
           ├── citation.py   # parse_citations() -> list[Citation]
           └── link.py       # parse_links() -> list[Link]
-        status: pending
+        implementation_notes: |
+          - types.py contains LinkType, CitationType, InfoboxType literals
+          - Link dataclass: target, display, link_type, section, start, end
+          - Citation dataclass: ref_type, title, authors, year, url, quote, etc.
+          - InfoboxData dataclass: type, fields, remaining_text, extracted_links
+          - Stub functions raise NotImplementedError for TDD workflow
 
       - id: 2.2
         name: Implement link parser
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: tests/unit/extraction/test_link_parser.py (28 tests passing)
         details: |
-          Simplest parser, good starting point.
-          - Extract [[Target]] simple links
-          - Extract [[Target|Display]] piped links
-          - Extract [[Category:Name]] category links
-          - Extract [url text] external links
-          - Return Link dataclass with target, display, type, position
-        tests: tests/unit/extraction/test_link_parser.py (30 tests)
-        status: pending
+          Regex-based parser for MediaWiki links:
+          - [[Target]] simple internal links
+          - [[Target|Display]] piped links
+          - [[Category:Name]] category links (strips "Category:" prefix)
+          - [https://url text] external links
+          - [[Article#Section]] section anchors
+        implementation_notes: |
+          Functions implemented:
+          - parse_links(text, link_type=None, include_positions=False) -> list[Link]
+          - count_internal_links(text) -> int
+          - count_categories(text) -> int
+          - get_unique_targets(text) -> set[str]
+
+          Edge cases handled:
+          - Empty [[]] targets (skipped)
+          - File:/Image:/Media: links (skipped)
+          - Interwiki links ru:, de:, etc. (skipped)
+          - Multiple pipes [[A|B|C]] (target=A, display=B|C)
+          - Unicode in targets (fully supported)
+          - Consecutive links without spaces
+          - Position tracking for text replacement
 
       - id: 2.3
         name: Implement citation parser
@@ -146,12 +170,14 @@ phases:
 
 current_focus:
   phase: 2 (Green Phase - Parsers)
+  completed: [2.1, 2.2]
+  next_task: 2.3 (citation parser)
   next_action: |
-    Implement parsers in order of complexity:
-    1. link.py (simplest, foundation)
-    2. citation.py (template parsing)
-    3. infobox.py (most complex)
-    4. extraction pipeline (orchestration)
+    Continue implementing parsers in order of complexity:
+    ✅ 1. link.py (COMPLETE - 28/28 tests passing)
+    ⏳ 2. citation.py (template parsing) - NEXT
+    ⏳ 3. infobox.py (most complex)
+    ⏳ 4. extraction pipeline (orchestration)
 
     For each parser:
     1. Remove pytest.skip() from tests
@@ -159,6 +185,13 @@ current_focus:
     3. Implement code to pass tests
     4. Run tests to verify
     5. Refactor if needed
+
+  test_status:
+    link_parser: 28 passing
+    citation_parser: 28 skipped
+    infobox_parser: 24 skipped
+    extraction_pipeline: 22 skipped
+    total: 102 tests (28 passing, 74 skipped)
 
 # =============================================================================
 # KEY DECISIONS
@@ -180,16 +213,40 @@ decisions:
     rationale: Increasing complexity, link parser is foundation for others
     date: 2024-12-14
 
+  type_stubs:
+    decision: Create proper stub files for mcp library instead of # type: ignore
+    rationale: |
+      Avoid "reward hacking" by suppressing type errors.
+      Proper stubs in stubs/mcp/ provide real type safety.
+    date: 2025-12-14
+    files:
+      - stubs/mcp/__init__.pyi
+      - stubs/mcp/server/__init__.pyi
+      - stubs/mcp/server/fastmcp.pyi
+
+  lock_file_policy:
+    decision: Exclude uv.lock from pre-commit large file check
+    rationale: Lock files are auto-generated, necessary for reproducibility, often exceed 500KB
+    date: 2025-12-14
+
 # =============================================================================
 # FILE LOCATIONS
 # =============================================================================
 
 key_files:
   source_code:
-    - src/pw_mcp/ingest/parsers/  # To be created
+    - src/pw_mcp/ingest/parsers/types.py    # Dataclasses: Link, Citation, InfoboxData
+    - src/pw_mcp/ingest/parsers/link.py     # IMPLEMENTED - parse_links()
+    - src/pw_mcp/ingest/parsers/citation.py # Stub - parse_citations()
+    - src/pw_mcp/ingest/parsers/infobox.py  # Stub - parse_infobox()
     - src/pw_mcp/ingest/cli.py
     - src/pw_mcp/server.py
     - src/pw_mcp/config.py
+
+  type_stubs:
+    - stubs/mcp/__init__.pyi
+    - stubs/mcp/server/__init__.pyi
+    - stubs/mcp/server/fastmcp.pyi  # FastMCP type definitions
 
   tests:
     - tests/conftest.py

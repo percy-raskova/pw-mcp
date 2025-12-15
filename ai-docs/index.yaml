@@ -150,15 +150,15 @@ files:
     sections:
       phases: All 7 implementation phases with status
       phase_1_foundation: Test infrastructure (COMPLETE)
-      phase_2_parsers: TDD Green Phase - parser implementation (NEXT)
+      phase_2_parsers: TDD Green Phase - parser implementation (IN_PROGRESS)
       phase_3_sembr: Semantic linebreaking integration
       phase_4_chunking: Text chunking for embeddings
       phase_5_embedding: Vector embedding generation
       phase_6_loading: ChromaDB ingestion
       phase_7_mcp: MCP server implementation
       current_focus: What to work on next
-      decisions: Key architectural/process decisions
-      key_files: Where everything lives
+      decisions: Key architectural/process decisions (includes type_stubs decision)
+      key_files: Where everything lives (source_code, type_stubs, tests, fixtures)
       useful_commands: Common development commands
     use_when:
       - starting a new session
@@ -166,6 +166,10 @@ files:
       - deciding what to work on next
       - finding file locations
       - running common commands
+    recent_updates:
+      - "2025-12-14: Task 2.1 (parser module structure) COMPLETE"
+      - "2025-12-14: Task 2.2 (link parser) COMPLETE - 28 tests passing"
+      - "2025-12-14: Added type stubs for mcp library (no # type: ignore)"
 
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
