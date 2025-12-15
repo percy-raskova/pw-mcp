@@ -1,0 +1,499 @@
+# Fine-tuning Documentation - Phase 8
+# Purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
+# Status: PLANNED
+# Dependencies: Phases 1-7 (complete RAG pipeline provides Q&A source data)
+
+overview:
+  goal: Fine-tune DeepSeek 7B to produce a Marxist-Leninist domain expert
+  method: QLoRA (Quantized Low-Rank Adaptation) via Unsloth framework
+  dataset_size: 3,000-5,000 Q&A pairs from ProleWiki corpus
+  output_format: GGUF for Ollama deployment
+  hardware_requirement: 16-24GB VRAM (RTX 3090/4090/A4000)
+
+# =============================================================================
+# BASE MODEL SELECTION
+# =============================================================================
+
+model:
+  primary:
+    name: DeepSeek-R1-7B
+    huggingface: unsloth/DeepSeek-R1-7B
+    params: 7B
+    architecture: LLaMA-like with MoE (Mixture of Experts)
+    context_length: 4096
+    reasoning: DeepSeek-R1 excels at reasoning tasks; Unsloth has direct support
+
+  alternative:
+    name: DeepSeek-V2-Lite-Chat
+    huggingface: deepseek-ai/deepseek-llm-7b-chat
+    params: 7B
+    reasoning: If R1 unavailable or too resource-intensive
+
+  unsloth_loading:
+    code: |
+      from unsloth import FastLanguageModel
+
+      model, tokenizer = FastLanguageModel.from_pretrained(
+          model_name = "unsloth/DeepSeek-R1-7B",
+          max_seq_length = 4096,
+          load_in_4bit = True,  # QLoRA 4-bit quantization
+          dtype = None,  # Auto-detect
+      )
+
+# =============================================================================
+# QLORA CONFIGURATION
+# =============================================================================
+
+qlora_config:
+  rank: 16  # r=16 (balance between quality and VRAM)
+  lora_alpha: 16  # Same as rank for stable gradients
+  lora_dropout: 0  # Unsloth recommendation for DeepSeek
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj  # MoE layers
+    - up_proj
+    - down_proj
+
+  code: |
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r = 16,
+        lora_alpha = 16,
+        lora_dropout = 0,
+        target_modules = [
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ],
+        bias = "none",
+        use_gradient_checkpointing = "unsloth",  # Memory optimization
+        random_state = 3407,
+    )
+
+# =============================================================================
+# DATA GENERATION STRATEGY
+# =============================================================================
+
+data_generation:
+  overview: |
+    Generate Q&A pairs from ProleWiki corpus using Phase 1-7 infrastructure.
+    Leverage parsed infoboxes, sections, categories, and clean text.
+
+  sources:
+    infobox_factual:
+      description: Convert infobox fields to factual Q&A pairs
+      target_count: 500-1000
+      example:
+        input_infobox:
+          type: politician
+          name: Vladimir Lenin
+          birth_date: "1870-04-22"
+          death_date: "1924-01-21"
+          nationality: Russian
+          ideology: Marxism-Leninism
+          party: Bolshevik Party
+        output_pairs:
+          - instruction: "When was Vladimir Lenin born?"
+            input: ""
+            output: "Vladimir Lenin was born on April 22, 1870."
+          - instruction: "What political party did Lenin lead?"
+            input: ""
+            output: "Lenin led the Bolshevik Party (later the Communist Party)."
+      implementation: |
+        Parse ArticleData.infobox from Phase 2 extraction.
+        Generate templated questions for standard fields:
+        - birth/death dates, nationality, ideology, party affiliation
+        - countries: capital, government_type, founding_date
+        - parties: founding_date, ideology, headquarters
+
+    section_conceptual:
+      description: Convert article sections to conceptual Q&A
+      target_count: 1000-2000
+      example:
+        input_section:
+          article: "Dialectical Materialism"
+          header: "== Core Principles =="
+          content: "Dialectical materialism holds that matter is primary..."
+        output_pair:
+          instruction: "Explain the core principles of dialectical materialism."
+          input: ""
+          output: "Dialectical materialism holds that matter is primary..."
+      implementation: |
+        Use ArticleData.sections from Phase 2 extraction.
+        Generate questions from section headers.
+        May require LLM assistance to summarize long sections.
+
+    library_primary_sources:
+      description: Extract quotes and context from primary texts
+      target_count: 500-1000
+      example:
+        input_work:
+          author: "Karl Marx"
+          title: "Das Kapital"
+          quote: "Capital is dead labour which, vampire-like..."
+        output_pair:
+          instruction: "What did Karl Marx say about the nature of capital?"
+          input: ""
+          output: |
+            In Das Kapital, Marx wrote: "Capital is dead labour which,
+            vampire-like, lives only by sucking living labour, and lives
+            the more, the more labour it sucks."
+      implementation: |
+        Use LibraryWorkData from Library namespace parsing.
+        Extract key quotes with context.
+        Highest value for Marxist-Leninist specificity.
+
+    cross_reference:
+      description: Generate relationship Q&A from internal links
+      target_count: 200-500
+      example:
+        input_links:
+          article: "October Revolution"
+          links_to: ["Vladimir Lenin", "Bolshevik Party", "Russian Empire"]
+        output_pair:
+          instruction: "What was Lenin's role in the October Revolution?"
+          input: ""
+          output: "Lenin was the primary leader of the October Revolution..."
+      implementation: |
+        Use ArticleData.links from Phase 2 extraction.
+        Identify highly-linked articles as key concepts.
+        Generate relationship questions between connected concepts.
+
+  quality_control:
+    human_review: Required for ideological accuracy
+    automated_checks:
+      - Deduplication (exact and semantic)
+      - Length validation (50-500 tokens output)
+      - Format validation (valid JSON, no empty fields)
+      - Link validation (all referenced articles exist)
+
+# =============================================================================
+# DATASET FORMAT
+# =============================================================================
+
+dataset_format:
+  primary: Alpaca JSONL
+  schema:
+    instruction: Question or task description
+    input: Optional context (usually empty for Q&A)
+    output: Expected model response
+
+  example_file: |
+    {"instruction": "Explain dialectical materialism.", "input": "",
+     "output": "Dialectical materialism is the philosophical foundation..."}
+    {"instruction": "Who was Vladimir Lenin?", "input": "",
+     "output": "Vladimir Lenin (1870-1924) was a Russian revolutionary..."}
+    {"instruction": "What is socialism vs communism?", "input": "",
+     "output": "In Marxist theory, socialism is the transitional stage..."}
+
+  splits:
+    train: 80%
+    validation: 10%
+    test: 10%
+
+  files:
+    - data/finetune/train.jsonl
+    - data/finetune/validation.jsonl
+    - data/finetune/test.jsonl
+
+# =============================================================================
+# TRAINING CONFIGURATION
+# =============================================================================
+
+training_config:
+  trainer: SFTTrainer (from trl library)
+  epochs: 3-5
+  batch_size: 4  # Per device
+  gradient_accumulation: 4  # Effective batch size = 16
+  learning_rate: 2e-4
+  lr_scheduler: linear
+  warmup_ratio: 0.1
+  optimizer: adamw_8bit
+  max_seq_length: 4096
+  fp16: true  # Mixed precision
+
+  code: |
+    from trl import SFTTrainer
+    from transformers import TrainingArguments
+
+    training_args = TrainingArguments(
+        output_dir = "./outputs",
+        per_device_train_batch_size = 4,
+        gradient_accumulation_steps = 4,
+        learning_rate = 2e-4,
+        lr_scheduler_type = "linear",
+        warmup_ratio = 0.1,
+        num_train_epochs = 3,
+        fp16 = True,
+        logging_steps = 10,
+        save_strategy = "epoch",
+        evaluation_strategy = "epoch",
+        optim = "adamw_8bit",
+        seed = 3407,
+    )
+
+    trainer = SFTTrainer(
+        model = model,
+        tokenizer = tokenizer,
+        train_dataset = train_dataset,
+        eval_dataset = eval_dataset,
+        args = training_args,
+        dataset_text_field = "text",  # Formatted instruction+output
+        max_seq_length = 4096,
+    )
+
+    trainer.train()
+
+  conversation_formatting: |
+    # Format Alpaca to conversation format
+    def format_alpaca(example):
+        instruction = example['instruction']
+        output = example['output']
+        if example["input"]:
+            inp = example['input']
+            text = f"### Instruction:\n{instruction}\n\n"
+            text += f"### Input:\n{inp}\n\n### Response:\n{output}"
+        else:
+            text = f"### Instruction:\n{instruction}\n\n"
+            text += f"### Response:\n{output}"
+        return {"text": text}
+
+# =============================================================================
+# EVALUATION STRATEGY
+# =============================================================================
+
+evaluation:
+  automated:
+    perplexity:
+      description: Lower is better; measure on held-out test set
+      target: < 10 on test set
+    loss:
+      description: Training/validation loss convergence
+      target: < 1.0 final loss
+
+  manual:
+    golden_questions:
+      description: 50 hand-picked questions for human evaluation
+      categories:
+        factual:
+          count: 15
+          examples:
+            - "When did the October Revolution occur?"
+            - "Who wrote Das Kapital?"
+        conceptual:
+          count: 20
+          examples:
+            - "Explain the concept of surplus value."
+            - "What is the dictatorship of the proletariat?"
+        reasoning:
+          count: 15
+          examples:
+            - "How does dialectical materialism differ from idealism?"
+            - "Why did Marx criticize utopian socialism?"
+
+    rubric:
+      accuracy: Is the answer factually correct? (0-2)
+      completeness: Does it fully address the question? (0-2)
+      coherence: Is the reasoning logical and clear? (0-2)
+      ideology: Does it align with Marxist-Leninist analysis? (0-2)
+      total: 8 points max per question
+
+    success_threshold: 80% of questions score >= 6/8
+
+  baseline_comparison:
+    description: Compare to base model on same questions
+    expectation: Fine-tuned model significantly outperforms on Marxist content
+
+# =============================================================================
+# EXPORT AND DEPLOYMENT
+# =============================================================================
+
+export:
+  gguf:
+    description: Quantized format for efficient local inference
+    quantization_levels:
+      - Q4_K_M  # Recommended balance of size/quality
+      - Q5_K_M  # Higher quality, larger file
+      - Q8_0    # Near-full precision
+
+    code: |
+      # Export to GGUF
+      model.save_pretrained_gguf(
+          "marxist-deepseek-7b",
+          tokenizer,
+          quantization_method = "q4_k_m",
+      )
+
+  ollama_integration:
+    modelfile: |
+      FROM ./marxist-deepseek-7b-Q4_K_M.gguf
+
+      PARAMETER temperature 0.7
+      PARAMETER top_p 0.9
+
+      SYSTEM """You are a Marxist-Leninist assistant trained on ProleWiki.
+      You provide accurate information about socialist history, theory,
+      and practice from a Marxist perspective."""
+
+    commands:
+      create: ollama create marxist-deepseek -f Modelfile
+      run: ollama run marxist-deepseek
+      test: ollama run marxist-deepseek "Explain dialectical materialism"
+
+# =============================================================================
+# IMPLEMENTATION PHASES
+# =============================================================================
+
+implementation:
+  phase_8_1:
+    name: Data Generation Pipeline
+    status: PLANNED
+    tasks:
+      - Create src/pw_mcp/finetune/__init__.py
+      - Implement infobox_to_qa() generator
+      - Implement section_to_qa() generator
+      - Implement library_to_qa() generator
+      - Implement crossref_to_qa() generator
+      - Add CLI command: pw-ingest generate-qa
+    output: data/finetune/raw_qa.jsonl
+
+  phase_8_2:
+    name: Dataset Preparation
+    status: PLANNED
+    tasks:
+      - Implement deduplication (exact + semantic)
+      - Add length filtering (50-500 tokens)
+      - Create train/validation/test splits
+      - Add format validation tests
+    output:
+      - data/finetune/train.jsonl
+      - data/finetune/validation.jsonl
+      - data/finetune/test.jsonl
+
+  phase_8_3:
+    name: Training Infrastructure
+    status: PLANNED
+    tasks:
+      - Install unsloth and dependencies
+      - Create training script: scripts/train_marxist.py
+      - Configure QLoRA parameters
+      - Set up checkpoint saving
+      - Add training monitoring (wandb or tensorboard)
+
+  phase_8_4:
+    name: Fine-tuning Execution
+    status: PLANNED
+    tasks:
+      - Run training for 3-5 epochs
+      - Monitor loss curves
+      - Evaluate on validation set per epoch
+      - Select best checkpoint
+
+  phase_8_5:
+    name: Evaluation and Export
+    status: PLANNED
+    tasks:
+      - Run perplexity evaluation on test set
+      - Conduct manual evaluation with 50 questions
+      - Export to GGUF format
+      - Create Ollama Modelfile
+      - Integration test with Ollama
+
+# =============================================================================
+# HARDWARE REQUIREMENTS
+# =============================================================================
+
+hardware:
+  minimum:
+    gpu: RTX 3090 (24GB VRAM)
+    ram: 32GB system RAM
+    storage: 50GB free (model weights + checkpoints)
+
+  recommended:
+    gpu: RTX 4090 (24GB VRAM) or A100 (40GB)
+    ram: 64GB system RAM
+    storage: 100GB free
+
+  cloud_options:
+    - RunPod (RTX 4090, ~$0.50/hour)
+    - Lambda Labs (A100, ~$1.10/hour)
+    - Vast.ai (variable pricing)
+
+  notes: |
+    QLoRA + 4-bit quantization enables training on consumer GPUs.
+    Unsloth claims 2x speed and 70% VRAM reduction.
+    16GB VRAM may work with reduced batch size.
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  python_packages:
+    - unsloth  # Fast fine-tuning framework
+    - transformers>=4.36.0
+    - datasets
+    - trl  # SFTTrainer
+    - peft  # LoRA adapters
+    - bitsandbytes  # 4-bit quantization
+    - accelerate  # Multi-GPU support
+    - wandb  # Optional: training monitoring
+
+  system:
+    - CUDA 12.x
+    - cuDNN 8.x
+    - Git LFS (for model downloads)
+
+  installation: |
+    pip install unsloth
+    # Or for latest:
+    pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+
+# =============================================================================
+# RISKS AND MITIGATIONS
+# =============================================================================
+
+risks:
+  data_quality:
+    risk: Low-quality Q&A pairs lead to poor model
+    mitigation: Human review of subset, automated quality checks
+
+  ideological_drift:
+    risk: Model loses Marxist perspective on edge cases
+    mitigation: Include diverse examples, manual evaluation on edge cases
+
+  catastrophic_forgetting:
+    risk: Model loses general capabilities after fine-tuning
+    mitigation: Use QLoRA (preserves base weights), test general tasks
+
+  overfitting:
+    risk: Model memorizes training data verbatim
+    mitigation: Early stopping, validation loss monitoring, diverse test set
+
+  hardware_limitations:
+    risk: Training fails due to OOM errors
+    mitigation: Reduce batch size, use gradient checkpointing, use cloud GPU
+
+# =============================================================================
+# SUCCESS CRITERIA
+# =============================================================================
+
+success_criteria:
+  quantitative:
+    - Test perplexity < 10
+    - Training loss < 1.0
+    - 80%+ manual evaluation score
+
+  qualitative:
+    - Correctly explains core Marxist concepts
+    - Accurately identifies historical figures and events
+    - Provides coherent ideological analysis
+    - Maintains respectful, educational tone
+
+  deployment:
+    - GGUF export works without errors
+    - Ollama integration functional
+    - Response latency < 5 seconds for typical queries
