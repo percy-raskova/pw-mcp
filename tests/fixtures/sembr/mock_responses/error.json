@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "model": "BertForTokenClassification",
+  "tokenizer": "DistilBertTokenizerFast",
+  "processor": "SemBrProcessor",
+  "error": "Model inference failed",
+  "traceback": "Traceback (most recent call last):\n  File \"sembr/server.py\", line 42, in rewrap\n    result = process(text)\nRuntimeError: Model inference failed"
+}

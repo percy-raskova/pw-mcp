@@ -142,21 +142,22 @@ files:
     status: ACTIVE - primary tracking document
     purpose: Track implementation progress and next steps
     topics:
-      - implementation phases (7 phases from foundation to MCP)
+      - implementation phases (8 phases from foundation to fine-tuning)
       - current focus and next actions
       - key decisions made
       - file locations reference
       - useful commands
       - dataclass reference (Link, Citation, InfoboxData, etc.)
     sections:
-      phases: All 7 implementation phases with status
+      phases: All 8 implementation phases with status
       phase_1_foundation: Test infrastructure (COMPLETE)
       phase_2_parsers: TDD Green Phase - parser implementation (COMPLETE)
-      phase_3_sembr: Semantic linebreaking integration (NEXT)
+      phase_3_sembr: Semantic linebreaking integration (COMPLETE)
       phase_4_chunking: Text chunking for embeddings
       phase_5_embedding: Vector embedding generation
       phase_6_loading: ChromaDB ingestion
       phase_7_mcp: MCP server implementation
+      phase_8_finetune: Marxist LLM fine-tuning with DeepSeek 7B (PLANNED)
       current_focus: What to work on next
       decisions: Key architectural/process decisions
       key_files: Where everything lives (source_code, type_stubs, tests, fixtures)
@@ -169,13 +170,79 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-15: Phase 8 PLANNED - finetune.yaml for Marxist LLM fine-tuning"
+      - "2025-12-15: DeepSeek 7B + Unsloth QLoRA + Q&A from ProleWiki corpus"
+      - "2025-12-15: PHASE 3 COMPLETE - sembr integration implemented"
+      - "2025-12-15: 171 tests passing (33 new sembr tests)"
       - "2025-12-14: PHASE 2 COMPLETE - all parsers implemented"
-      - "2025-12-14: 160 tests passing across 6 test files"
-      - "2025-12-14: Generic template removal - 100% of 948 types removed"
-      - "2025-12-14: Parsers: link, citation (7 types), infobox (19 types), library_work, quote"
-      - "2025-12-14: Ready for Phase 3 (sembr integration)"
+
+  sembr.yaml:
+    status: IMPLEMENTED - Phase 3 complete
+    purpose: Complete specification for sembr (semantic linebreaking) integration
+    topics:
+      - sembr HTTP server protocol (endpoints, request/response formats)
+      - linebreaker.py module design (dataclasses, public API)
+      - CLI integration (pw-ingest sembr subcommand)
+      - mise tasks (sembr-server, sembr-check, sembr-process)
+      - testing strategy (unit, integration, slow tests)
+      - edge cases (empty input, unicode, long documents)
+      - implementation tasks (TDD phases)
+      - success criteria (functionality, performance, quality)
+    sections:
+      overview: Purpose, data flow, why sembr, model info
+      server_protocol: HTTP endpoints, request/response formats, performance
+      module_design: linebreaker.py classes, exceptions, public API
+      cli_integration: pw-ingest sembr subcommand options
+      mise_tasks: sembr-server, sembr-check, sembr-process, sembr-sample
+      testing_strategy: Test files, fixtures, invariants
+      edge_cases: Empty input, unicode, long docs, server unavailable
+      implementation_tasks: TDD phases 3.1-3.4
+      success_criteria: Functionality, performance, quality targets
+    use_when:
+      - implementing Phase 3 (sembr integration)
+      - understanding sembr server protocol
+      - writing sembr tests
+      - debugging sembr issues
+      - configuring mise tasks
+    model_info:
+      name: admko/sembr2023-distilbert-base-multilingual-cased
+      params: 135M
+      languages: [English, Russian, Chinese, Spanish, German, French]
+      performance: "~0.2-0.5s/file in server mode vs ~9s/file in CLI mode"
+
+  finetune.yaml:
+    status: PLANNED - Phase 8 specification
+    purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
+    topics:
+      - DeepSeek 7B base model selection
+      - QLoRA configuration via Unsloth framework
+      - Q&A data generation from ProleWiki corpus
+      - Dataset preparation (Alpaca JSONL format)
+      - Training configuration (SFTTrainer)
+      - Evaluation strategy (perplexity, manual review)
+      - GGUF export for Ollama deployment
+    sections:
+      overview: Goal, method, hardware requirements
+      model: DeepSeek-R1-7B selection and loading code
+      qlora_config: LoRA rank, alpha, target modules
+      data_generation: Four sources (infobox, section, library, crossref)
+      dataset_format: Alpaca JSONL schema and splits
+      training_config: SFTTrainer parameters and code
+      evaluation: Automated and manual evaluation criteria
+      export: GGUF conversion and Ollama integration
+      implementation: Five substages (8.1-8.5)
+      hardware: GPU requirements and cloud options
+      dependencies: Python packages and system requirements
+      risks: Data quality, ideological drift, overfitting mitigations
+      success_criteria: Quantitative and qualitative targets
+    use_when:
+      - planning fine-tuning implementation
+      - understanding Q&A data generation strategy
+      - configuring Unsloth and QLoRA
+      - setting up training infrastructure
+      - evaluating fine-tuned model
+      - deploying to Ollama
 
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
-# sembr.yaml: Semantic linebreaking integration, server mode
 # mcp.yaml: FastMCP server patterns, tool definitions

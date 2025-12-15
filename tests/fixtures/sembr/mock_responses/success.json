@@ -1,0 +1,9 @@
+{
+  "status": "success",
+  "model": "BertForTokenClassification",
+  "tokenizer": "DistilBertTokenizerFast",
+  "processor": "SemBrProcessor",
+  "batch_size": 8,
+  "predict_func": "argmax",
+  "text": "Processed text\nwith semantic\nline breaks."
+}

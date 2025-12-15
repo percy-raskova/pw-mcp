@@ -24,6 +24,18 @@ echo "Stalin implemented the Five-Year Plans. These transformed the Soviet Union
   uv run sembr -m admko/sembr2023-distilbert-base-multilingual-cased
 """
 
+[tasks.sembr-check]
+description = "Check if sembr server is running"
+run = "uv run pw-ingest sembr --check-only"
+
+[tasks.sembr-process]
+description = "Process corpus through sembr (requires sembr-server running)"
+run = "uv run pw-ingest sembr -i extracted/ -o sembr/"
+
+[tasks.sembr-sample]
+description = "Test sembr with 10 sample files"
+run = "uv run pw-ingest sembr -i tests/fixtures/sembr/input/ -o /tmp/sembr-sample/ --sample 5"
+
 # =============================================================================
 # CODE QUALITY
 # =============================================================================

@@ -1,7 +1,7 @@
 # ProleWiki RAG Database - Comprehensive Testing Plan
-# Status: Phase 1-2 IMPLEMENTED (160 tests passing)
+# Status: Phase 1-3 IMPLEMENTED (171 tests passing)
 # Purpose: Define complete test strategy for pw-mcp
-# Last updated: 2025-12-14
+# Last updated: 2025-12-15
 
 # =============================================================================
 # TESTING PHILOSOPHY
@@ -55,6 +55,10 @@ infrastructure:
     │   │   ├── templates/          # Additional template samples
     │   │   ├── articles/           # Full article samples
     │   │   └── edge_cases/         # Malformed/unusual input
+    │   ├── sembr/                  # Sembr test data (Phase 3)
+    │   │   ├── input/              # 7 input text samples
+    │   │   ├── expected/           # 5 expected output samples
+    │   │   └── mock_responses/     # 3 HTTP mock responses
     │   ├── extracted/              # Expected Stage 1 output
     │   ├── chunks/                 # Expected Stage 5 output
     │   ├── embeddings/             # Pre-computed test embeddings
@@ -67,6 +71,8 @@ infrastructure:
     │   │   ├── test_section_parser.py
     │   │   ├── test_template_parser.py
     │   │   └── test_blockquote_parser.py
+    │   ├── sembr/
+    │   │   └── test_linebreaker.py       # 33 tests (Phase 3)
     │   ├── graph/
     │   │   ├── test_backlinks.py
     │   │   ├── test_link_counts.py

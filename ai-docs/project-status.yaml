@@ -1,6 +1,6 @@
 # Project Status - pw-mcp
 # Purpose: Track implementation progress and next steps
-# Updated: 2025-12-14
+# Updated: 2025-12-15
 
 overview:
   project: ProleWiki MCP Server
@@ -166,15 +166,93 @@ phases:
         implementation: src/pw_mcp/ingest/extraction.py
 
   phase_3_sembr:
-    status: NEXT
+    status: COMPLETE
+    completed_date: 2025-12-15
     description: Semantic linebreaking integration
+    reference_doc: ai-docs/sembr.yaml
+    test_counts:
+      linebreaker_unit: 33
+      total_with_sembr: 171
+
     tasks:
-      - Integrate sembr server mode for batch processing
-      - Create linebreaker.py wrapper
-      - Add sembr tests
-    notes: |
-      clean_text is now ready - all 948 template types removed.
-      sembr can process without MediaWiki markup interference.
+      - id: 3.1
+        name: Test infrastructure (Red Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        details: |
+          Created test infrastructure:
+          - tests/unit/sembr/__init__.py
+          - tests/unit/sembr/test_linebreaker.py (33 tests)
+          - tests/slow/__init__.py
+          - tests/fixtures/sembr/input/ (7 files)
+          - tests/fixtures/sembr/expected/ (5 files)
+          - tests/fixtures/sembr/mock_responses/ (3 files)
+          - conftest.py updated with 8 sembr fixtures
+
+      - id: 3.2
+        name: Core module implementation (Green Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 33 passing
+        details: |
+          Created src/pw_mcp/ingest/linebreaker.py (487 lines):
+          - SembrConfig (frozen dataclass, 7 config fields)
+          - SembrResult (dataclass, 5 result fields)
+          - SembrError, SembrServerError, SembrTimeoutError, SembrContentError
+          - check_server_health() - sync HTTP GET
+          - process_text() - async with retry logic
+          - process_file() - async file I/O wrapper
+          - process_batch() - async with Semaphore concurrency
+          - _extract_clean_text_from_json() helper
+          All 33 unit tests pass. Pre-commit hooks pass.
+
+      - id: 3.3
+        name: CLI integration
+        status: COMPLETE
+        completed_date: 2025-12-15
+        details: |
+          Updated src/pw_mcp/ingest/cli.py (362 lines):
+          - Added "sembr" subcommand with 8 options
+          - --input/-i, --output/-o, --server/-s
+          - --check-only, --sample, --max-concurrent
+          - --no-progress, --timeout
+          - Progress display with file counts
+          - Proper error handling and exit codes
+
+          Added 3 mise tasks in .mise.toml:
+          - sembr-check: Check server health
+          - sembr-process: Process full corpus
+          - sembr-sample: Test with sample files
+
+      - id: 3.4
+        name: Documentation
+        status: COMPLETE
+        completed_date: 2025-12-15
+        details: |
+          Updated documentation files:
+          - ai-docs/project-status.yaml (this file)
+          - ai-docs/sembr.yaml (implementation tasks)
+          - ai-docs/index.yaml (status update)
+          - ai-docs/pipeline.yaml (Stage 4 status)
+          - ai-docs/testing-plan.yaml (test counts)
+
+    server_protocol:
+      endpoints:
+        health: "GET /check"
+        process: "POST /rewrap (JSON: {text, predict_func})"
+      response_format: JSON with status, text fields
+
+    model:
+      name: admko/sembr2023-distilbert-base-multilingual-cased
+      params: 135M
+      languages: [English, Russian, Chinese, Spanish, German, French]
+
+    implementation_notes: |
+      Phase 3 COMPLETE - sembr integration fully implemented:
+      - linebreaker.py handles HTTP client, retries, content validation
+      - CLI provides full batch processing with progress
+      - All 33 tests pass, pre-commit hooks pass
+      - Ready for Phase 4 (Chunking)
 
   phase_4_chunking:
     status: future
@@ -193,6 +271,7 @@ phases:
       - Integrate Ollama embeddinggemma
       - Batch embedding with progress
       - Add embedding quality tests
+      - Investigate parallel embeddinggemmas by directory (3 instances if GPU permits)
 
   phase_6_loading:
     status: future
@@ -211,23 +290,97 @@ phases:
       - Implement list_categories tool
       - Add MCP protocol tests
 
+  phase_8_finetune:
+    status: PLANNED
+    description: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
+    reference_doc: ai-docs/finetune.yaml
+    dependencies: Phases 1-7 (RAG pipeline provides Q&A source data)
+
+    overview:
+      goal: Fine-tune DeepSeek 7B to produce Marxist-Leninist domain expert
+      method: QLoRA via Unsloth framework
+      dataset: 3,000-5,000 Q&A pairs from ProleWiki
+      output: GGUF for Ollama deployment
+      hardware: 16-24GB VRAM (RTX 3090/4090/A4000)
+
+    tasks:
+      - id: 8.1
+        name: Data Generation Pipeline
+        status: PLANNED
+        details: |
+          Q&A generation from ProleWiki corpus:
+          - infobox_to_qa() - factual pairs from infobox fields
+          - section_to_qa() - conceptual pairs from article sections
+          - library_to_qa() - quotes from primary sources
+          - crossref_to_qa() - relationship pairs from internal links
+          Target: 3,000-5,000 Q&A pairs
+
+      - id: 8.2
+        name: Dataset Preparation
+        status: PLANNED
+        details: |
+          - Deduplication (exact + semantic)
+          - Length filtering (50-500 tokens)
+          - Train/validation/test splits (80/10/10)
+          - Format: Alpaca JSONL
+
+      - id: 8.3
+        name: Training Infrastructure
+        status: PLANNED
+        details: |
+          - Install unsloth framework
+          - Create training script
+          - Configure QLoRA: r=16, lora_alpha=16
+          - Set up checkpoint saving and monitoring
+
+      - id: 8.4
+        name: Fine-tuning Execution
+        status: PLANNED
+        details: |
+          - Train for 3-5 epochs
+          - Monitor loss curves
+          - Evaluate on validation set
+          - Select best checkpoint
+
+      - id: 8.5
+        name: Evaluation and Export
+        status: PLANNED
+        details: |
+          - Perplexity measurement on test set
+          - Manual evaluation (50 hand-picked questions)
+          - Export to GGUF format
+          - Create Ollama Modelfile
+          - Integration test with Ollama
+
+    model_info:
+      base_model: DeepSeek-R1-7B
+      huggingface: unsloth/DeepSeek-R1-7B
+      params: 7B
+      context_length: 4096
+
 # =============================================================================
 # CURRENT FOCUS
 # =============================================================================
 
 current_focus:
-  phase: 3 (Sembr Integration)
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8]
-  next_task: sembr server integration
-  next_action: |
-    Phase 2 COMPLETE - all parsers implemented and tested.
-    160 tests passing across 6 test files.
+  phase: 4 (Chunking)
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4]
+  next_task: 4.1 Implement chunker.py
+  reference: ai-docs/pipeline.yaml
 
-    Ready for Phase 3:
-    1. Set up sembr server mode for batch processing
-    2. Create linebreaker.py wrapper module
-    3. Test on sample articles
-    4. Process full corpus
+  next_action: |
+    Phase 3 COMPLETE - sembr integration fully implemented.
+    171 tests passing across 7 test files.
+
+    Phase 4 NEXT - Text chunking for embeddings:
+    1. Implement chunker.py with section-aware splitting
+    2. Target 200-500 tokens per chunk
+    3. Store line offsets for citations
+    4. Add chunking unit tests
+
+    BEFORE processing corpus:
+    - Start sembr server: mise run sembr-server
+    - Process corpus: mise run sembr-process
 
   test_status:
     link_parser: 28 passing
@@ -236,7 +389,8 @@ current_focus:
     library_work_parser: 25 passing
     quote_parser: 12 passing
     extraction_pipeline: 22 passing
-    total: 160 passing
+    linebreaker: 33 passing
+    total: 171 passing
 
 # =============================================================================
 # KEY DECISIONS
@@ -303,10 +457,12 @@ key_files:
       - src/pw_mcp/ingest/parsers/quote.py      # parse_quotes() - 12 tests
     extraction:
       - src/pw_mcp/ingest/extraction.py         # extract_article() - 22 tests
+    sembr:
+      - src/pw_mcp/ingest/linebreaker.py        # sembr HTTP client - 33 tests
     server:
       - src/pw_mcp/server.py
       - src/pw_mcp/config.py
-      - src/pw_mcp/ingest/cli.py
+      - src/pw_mcp/ingest/cli.py                # pw-ingest CLI with sembr subcommand
 
   type_stubs:
     - stubs/mcp/__init__.pyi
@@ -320,6 +476,7 @@ key_files:
       - tests/unit/extraction/test_infobox_parser.py       # 25 tests
       - tests/unit/extraction/test_library_work_parser.py  # 25 tests
       - tests/unit/extraction/test_quote_parser.py         # 12 tests
+      - tests/unit/sembr/test_linebreaker.py               # 33 tests
     integration:
       - tests/integration/test_extraction_pipeline.py      # 22 tests
     config:
@@ -332,6 +489,9 @@ key_files:
     - tests/fixtures/mediawiki/library_work/  # 7 library work samples
     - tests/fixtures/mediawiki/quotes/        # 3 quote samples
     - tests/fixtures/mediawiki/edge_cases/    # unicode, nested, multiline
+    - tests/fixtures/sembr/input/             # 7 sembr input samples
+    - tests/fixtures/sembr/expected/          # 5 sembr expected outputs
+    - tests/fixtures/sembr/mock_responses/    # 3 HTTP mock responses
 
   corpus:
     - prolewiki-exports/Main/       # ~4000+ encyclopedia articles
@@ -388,6 +548,17 @@ dataclasses:
       quotes, is_stub, citation_needed_count, has_blockquote,
       reference_count
 
+  SembrConfig:
+    fields: |
+      server_url, model_name, timeout_seconds, max_retries,
+      retry_delay_seconds, batch_size, predict_func
+    frozen: true
+
+  SembrResult:
+    fields: |
+      text, line_count, processing_time_ms,
+      input_word_count, output_word_count
+
 # =============================================================================
 # COMMANDS
 # =============================================================================
@@ -410,3 +581,6 @@ useful_commands:
   development:
     install: mise run install
     sembr_server: mise run sembr-server
+    sembr_check: mise run sembr-check
+    sembr_process: mise run sembr-process
+    sembr_sample: mise run sembr-sample

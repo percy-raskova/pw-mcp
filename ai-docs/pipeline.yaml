@@ -1,6 +1,6 @@
 # ProleWiki Ingestion Pipeline Architecture
-# Status: Stage 1 IMPLEMENTED, Stages 2-7 DRAFT
-# Last updated: 2025-12-14
+# Status: Stages 1 & 4 IMPLEMENTED, Stages 2-3 & 5-7 DRAFT
+# Last updated: 2025-12-15
 
 # =============================================================================
 # DESIGN PRINCIPLES
@@ -796,26 +796,121 @@ stage_3_cleaning:
 # =============================================================================
 
 stage_4_sembr:
+  status: IMPLEMENTED
+  completed_date: 2025-12-15
+  reference_doc: ai-docs/sembr.yaml
+  tests: 33 passing
+
   purpose: |
     Apply semantic linebreaking so each line = one idea.
     Enables better chunking at semantic boundaries.
 
-  input: cleaned/{namespace}/{title}.txt
+  input:
+    primary: extracted/articles/{namespace}/{title}.json  # clean_text field
+    alternative: cleaned/{namespace}/{title}.txt
+    note: |
+      Phase 2 extraction produces clean_text with all templates removed.
+      This is the input for sembr processing.
+
   output: sembr/{namespace}/{title}.txt
 
+  implementation:
+    module: src/pw_mcp/ingest/linebreaker.py (487 lines)
+    cli: src/pw_mcp/ingest/cli.py (362 lines)
+    classes:
+      SembrConfig:
+        server_url: "http://localhost:8384"
+        model_name: "admko/sembr2023-distilbert-base-multilingual-cased"
+        timeout_seconds: 60.0
+        max_retries: 3
+        retry_delay_seconds: 1.0
+        batch_size: 8
+        predict_func: "argmax"
+
+      SembrResult:
+        text: str  # Processed output
+        line_count: int
+        processing_time_ms: float
+        input_word_count: int
+        output_word_count: int
+
+    exceptions:
+      - SembrError (base)
+      - SembrServerError
+      - SembrTimeoutError
+      - SembrContentError
+
+    functions:
+      - check_server_health(config) -> bool
+      - process_text(text, config) -> SembrResult  # async
+      - process_file(input_path, output_path, config) -> SembrResult  # async
+      - process_batch(input_dir, output_dir, config, callback, max_concurrent) -> list[SembrResult]  # async
+
+  cli_usage: |
+    # Check server health
+    pw-ingest sembr --check-only
+
+    # Process full corpus
+    pw-ingest sembr -i extracted/ -o sembr/
+
+    # Test with sample files
+    pw-ingest sembr --sample 10
+
+  mise_tasks:
+    - sembr-server: Start sembr server
+    - sembr-check: Check server health
+    - sembr-process: Process full corpus
+    - sembr-sample: Test with sample files
+
+  server_protocol:
+    description: |
+      sembr exposes a Flask HTTP server for batch processing.
+      Server mode keeps model loaded in memory.
+
+    endpoints:
+      health_check:
+        path: /check
+        method: GET
+        response: '{"status": "success", "model": "...", "tokenizer": "..."}'
+
+      rewrap:
+        path: /rewrap
+        method: POST
+        content_type: application/x-www-form-urlencoded
+        body: "text=<url-encoded-text>"
+        response: '{"status": "success", "text": "processed\ntext"}'
+
   execution:
-    mode: server  # Use sembr server to avoid model reload per file
+    mode: server  # REQUIRED - CLI mode too slow (~9s/file)
     server_url: "http://localhost:8384"
     model: "admko/sembr2023-distilbert-base-multilingual-cased"
+    model_params: 135M
+    languages: [English, Russian, Chinese, Spanish, German, French]
 
-    # Fallback if server unavailable
-    fallback_mode: cli
-    fallback_timeout: 120  # seconds per file
+    startup_command: |
+      mise run sembr-server
+      # or: uv run sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased
+
+  performance:
+    cli_mode: "~9 seconds per file (model load + inference)"
+    server_mode: "~0.2-0.5 seconds per file (inference only)"
+    speedup: "10-50x faster for batch processing"
+    full_corpus_estimate:
+      cli: "13-16 hours for 5,222 files"
+      server: "<2 hours for 5,222 files"
+
+  content_invariants:
+    - "All input words present in output (no content loss)"
+    - "Word count: input == output"
+    - "Section headers passed through unchanged"
+    - "Unicode preserved (Cyrillic, Chinese, etc.)"
+    - "Blank lines preserved as paragraph boundaries"
 
   notes: |
-    - Headers (== ... ==) should pass through unchanged
-    - Blank lines should be preserved as paragraph boundaries
-    - Tabs in output indicate line continuation (same idea)
+    - Headers passed through unchanged
+    - Blank lines preserved as paragraph boundaries
+    - Server mode REQUIRED for practical batch processing
+    - See ai-docs/sembr.yaml for complete specification
 
 # =============================================================================
 # STAGE 5: CHUNKING - Detailed
