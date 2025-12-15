@@ -1,6 +1,6 @@
 # ProleWiki Ingestion Pipeline Architecture
-# Status: DRAFT - brainstorming phase
-# Last updated: 2024-12
+# Status: Stage 1 IMPLEMENTED, Stages 2-7 DRAFT
+# Last updated: 2025-12-14
 
 # =============================================================================
 # DESIGN PRINCIPLES
@@ -113,6 +113,9 @@ data_flow: |
 # =============================================================================
 
 stage_1_extraction:
+  status: IMPLEMENTED
+  implementation: src/pw_mcp/ingest/extraction.py
+  tests: 160 passing (6 test files)
   purpose: |
     Parse MediaWiki markup and extract all structured data.
     This is the most complex stage - everything else is simpler.
@@ -283,7 +286,7 @@ stage_1_extraction:
         # Frequency from corpus analysis:
         politician: 621      # People in politics
         country: 408         # Nations, states
-        political_party: 386 # Parties, movements
+        political_party: 386  # Parties, movements
         person: 228          # Generic people
         revolutionary: 97    # Revolutionary figures
         essay: 50            # ProleWiki essays
@@ -924,8 +927,7 @@ stage_7_loading:
         space: cosine
         ef_construction: 200
         ef_search: 100
-
-      # All chunk metadata from Stage 5 schema
+        # All chunk metadata from Stage 5 schema
 
     prolewiki_references:
       purpose: Reference lookup table (optional separate collection)
@@ -1095,22 +1097,27 @@ open_questions:
       - Larger chunk size for books
       - Chapter-level metadata
 
-  - question: "How to handle templates beyond Citation?"
-    context: "{{Main}}, {{See also}}, {{Infobox}}, etc."
-    options:
-      - Extract specific useful templates
-      - Generic template removal
-      - Template-specific handlers
-
   - question: "Quote formatting in clean text?"
     options:
       - '"Inline quote" - Author, Year'
       - Block quote on separate lines
       - Just quote text, attribution in metadata only
 
+resolved_questions:
+  - question: "How to handle templates beyond Citation?"
+    resolution: |
+      RESOLVED (2025-12-14): Use mwparserfromhell generic template removal.
+      - Specific parsers extract metadata from known templates
+      - _strip_all_templates() removes ALL 948 template types from clean_text
+      - 100% removal rate verified across 5,222 files (20,069 templates)
+    implementation: src/pw_mcp/ingest/extraction.py
+
 todo:
   - Define deterministic ref_id generation (hash of normalized fields)
-  - Decide on quote formatting
-  - Handle edge cases (malformed refs, nested templates)
+  - Decide on quote formatting for clean_text
   - Performance optimization for Library namespace
   - Incremental update strategy (delta ingestion)
+
+completed:
+  - Handle edge cases (malformed refs, nested templates) - mwparserfromhell handles these
+  - Template-specific handlers implemented for: Citation (7 types), Infobox (19 types), Library work, Quote

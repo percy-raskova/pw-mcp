@@ -6,7 +6,11 @@ overview:
   project: ProleWiki MCP Server
   goal: Semantic vector search over ProleWiki corpus via MCP
   artifact: ChromaDB database distributable independently of source corpus
-  corpus_size: ~5,222 files in prolewiki-exports/
+  corpus_size: 5,222 files in prolewiki-exports/
+  corpus_stats:
+    total_templates: 20,069
+    unique_template_types: 948
+    total_characters: 197.1M
 
 # =============================================================================
 # IMPLEMENTATION PHASES
@@ -22,19 +26,20 @@ phases:
       - Test directory structure created
       - tests/conftest.py with shared fixtures
       - Fixture files extracted from prolewiki-exports/
-      - test_infobox_parser.py (24 tests, all skip)
-      - test_citation_parser.py (28 tests, all skip)
-      - test_link_parser.py (30 tests, all skip)
-      - test_extraction_pipeline.py (22 tests, all skip)
-    test_counts:
-      total: 104
-      unit: 82
-      integration: 22
-      status: all skip (TDD Red Phase complete)
 
   phase_2_parsers:
-    status: IN_PROGRESS
+    status: COMPLETE
     description: TDD Green Phase - implement parsers to pass tests
+    completed_date: 2025-12-14
+    test_counts:
+      link_parser: 28
+      citation_parser: 48
+      infobox_parser: 25
+      library_work_parser: 25
+      quote_parser: 12
+      extraction_pipeline: 22
+      total: 160
+
     tasks:
       - id: 2.1
         name: Create parser module structure
@@ -42,92 +47,134 @@ phases:
         completed_date: 2025-12-14
         details: |
           src/pw_mcp/ingest/parsers/
-          ├── __init__.py   # Public API exports
-          ├── types.py      # Shared dataclasses (Link, Citation, InfoboxData)
-          ├── infobox.py    # parse_infobox() -> InfoboxData | None
-          ├── citation.py   # parse_citations() -> list[Citation]
-          └── link.py       # parse_links() -> list[Link]
-        implementation_notes: |
-          - types.py contains LinkType, CitationType, InfoboxType literals
-          - Link dataclass: target, display, link_type, section, start, end
-          - Citation dataclass: ref_type, title, authors, year, url, quote, etc.
-          - InfoboxData dataclass: type, fields, remaining_text, extracted_links
-          - Stub functions raise NotImplementedError for TDD workflow
+          ├── __init__.py        # Public API exports
+          ├── types.py           # Shared dataclasses
+          ├── link.py            # parse_links()
+          ├── citation.py        # parse_citations()
+          ├── infobox.py         # parse_infobox()
+          ├── library_work.py    # parse_library_work()
+          └── quote.py           # parse_quotes()
 
       - id: 2.2
         name: Implement link parser
         status: COMPLETE
         completed_date: 2025-12-14
-        tests: tests/unit/extraction/test_link_parser.py (28 tests passing)
+        tests: 28 passing
         details: |
           Regex-based parser for MediaWiki links:
           - [[Target]] simple internal links
           - [[Target|Display]] piped links
-          - [[Category:Name]] category links (strips "Category:" prefix)
+          - [[Category:Name]] category links
           - [https://url text] external links
           - [[Article#Section]] section anchors
-        implementation_notes: |
-          Functions implemented:
-          - parse_links(text, link_type=None, include_positions=False) -> list[Link]
-          - count_internal_links(text) -> int
-          - count_categories(text) -> int
-          - get_unique_targets(text) -> set[str]
-
-          Edge cases handled:
-          - Empty [[]] targets (skipped)
-          - File:/Image:/Media: links (skipped)
-          - Interwiki links ru:, de:, etc. (skipped)
-          - Multiple pipes [[A|B|C]] (target=A, display=B|C)
-          - Unicode in targets (fully supported)
-          - Consecutive links without spaces
-          - Position tracking for text replacement
+        implementation: src/pw_mcp/ingest/parsers/link.py
 
       - id: 2.3
         name: Implement citation parser
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: 48 passing
         details: |
-          Parse MediaWiki citation templates:
+          mwparserfromhell-based parser for 7 citation types:
           - {{Citation|...}} book citations
           - {{Web citation|...}} web articles
           - {{News citation|...}} news articles
           - {{YouTube citation|...}} video citations
+          - {{Video citation|...}} video citations (YouTube alternative)
           - {{Library citation|...}} internal Library links
-          Handle <ref name="..."> named refs and ref reuse.
-        tests: tests/unit/extraction/test_citation_parser.py (28 tests)
-        status: pending
+          - {{Textcite|...}} book/web citations with translation fields
+          Handle <ref name="..."> named refs and ref reuse/deduplication.
+        implementation: src/pw_mcp/ingest/parsers/citation.py
+        corpus_coverage:
+          web_citation: 5,499
+          citation: 4,227
+          news_citation: 1,574
+          library_citation: 253
+          youtube_citation: 85
+          video_citation: 83
+          textcite: 30
 
       - id: 2.4
         name: Implement infobox parser
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: 25 passing
         details: |
-          Most complex parser. Uses mwparserfromhell.
-          - Detect infobox type (politician, country, party, etc.)
-          - Extract all fields as dict
-          - Handle nested templates in values
-          - Handle <br> separated multi-values
-          - Strip [[links]] from field values
-          - Return remaining text after infobox removal
-        tests: tests/unit/extraction/test_infobox_parser.py (24 tests)
-        status: pending
+          mwparserfromhell-based parser for 19 infobox types:
+          - politician, country, political_party, person, revolutionary
+          - essay, philosopher, company, settlement, military_person
+          - organization, guerilla_organization, youtuber, military_conflict
+          - book, religion, website, transcript, flag
+          Features: nested templates, <br> multi-values, [[link]] extraction
+        implementation: src/pw_mcp/ingest/parsers/infobox.py
+        corpus_coverage:
+          infobox_politician: 644
+          infobox_country: 443
+          infobox_political_party: 419
+          infobox_person: 249
+          infobox_revolutionary: 114
+          # ... 14 more types
 
       - id: 2.5
         name: Implement extraction pipeline
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: 22 passing
         details: |
-          Orchestrate parsers into full extraction:
+          Orchestrates all parsers into full extraction:
           - extract_article(text, source_path) -> ArticleData
-          - Combine infobox, citations, links, categories
-          - Generate clean_text with markup removed
-          - Detect namespace from source_path
-          - Extract section headers
-          - Count references, detect stubs, etc.
-        tests: tests/integration/test_extraction_pipeline.py (22 tests)
-        status: pending
+          - Combines infobox, citations, links, quotes, categories
+          - Generates clean_text with ALL templates removed
+          - Detects namespace from source_path
+          - Extracts section headers
+          - Counts references, detects stubs, blockquotes
+        implementation: src/pw_mcp/ingest/extraction.py
+
+      - id: 2.6
+        name: Implement library work parser
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: 25 passing
+        details: |
+          Parser for {{Library work}} template in Library namespace.
+          Extracts bibliographic metadata: title, author, year, type,
+          publisher, source URL, translator, audiobook URL, etc.
+          Handles 70 work types found in corpus.
+        implementation: src/pw_mcp/ingest/parsers/library_work.py
+        corpus_coverage: 1,027 instances
+
+      - id: 2.7
+        name: Implement quote parser
+        status: COMPLETE
+        completed_date: 2025-12-14
+        tests: 12 passing
+        details: |
+          Parser for {{Quote|text|attribution}} template.
+          Extracts block quotes with optional attribution.
+        implementation: src/pw_mcp/ingest/parsers/quote.py
+        corpus_coverage: 223 instances
+
+      - id: 2.8
+        name: Generic template removal
+        status: COMPLETE
+        completed_date: 2025-12-14
+        details: |
+          Added _strip_all_templates() using mwparserfromhell.
+          Removes ALL 948 template types from clean_text.
+          100% removal rate: 20,069 templates across 5,222 files.
+          Essential for clean text generation before semantic linebreaking.
+        implementation: src/pw_mcp/ingest/extraction.py
 
   phase_3_sembr:
-    status: future
+    status: NEXT
     description: Semantic linebreaking integration
     tasks:
       - Integrate sembr server mode for batch processing
       - Create linebreaker.py wrapper
       - Add sembr tests
+    notes: |
+      clean_text is now ready - all 948 template types removed.
+      sembr can process without MediaWiki markup interference.
 
   phase_4_chunking:
     status: future
@@ -169,29 +216,27 @@ phases:
 # =============================================================================
 
 current_focus:
-  phase: 2 (Green Phase - Parsers)
-  completed: [2.1, 2.2]
-  next_task: 2.3 (citation parser)
+  phase: 3 (Sembr Integration)
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8]
+  next_task: sembr server integration
   next_action: |
-    Continue implementing parsers in order of complexity:
-    ✅ 1. link.py (COMPLETE - 28/28 tests passing)
-    ⏳ 2. citation.py (template parsing) - NEXT
-    ⏳ 3. infobox.py (most complex)
-    ⏳ 4. extraction pipeline (orchestration)
+    Phase 2 COMPLETE - all parsers implemented and tested.
+    160 tests passing across 6 test files.
 
-    For each parser:
-    1. Remove pytest.skip() from tests
-    2. Uncomment assertions
-    3. Implement code to pass tests
-    4. Run tests to verify
-    5. Refactor if needed
+    Ready for Phase 3:
+    1. Set up sembr server mode for batch processing
+    2. Create linebreaker.py wrapper module
+    3. Test on sample articles
+    4. Process full corpus
 
   test_status:
     link_parser: 28 passing
-    citation_parser: 28 skipped
-    infobox_parser: 24 skipped
-    extraction_pipeline: 22 skipped
-    total: 102 tests (28 passing, 74 skipped)
+    citation_parser: 48 passing
+    infobox_parser: 25 passing
+    library_work_parser: 25 passing
+    quote_parser: 12 passing
+    extraction_pipeline: 22 passing
+    total: 160 passing
 
 # =============================================================================
 # KEY DECISIONS
@@ -205,28 +250,41 @@ decisions:
 
   fixture_source:
     decision: Use prolewiki-exports/ for fixture extraction
-    rationale: Real corpus data, prolewiki-sembr-sample/ was only for exploration
+    rationale: Real corpus data ensures realistic test coverage
     date: 2024-12-14
 
   parser_order:
-    decision: Implement link -> citation -> infobox
-    rationale: Increasing complexity, link parser is foundation for others
+    decision: Implement link -> citation -> infobox -> library_work -> quote
+    rationale: Increasing complexity, foundational parsers first
     date: 2024-12-14
 
   type_stubs:
-    decision: Create proper stub files for mcp library instead of # type: ignore
-    rationale: |
-      Avoid "reward hacking" by suppressing type errors.
-      Proper stubs in stubs/mcp/ provide real type safety.
+    decision: Create proper stub files for mcp library instead of type-ignore comments
+    rationale: Proper stubs provide real type safety without suppressing errors
     date: 2025-12-14
     files:
       - stubs/mcp/__init__.pyi
       - stubs/mcp/server/__init__.pyi
       - stubs/mcp/server/fastmcp.pyi
 
+  mwparserfromhell:
+    decision: Use mwparserfromhell for template parsing, not regex
+    rationale: |
+      Handles nested templates, multiline, edge cases that regex cannot.
+      Already a project dependency.
+    date: 2025-12-14
+
+  generic_template_removal:
+    decision: Use mwparserfromhell to remove ALL templates from clean_text
+    rationale: |
+      Corpus has 948 unique template types (20,069 instances).
+      Specific parsers extract metadata, then all templates removed.
+      Ensures clean text for sembr and embeddings.
+    date: 2025-12-14
+
   lock_file_policy:
     decision: Exclude uv.lock from pre-commit large file check
-    rationale: Lock files are auto-generated, necessary for reproducibility, often exceed 500KB
+    rationale: Lock files are auto-generated, necessary for reproducibility
     date: 2025-12-14
 
 # =============================================================================
@@ -235,45 +293,100 @@ decisions:
 
 key_files:
   source_code:
-    - src/pw_mcp/ingest/parsers/types.py    # Dataclasses: Link, Citation, InfoboxData
-    - src/pw_mcp/ingest/parsers/link.py     # IMPLEMENTED - parse_links()
-    - src/pw_mcp/ingest/parsers/citation.py # Stub - parse_citations()
-    - src/pw_mcp/ingest/parsers/infobox.py  # Stub - parse_infobox()
-    - src/pw_mcp/ingest/cli.py
-    - src/pw_mcp/server.py
-    - src/pw_mcp/config.py
+    parsers:
+      - src/pw_mcp/ingest/parsers/__init__.py   # Public API exports
+      - src/pw_mcp/ingest/parsers/types.py      # Link, Citation, InfoboxData, LibraryWorkData, QuoteData, ArticleData
+      - src/pw_mcp/ingest/parsers/link.py       # parse_links() - 28 tests
+      - src/pw_mcp/ingest/parsers/citation.py   # parse_citations() - 48 tests
+      - src/pw_mcp/ingest/parsers/infobox.py    # parse_infobox() - 25 tests
+      - src/pw_mcp/ingest/parsers/library_work.py  # parse_library_work() - 25 tests
+      - src/pw_mcp/ingest/parsers/quote.py      # parse_quotes() - 12 tests
+    extraction:
+      - src/pw_mcp/ingest/extraction.py         # extract_article() - 22 tests
+    server:
+      - src/pw_mcp/server.py
+      - src/pw_mcp/config.py
+      - src/pw_mcp/ingest/cli.py
 
   type_stubs:
     - stubs/mcp/__init__.pyi
     - stubs/mcp/server/__init__.pyi
-    - stubs/mcp/server/fastmcp.pyi  # FastMCP type definitions
+    - stubs/mcp/server/fastmcp.pyi
 
   tests:
-    - tests/conftest.py
-    - tests/unit/extraction/test_infobox_parser.py
-    - tests/unit/extraction/test_citation_parser.py
-    - tests/unit/extraction/test_link_parser.py
-    - tests/integration/test_extraction_pipeline.py
+    unit:
+      - tests/unit/extraction/test_link_parser.py          # 28 tests
+      - tests/unit/extraction/test_citation_parser.py      # 48 tests
+      - tests/unit/extraction/test_infobox_parser.py       # 25 tests
+      - tests/unit/extraction/test_library_work_parser.py  # 25 tests
+      - tests/unit/extraction/test_quote_parser.py         # 12 tests
+    integration:
+      - tests/integration/test_extraction_pipeline.py      # 22 tests
+    config:
+      - tests/conftest.py
 
   fixtures:
-    - tests/fixtures/mediawiki/infoboxes/  # 7 types
-    - tests/fixtures/mediawiki/citations/  # 5 types
-    - tests/fixtures/mediawiki/links/      # 3 types
-    - tests/fixtures/mediawiki/edge_cases/ # unicode, nested, multiline
+    - tests/fixtures/mediawiki/infoboxes/     # 7 infobox type samples
+    - tests/fixtures/mediawiki/citations/     # 7 citation type samples
+    - tests/fixtures/mediawiki/links/         # 3 link type samples
+    - tests/fixtures/mediawiki/library_work/  # 7 library work samples
+    - tests/fixtures/mediawiki/quotes/        # 3 quote samples
+    - tests/fixtures/mediawiki/edge_cases/    # unicode, nested, multiline
 
   corpus:
-    - prolewiki-exports/Main/      # ~4000+ encyclopedia articles
-    - prolewiki-exports/Library/   # Full books (Marx, Lenin, etc.)
-    - prolewiki-exports/Essays/    # User-contributed essays
-    - prolewiki-exports/ProleWiki/ # Meta/admin pages
+    - prolewiki-exports/Main/       # ~4000+ encyclopedia articles
+    - prolewiki-exports/Library/    # Full books (Marx, Lenin, etc.)
+    - prolewiki-exports/Essays/     # User-contributed essays
+    - prolewiki-exports/ProleWiki/  # Meta/admin pages
 
   documentation:
-    - ai-docs/index.yaml           # This index
-    - ai-docs/chromadb.yaml        # ChromaDB reference
-    - ai-docs/chromadb-schema.yaml # Schema definition
-    - ai-docs/pipeline.yaml        # Pipeline architecture
-    - ai-docs/testing-plan.yaml    # Testing strategy
+    - ai-docs/index.yaml
+    - ai-docs/chromadb.yaml
+    - ai-docs/chromadb-schema.yaml
+    - ai-docs/pipeline.yaml
+    - ai-docs/testing-plan.yaml
     - ai-docs/project-status.yaml  # This file
+
+# =============================================================================
+# DATACLASS REFERENCE
+# =============================================================================
+
+dataclasses:
+  Link:
+    fields: [target, display, link_type, section, start, end]
+    link_types: [internal, category, external, interwiki]
+
+  Citation:
+    fields: |
+      type, title, author, year, url, lg_url, pdf_url, publisher,
+      newspaper, chapter, page, isbn, date, retrieved, channel,
+      quote, ref_name, link, published_location, translation_title,
+      translation_language
+    types: [book, web, news, youtube, video, library]
+
+  InfoboxData:
+    fields: [type, fields, remaining_text, extracted_links]
+    types: |
+      politician, country, political_party, person, revolutionary,
+      essay, philosopher, company, settlement, military_person,
+      organization, guerilla_organization, youtuber, military_conflict,
+      book, religion, website, transcript, flag
+
+  LibraryWorkData:
+    fields: |
+      title, author, authors, year, work_type, source_url,
+      published_location, translator, original_language,
+      publisher, audiobook_url, remaining_text
+
+  QuoteData:
+    fields: [text, attribution]
+
+  ArticleData:
+    fields: |
+      source_path, namespace, title, clean_text, sections,
+      categories, links, citations, infobox, library_work,
+      quotes, is_stub, citation_needed_count, has_blockquote,
+      reference_count
 
 # =============================================================================
 # COMMANDS
@@ -285,6 +398,7 @@ useful_commands:
     unit_only: mise run test-fast
     integration: mise run test-integration
     with_coverage: mise run test-cov
+    specific_file: uv run pytest tests/unit/extraction/test_citation_parser.py -v
 
   code_quality:
     lint: uv run ruff check src/ tests/
