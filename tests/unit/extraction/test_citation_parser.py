@@ -1,7 +1,7 @@
-"""Unit tests for citation parser (TDD Red Phase).
+"""Unit tests for citation parser (TDD Green Phase).
 
 These tests define the expected interface for the citation parser.
-The parser module does not exist yet - tests should SKIP initially.
+Tests now call the implemented parser and verify behavior.
 
 Citation types from ProleWiki:
 - {{Citation|...}} - Book citations with author, year, title, chapter, page, etc.
@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from pw_mcp.ingest.parsers.citation import parse_citations
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -25,61 +27,47 @@ class TestCitationDetection:
     @pytest.mark.unit
     def test_detect_book_citation(self, citation_template: str) -> None:
         """Should detect {{Citation}} template."""
-        # Expected interface:
-        # from pw_mcp.ingest.parsers.citation import parse_citations
-        # results = parse_citations(citation_template)
-        # assert len(results) == 1
-        # assert results[0].type == "book"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert len(results) == 1
+        assert results[0].type == "book"
 
     @pytest.mark.unit
     def test_detect_web_citation(self, web_citation: str) -> None:
         """Should detect {{Web citation}} template."""
-        # results = parse_citations(web_citation)
-        # assert len(results) == 1
-        # assert results[0].type == "web"
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert len(results) == 1
+        assert results[0].type == "web"
 
     @pytest.mark.unit
     def test_detect_news_citation(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should detect {{News citation}} template."""
         content = load_fixture("citations", "news_citation.txt")
-        # results = parse_citations(content)
-        # assert len(results) == 1
-        # assert results[0].type == "news"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert len(results) == 1
+        assert results[0].type == "news"
 
     @pytest.mark.unit
     def test_detect_youtube_citation(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should detect {{YouTube citation}} template."""
         content = load_fixture("citations", "youtube_citation.txt")
-        # results = parse_citations(content)
-        # assert len(results) == 1
-        # assert results[0].type == "youtube"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert len(results) == 1
+        assert results[0].type == "youtube"
 
     @pytest.mark.unit
     def test_detect_library_citation(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should detect {{Library citation}} template."""
         content = load_fixture("citations", "library_citation.txt")
-        # results = parse_citations(content)
-        # assert len(results) == 1
-        # assert results[0].type == "library"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert len(results) == 1
+        assert results[0].type == "library"
 
     @pytest.mark.unit
     def test_no_citations_returns_empty_list(self) -> None:
         """Should return empty list for text without citations."""
         text = "This is plain text with no citation templates."
-        # results = parse_citations(text)
-        # assert results == []
-        _ = text
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(text)
+        assert results == []
 
 
 class TestBookCitationFields:
@@ -88,67 +76,54 @@ class TestBookCitationFields:
     @pytest.mark.unit
     def test_extract_author(self, citation_template: str) -> None:
         """Should extract author field, handling [[links]]."""
-        # results = parse_citations(citation_template)
-        # assert results[0].author == "Domenico Losurdo"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].author == "Domenico Losurdo"
 
     @pytest.mark.unit
     def test_extract_year(self, citation_template: str) -> None:
         """Should extract year field."""
-        # results = parse_citations(citation_template)
-        # assert results[0].year == "2011"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].year == "2011"
 
     @pytest.mark.unit
     def test_extract_title(self, citation_template: str) -> None:
         """Should extract title field."""
-        # results = parse_citations(citation_template)
-        # assert results[0].title == "Liberalism: A Counter-History"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].title == "Liberalism: A Counter-History"
 
     @pytest.mark.unit
     def test_extract_chapter(self, citation_template: str) -> None:
         """Should extract chapter field."""
-        # results = parse_citations(citation_template)
-        # assert "Liberalism and Racial Slavery" in results[0].chapter
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].chapter is not None
+        assert "Liberalism and Racial Slavery" in results[0].chapter
 
     @pytest.mark.unit
     def test_extract_page(self, citation_template: str) -> None:
         """Should extract page number."""
-        # results = parse_citations(citation_template)
-        # assert results[0].page == "55"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].page == "55"
 
     @pytest.mark.unit
     def test_extract_publisher(self, citation_template: str) -> None:
         """Should extract publisher."""
-        # results = parse_citations(citation_template)
-        # assert results[0].publisher == "Verso"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].publisher == "Verso"
 
     @pytest.mark.unit
     def test_extract_isbn(self, citation_template: str) -> None:
         """Should extract ISBN."""
-        # results = parse_citations(citation_template)
-        # assert results[0].isbn == "9781844676934"
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].isbn == "9781844676934"
 
     @pytest.mark.unit
     def test_extract_urls(self, citation_template: str) -> None:
         """Should extract lg and pdf URLs."""
-        # results = parse_citations(citation_template)
-        # assert "libgen.rs" in results[0].lg_url
-        # assert "cloudflare-ipfs.com" in results[0].pdf_url
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].lg_url is not None
+        assert "libgen.rs" in results[0].lg_url
+        assert results[0].pdf_url is not None
+        assert "cloudflare-ipfs.com" in results[0].pdf_url
 
 
 class TestWebCitationFields:
@@ -157,42 +132,34 @@ class TestWebCitationFields:
     @pytest.mark.unit
     def test_extract_web_author(self, web_citation: str) -> None:
         """Should extract author from web citation."""
-        # results = parse_citations(web_citation)
-        # assert results[0].author == "Ed Rampell"
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].author == "Ed Rampell"
 
     @pytest.mark.unit
     def test_extract_newspaper(self, web_citation: str) -> None:
         """Should extract newspaper field, resolving [[links]]."""
-        # results = parse_citations(web_citation)
-        # assert results[0].newspaper == "CovertAction Magazine"
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].newspaper == "CovertAction Magazine"
 
     @pytest.mark.unit
     def test_extract_web_title(self, web_citation: str) -> None:
         """Should extract article title."""
-        # results = parse_citations(web_citation)
-        # assert "Oliver Stone" in results[0].title
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].title is not None
+        assert "Oliver Stone" in results[0].title
 
     @pytest.mark.unit
     def test_extract_web_date(self, web_citation: str) -> None:
         """Should extract date in ISO format."""
-        # results = parse_citations(web_citation)
-        # assert results[0].date == "2022-03-18"
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].date == "2022-03-18"
 
     @pytest.mark.unit
     def test_extract_url(self, web_citation: str) -> None:
         """Should extract URL."""
-        # results = parse_citations(web_citation)
-        # assert "covertactionmagazine.com" in results[0].url
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].url is not None
+        assert "covertactionmagazine.com" in results[0].url
 
 
 class TestNewsCitationFields:
@@ -202,19 +169,15 @@ class TestNewsCitationFields:
     def test_extract_news_newspaper(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract newspaper from news citation."""
         content = load_fixture("citations", "news_citation.txt")
-        # results = parse_citations(content)
-        # assert results[0].newspaper == "TeleSur"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].newspaper == "TeleSur"
 
     @pytest.mark.unit
     def test_extract_retrieved_date(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract retrieved date."""
         content = load_fixture("citations", "news_citation.txt")
-        # results = parse_citations(content)
-        # assert results[0].retrieved == "2022-04-23"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].retrieved == "2022-04-23"
 
 
 class TestYouTubeCitationFields:
@@ -224,29 +187,25 @@ class TestYouTubeCitationFields:
     def test_extract_channel(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract YouTube channel name."""
         content = load_fixture("citations", "youtube_citation.txt")
-        # results = parse_citations(content)
-        # assert results[0].channel == "The Kavernacle"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].channel == "The Kavernacle"
 
     @pytest.mark.unit
     def test_extract_youtube_url(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract YouTube URL with timestamp."""
         content = load_fixture("citations", "youtube_citation.txt")
-        # results = parse_citations(content)
-        # assert "youtube.com" in results[0].url
-        # assert "t=1680s" in results[0].url
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].url is not None
+        assert "youtube.com" in results[0].url
+        assert "t=1680s" in results[0].url
 
     @pytest.mark.unit
     def test_extract_quote(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract quote field."""
         content = load_fixture("citations", "youtube_citation.txt")
-        # results = parse_citations(content)
-        # assert "I don't want people" in results[0].quote
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].quote is not None
+        assert "I don't want people" in results[0].quote
 
 
 class TestLibraryCitationFields:
@@ -256,10 +215,8 @@ class TestLibraryCitationFields:
     def test_extract_library_link(self, load_fixture: "Callable[[str, str], str]") -> None:
         """Should extract link to Library namespace article."""
         content = load_fixture("citations", "library_citation.txt")
-        # results = parse_citations(content)
-        # assert results[0].link == "Ancient Civilisations of East and West"
-        _ = content
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(content)
+        assert results[0].link == "Ancient Civilisations of East and West"
 
 
 class TestMultipleCitations:
@@ -273,10 +230,8 @@ class TestMultipleCitations:
         More text.<ref>{{Web citation|url=http://example.com|title=Example}}</ref>
         Final text.<ref name=":0">{{Citation|author=Author2|title=Title2}}</ref>
         """
-        # results = parse_citations(text)
-        # assert len(results) == 3
-        _ = text
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(text)
+        assert len(results) == 3
 
     @pytest.mark.unit
     def test_handle_named_refs(self) -> None:
@@ -285,11 +240,9 @@ class TestMultipleCitations:
         First use.<ref name=":0">{{Citation|author=Test|title=Test}}</ref>
         Second use.<ref name=":0" />
         """
-        # results = parse_citations(text)
+        results = parse_citations(text)
         # Should return 1 unique citation, not 2
-        # assert len(results) == 1
-        _ = text
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        assert len(results) == 1
 
 
 class TestCitationEdgeCases:
@@ -299,20 +252,16 @@ class TestCitationEdgeCases:
     def test_citation_with_linked_author(self, citation_template: str) -> None:
         """Should strip [[]] from author name."""
         # Author is [[Domenico Losurdo]] in template
-        # results = parse_citations(citation_template)
-        # assert results[0].author == "Domenico Losurdo"
-        # assert "[[" not in results[0].author
-        _ = citation_template
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(citation_template)
+        assert results[0].author == "Domenico Losurdo"
+        assert "[[" not in results[0].author
 
     @pytest.mark.unit
     def test_citation_with_linked_newspaper(self, web_citation: str) -> None:
         """Should strip [[]] from newspaper name."""
         # Newspaper is [[CovertAction Magazine]] in template
-        # results = parse_citations(web_citation)
-        # assert results[0].newspaper == "CovertAction Magazine"
-        _ = web_citation
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(web_citation)
+        assert results[0].newspaper == "CovertAction Magazine"
 
     @pytest.mark.unit
     def test_citation_with_multiline_quote(self) -> None:
@@ -320,17 +269,15 @@ class TestCitationEdgeCases:
         text = """{{Web citation|title=Test|quote=This is a quote
 that spans multiple lines
 with line breaks.}}"""
-        # results = parse_citations(text)
-        # assert "multiple lines" in results[0].quote
-        _ = text
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(text)
+        assert results[0].quote is not None
+        assert "multiple lines" in results[0].quote
 
     @pytest.mark.unit
     def test_citation_with_special_characters_in_url(self) -> None:
         """Should preserve special characters in URLs."""
         text = """{{Web citation|url=https://example.com/path?param=value&other=123%20test}}"""
-        # results = parse_citations(text)
-        # assert "param=value" in results[0].url
-        # assert "123%20test" in results[0].url
-        _ = text
-        pytest.skip("Parser not implemented yet - TDD Red Phase")
+        results = parse_citations(text)
+        assert results[0].url is not None
+        assert "param=value" in results[0].url
+        assert "123%20test" in results[0].url

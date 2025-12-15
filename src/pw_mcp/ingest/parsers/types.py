@@ -11,8 +11,11 @@ from typing import Literal
 LinkType = Literal["internal", "category", "external"]
 """Type of MediaWiki link: internal [[]], category [[Category:]], or external []."""
 
-CitationType = Literal["citation", "web", "news", "library", "video", "youtube"]
-"""Type of citation template used in ProleWiki."""
+CitationType = Literal["book", "web", "news", "library", "youtube"]
+"""Type of citation template used in ProleWiki.
+
+Note: "book" corresponds to {{Citation|...}} template.
+"""
 
 InfoboxType = Literal[
     "politician",
@@ -64,38 +67,48 @@ class Citation:
     """Represents a citation/reference from MediaWiki.
 
     Attributes:
-        ref_type: Type of citation template (citation, web, news, etc.).
+        type: Type of citation template (book, web, news, youtube, library).
         title: Title of the cited work.
-        authors: List of author names.
-        year: Publication year.
+        author: Primary author name (wiki links stripped).
+        year: Publication year as string.
         url: Primary URL for the source.
         archive_url: Archive.org or similar backup URL.
         mia_url: Marxists Internet Archive URL.
+        lg_url: Library Genesis URL.
         pdf_url: Direct PDF link.
         publisher: Publisher name.
-        source_publication: Newspaper, journal, or website name.
-        volume: Volume number for journals/books.
-        pages: Page numbers or range.
+        newspaper: Newspaper/publication name (for web/news citations).
+        chapter: Chapter title (for book citations).
+        page: Page number or range.
+        isbn: ISBN number.
+        date: Publication date (ISO format YYYY-MM-DD).
+        retrieved: Date content was retrieved (ISO format).
+        channel: YouTube channel name.
         quote: Quoted text from the source.
         ref_name: Named reference identifier (for <ref name="...">).
-        library_link: Link to Library namespace article.
+        link: Link to Library namespace article.
     """
 
-    ref_type: CitationType
+    type: CitationType
     title: str | None = None
-    authors: list[str] = field(default_factory=list)
-    year: int | None = None
+    author: str | None = None
+    year: str | None = None
     url: str | None = None
     archive_url: str | None = None
     mia_url: str | None = None
+    lg_url: str | None = None
     pdf_url: str | None = None
     publisher: str | None = None
-    source_publication: str | None = None
-    volume: str | None = None
-    pages: str | None = None
+    newspaper: str | None = None
+    chapter: str | None = None
+    page: str | None = None
+    isbn: str | None = None
+    date: str | None = None
+    retrieved: str | None = None
+    channel: str | None = None
     quote: str | None = None
     ref_name: str | None = None
-    library_link: str | None = None
+    link: str | None = None
 
 
 @dataclass
