@@ -1,0 +1,9 @@
+{{Library work
+|title=Central Military Commission
+|author=Xi Jinping
+|publisher=People's Publishing House
+|published_date=2020
+|published_location=Beijing
+|type=Book
+|source=https://example.com/book
+}}

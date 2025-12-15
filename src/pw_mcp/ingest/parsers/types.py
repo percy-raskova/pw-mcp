@@ -131,6 +131,46 @@ class InfoboxData:
 
 
 @dataclass
+class LibraryWorkData:
+    """Represents parsed Library work template data.
+
+    Library work templates appear in ProleWiki Library namespace to provide
+    metadata about books, articles, speeches, and other works.
+
+    Attributes:
+        title: Title of the work (required).
+        author: Primary author name (wiki links stripped).
+        authors: List of authors when multiple (comma-separated in template).
+        work_type: Type of work (Book, Article, Speech, Song lyrics, etc.).
+        publisher: Publisher name.
+        published_date: Publication date (year or ISO format YYYY-MM-DD).
+        published_location: Location of publication (city).
+        edition_date: Edition year if different from original publication.
+        source_url: Primary source URL (from source= field).
+        pdf_url: Direct PDF link (from pdf= field).
+        translator: Name of translator (from translated by= field).
+        original_language: Original language of the work.
+        spoken_on: Date speech was delivered (for type=Speech).
+        remaining_text: Text with Library work template removed.
+    """
+
+    title: str
+    author: str | None = None
+    authors: list[str] = field(default_factory=list)
+    work_type: str | None = None
+    publisher: str | None = None
+    published_date: str | None = None
+    published_location: str | None = None
+    edition_date: str | None = None
+    source_url: str | None = None
+    pdf_url: str | None = None
+    translator: str | None = None
+    original_language: str | None = None
+    spoken_on: str | None = None
+    remaining_text: str = ""
+
+
+@dataclass
 class ArticleData:
     """Represents fully extracted article data from MediaWiki markup.
 

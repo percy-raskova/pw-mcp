@@ -46,6 +46,9 @@ from pw_mcp.ingest.parsers.infobox import (
     detect_infobox_type,
     parse_infobox,
 )
+from pw_mcp.ingest.parsers.library_work import (
+    parse_library_work,
+)
 from pw_mcp.ingest.parsers.link import (
     count_categories,
     count_internal_links,
@@ -58,6 +61,7 @@ from pw_mcp.ingest.parsers.types import (
     CitationType,
     InfoboxData,
     InfoboxType,
+    LibraryWorkData,
     Link,
     LinkType,
 )
@@ -68,6 +72,7 @@ __all__ = [
     "CitationType",
     "InfoboxData",
     "InfoboxType",
+    "LibraryWorkData",
     "Link",
     "LinkType",
     "count_categories",
@@ -76,6 +81,7 @@ __all__ = [
     "get_unique_targets",
     "parse_citations",
     "parse_infobox",
+    "parse_library_work",
     "parse_links",
     "parse_ref_tags",
 ]
