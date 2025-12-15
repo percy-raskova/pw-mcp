@@ -1,0 +1,588 @@
+# Phase 3: SEmBr (Semantic Linebreaking) Integration
+# Status: IMPLEMENTED - All tasks complete
+# Purpose: Complete specification for sembr integration in pw-mcp pipeline
+# Last updated: 2025-12-15
+
+# =============================================================================
+# OVERVIEW
+# =============================================================================
+
+overview:
+  purpose: |
+    Apply semantic linebreaking to clean_text output from Phase 2 extraction.
+    Each line in output represents roughly one semantic idea, enabling
+    intelligent chunking at idea boundaries rather than arbitrary word counts.
+
+  data_flow: |
+    extracted/articles/{ns}/{title}.json → clean_text field
+                         ↓
+    linebreaker.py (HTTP client to sembr server)
+                         ↓
+    sembr/{namespace}/{title}.txt
+
+  why_sembr: |
+    Without sembr: Long paragraphs chunked arbitrarily at word boundaries
+    With sembr: Text broken at semantic boundaries for coherent chunks
+
+    Example input:
+      "Stalin implemented the Five-Year Plans. These transformed the
+       Soviet Union from an agrarian society into an industrial power."
+
+    Example output:
+      "Stalin implemented the Five-Year Plans.
+       These transformed the Soviet Union
+       from an agrarian society
+       into an industrial power."
+
+  model: admko/sembr2023-distilbert-base-multilingual-cased
+  model_params: 135M parameters
+  multilingual_support: [English, Russian, Chinese, Spanish, German, French]
+
+# =============================================================================
+# SEMBR HTTP SERVER PROTOCOL
+# =============================================================================
+
+server_protocol:
+  description: |
+    sembr exposes a Flask HTTP server for batch processing.
+    Server mode keeps model loaded in memory, avoiding 9s startup per file.
+
+  startup_command: |
+    sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased
+
+  endpoints:
+    health_check:
+      path: /check
+      method: GET
+      response_example: |
+        {
+          "status": "success",
+          "model": "BertForTokenClassification",
+          "tokenizer": "DistilBertTokenizerFast",
+          "processor": "SemBrProcessor"
+        }
+      use_for: Verify server is running before batch processing
+
+    rewrap:
+      path: /rewrap
+      method: POST
+      content_type: application/x-www-form-urlencoded
+      request_fields:
+        text: "(required) Plain text to process"
+        batch_size: "(optional) Inference batch size, default 8"
+        predict_func: "(optional) argmax|logit_adjustment|greedy_linebreaks"
+        tokens_per_line: "(optional) Max tokens per line for greedy mode"
+        overlap_divisor: "(optional) Overlap for tiled inference, default 8"
+
+      success_response: |
+        {
+          "status": "success",
+          "model": "BertForTokenClassification",
+          "tokenizer": "DistilBertTokenizerFast",
+          "processor": "SemBrProcessor",
+          "batch_size": 8,
+          "predict_func": "argmax",
+          "text": "Processed text\nwith semantic\nline breaks."
+        }
+
+      error_response: |
+        {
+          "status": "error",
+          "model": "BertForTokenClassification",
+          "tokenizer": "DistilBertTokenizerFast",
+          "processor": "SemBrProcessor",
+          "error": "Error message",
+          "traceback": "Full Python traceback"
+        }
+
+  performance:
+    cli_mode: "~9 seconds per file (model load + inference)"
+    server_mode: "~0.2-0.5 seconds per file (inference only)"
+    speedup: "10-50x faster for batch processing"
+    full_corpus_estimate:
+      cli: "13-16 hours for 5,222 files"
+      server: "<2 hours for 5,222 files"
+
+# =============================================================================
+# MODULE DESIGN: linebreaker.py
+# =============================================================================
+
+module_design:
+  location: src/pw_mcp/ingest/linebreaker.py
+
+  dataclasses:
+    SembrConfig:
+      fields:
+        server_url: "str = 'http://localhost:8384'"
+        model_name: "str = 'admko/sembr2023-distilbert-base-multilingual-cased'"
+        timeout_seconds: "float = 60.0"
+        max_retries: "int = 3"
+        retry_delay_seconds: "float = 1.0"
+        batch_size: "int = 8"
+        predict_func: "str = 'argmax'"
+
+    SembrResult:
+      fields:
+        text: "str - Processed text with semantic line breaks"
+        line_count: "int - Number of output lines"
+        processing_time_ms: "float - Processing duration in milliseconds"
+        input_word_count: "int - Word count of input (for validation)"
+        output_word_count: "int - Word count of output (should match input)"
+
+  exceptions:
+    SembrError: "Base exception for all sembr errors"
+    SembrServerError: "Server unavailable or connection failed"
+    SembrTimeoutError: "Request timed out"
+    SembrContentError: "Content validation failed (word count mismatch)"
+
+  public_api:
+    check_server_health:
+      signature: "def check_server_health(config: SembrConfig | None = None) -> bool"
+      description: "Check if sembr server is running and responsive"
+      implementation: |
+        1. GET request to {config.server_url}/check
+        2. Return True if status code 200 and status="success"
+        3. Return False on connection error or timeout
+        4. Timeout: 0.3 seconds (fast fail)
+
+    process_text:
+      signature: |
+        async def process_text(
+            text: str,
+            config: SembrConfig | None = None
+        ) -> SembrResult
+      description: "Process text through sembr server"
+      implementation: |
+        1. Validate input (non-empty string)
+        2. If text is empty/whitespace only, return empty SembrResult
+        3. Count input words (for validation)
+        4. POST to {config.server_url}/rewrap with form data
+        5. Retry on failure (up to max_retries with exponential backoff)
+        6. Parse JSON response
+        7. Validate output word count matches input
+        8. Return SembrResult
+
+    process_file:
+      signature: |
+        async def process_file(
+            input_path: Path,
+            output_path: Path,
+            config: SembrConfig | None = None
+        ) -> SembrResult
+      description: "Process a single file through sembr"
+      implementation: |
+        1. Read input file (UTF-8)
+        2. Call process_text()
+        3. Create output directory if needed
+        4. Write output file (UTF-8)
+        5. Return result
+
+    process_batch:
+      signature: |
+        async def process_batch(
+            input_dir: Path,
+            output_dir: Path,
+            config: SembrConfig | None = None,
+            progress_callback: Callable[[int, int, str], None] | None = None,
+            max_concurrent: int = 10
+        ) -> list[SembrResult]
+      description: "Process all files in directory through sembr"
+      implementation: |
+        1. Glob for all .txt files in input_dir (recursive)
+        2. Check server health, raise if unavailable
+        3. For each file:
+           a. Compute output path (preserve namespace subdirs)
+           b. Call process_file()
+           c. Call progress_callback(current, total, filename)
+        4. Use asyncio.Semaphore for concurrency control
+        5. Return list of results
+
+  helper_functions:
+    _extract_clean_text_from_json:
+      signature: "def _extract_clean_text_from_json(json_path: Path) -> str"
+      description: "Extract clean_text field from extracted article JSON"
+
+    _validate_content_preservation:
+      signature: "def _validate_content_preservation(input_text: str, output_text: str) -> bool"
+      description: |
+        Validate that no content was lost during processing.
+        Compare word sets (order-independent) between input and output.
+
+# =============================================================================
+# CLI INTEGRATION
+# =============================================================================
+
+cli_integration:
+  location: src/pw_mcp/ingest/cli.py
+
+  subcommand: sembr
+  usage: "pw-ingest sembr [OPTIONS]"
+
+  options:
+    --input:
+      short: -i
+      description: "Input directory (extracted/ or cleaned/)"
+      default: extracted/
+
+    --output:
+      short: -o
+      description: "Output directory for sembr'd files"
+      default: sembr/
+
+    --server:
+      short: -s
+      description: "Sembr server URL"
+      default: "http://localhost:8384"
+
+    --check-only:
+      description: "Only check server health, don't process"
+      flag: true
+
+    --sample:
+      description: "Process only N files (for testing)"
+      type: int
+
+    --progress:
+      short: -p
+      description: "Show progress bar"
+      flag: true
+      default: true
+
+  example_usage: |
+    # Check server health
+    pw-ingest sembr --check-only
+
+    # Process full corpus
+    pw-ingest sembr -i extracted/ -o sembr/ --progress
+
+    # Test with 10 files
+    pw-ingest sembr -i extracted/ -o sembr/ --sample 10
+
+# =============================================================================
+# MISE TASKS
+# =============================================================================
+
+mise_tasks:
+  sembr-server:
+    description: "Start sembr server with best multilingual model"
+    command: |
+      uv run sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased
+    notes: |
+      - Run in separate terminal (stays running)
+      - Model loads once (~30s), then fast inference
+      - Must be running before sembr-process
+
+  sembr-check:
+    description: "Check if sembr server is responding"
+    command: |
+      curl -s http://localhost:8384/check | python -m json.tool
+    notes: "Returns JSON with model info if healthy"
+
+  sembr-process:
+    description: "Process corpus through sembr (requires sembr-server running)"
+    command: |
+      uv run pw-ingest sembr -i extracted/ -o sembr/ --progress
+    depends: "[sembr-server must be running]"
+
+  sembr-sample:
+    description: "Test sembr with 10 sample files"
+    command: |
+      uv run pw-ingest sembr -i extracted/ -o sembr/ --sample 10 --progress
+
+  sembr-test-text:
+    description: "Test sembr with inline text"
+    command: |
+      TEXT="Stalin implemented the Five-Year Plans. These transformed the USSR."
+      echo "$TEXT" | curl -s -X POST http://localhost:8384/rewrap \
+        -d "text=$(cat -)" | python -m json.tool
+
+# =============================================================================
+# TESTING STRATEGY
+# =============================================================================
+
+testing_strategy:
+  test_files:
+    unit_tests:
+      location: tests/unit/sembr/test_linebreaker.py
+      markers: [unit]
+      tests:
+        # Config tests
+        - test_sembr_config_defaults
+        - test_sembr_config_custom_values
+        - test_sembr_config_from_pyproject
+
+        # Result dataclass tests
+        - test_sembr_result_creation
+        - test_sembr_result_word_count_validation
+
+        # Health check tests (mocked)
+        - test_check_server_health_success
+        - test_check_server_health_connection_error
+        - test_check_server_health_timeout
+        - test_check_server_health_bad_response
+
+        # Process text tests (mocked HTTP)
+        - test_process_text_basic
+        - test_process_text_empty_input
+        - test_process_text_whitespace_only
+        - test_process_text_unicode_russian
+        - test_process_text_unicode_chinese
+        - test_process_text_preserves_all_words
+        - test_process_text_server_error_retry
+        - test_process_text_timeout_retry
+        - test_process_text_max_retries_exceeded
+        - test_process_text_content_validation_fails
+
+        # File processing tests
+        - test_process_file_creates_output_dir
+        - test_process_file_preserves_encoding
+        - test_process_file_handles_missing_input
+
+    integration_tests:
+      location: tests/integration/test_sembr_integration.py
+      markers: [integration]
+      requires: "sembr server running (mock or real)"
+      tests:
+        - test_process_batch_small_sample
+        - test_progress_callback_invoked
+        - test_output_directory_structure_preserved
+        - test_json_clean_text_extraction
+        - test_concurrent_processing
+
+    slow_tests:
+      location: tests/slow/test_sembr_slow.py
+      markers: [slow]
+      requires: "Real sembr server with model loaded"
+      tests:
+        - test_real_server_processing
+        - test_multilingual_content_russian
+        - test_multilingual_content_chinese
+        - test_large_library_document
+        - test_full_corpus_sample_100
+
+  fixtures:
+    input:
+      location: tests/fixtures/sembr/input/
+      files:
+        - simple_english.txt: "Basic English paragraph"
+        - russian_text.txt: "Russian content from Lenin"
+        - chinese_text.txt: "Chinese content sample"
+        - long_paragraph.txt: "500+ word paragraph"
+        - headers_preserved.txt: "Text with section headers"
+        - empty.txt: "Empty file"
+        - whitespace_only.txt: "Only whitespace"
+
+    expected:
+      location: tests/fixtures/sembr/expected/
+      files:
+        - simple_english.txt: "Expected sembr output"
+        - russian_text.txt: "Expected Russian output"
+        - chinese_text.txt: "Expected Chinese output"
+        - long_paragraph.txt: "Expected long output"
+        - headers_preserved.txt: "Headers unchanged"
+
+    mock_responses:
+      location: tests/fixtures/sembr/mock_responses/
+      files:
+        - success.json: "Successful /rewrap response"
+        - error.json: "Error response"
+        - health_check.json: "Successful /check response"
+
+  test_invariants:
+    content_preservation: |
+      # Critical invariant: no words lost
+      input_words = set(input_text.split())
+      output_words = set(output_text.split())
+      assert input_words == output_words
+
+    word_count_match: |
+      # Word count should be identical
+      assert len(input_text.split()) == len(output_text.split())
+
+    no_empty_lines_at_boundaries: |
+      # Output shouldn't start/end with blank lines
+      lines = output.strip().split('\n')
+      assert lines[0].strip()  # First line not empty
+      assert lines[-1].strip()  # Last line not empty
+
+# =============================================================================
+# EDGE CASES
+# =============================================================================
+
+edge_cases:
+  empty_input:
+    input: '""'
+    behavior: "Return empty string, don't call server"
+    test: test_process_text_empty_input
+
+  whitespace_only:
+    input: '"   \n\t\n   "'
+    behavior: "Return empty string, don't call server"
+    test: test_process_text_whitespace_only
+
+  very_long_document:
+    scenario: "Library namespace documents can be 46k+ lines"
+    behavior: |
+      - sembr handles internally via batch_size
+      - May need to increase timeout for very long docs
+      - Consider splitting if >100KB
+    test: test_large_library_document
+
+  multilingual_content:
+    scenario: "Russian, Chinese text in ProleWiki"
+    behavior: |
+      - Multilingual model handles correctly
+      - Unicode preserved in output
+      - Line breaks at semantic boundaries in native language
+    tests:
+      - test_multilingual_content_russian
+      - test_multilingual_content_chinese
+
+  section_headers:
+    scenario: "Lines that are section headers (from Phase 2 clean_text)"
+    behavior: |
+      - Headers passed through unchanged
+      - sembr doesn't add breaks within header text
+      - Headers remain on single line
+    test: test_headers_preserved
+
+  server_unavailable:
+    scenario: "sembr server not running when process_batch called"
+    behavior: |
+      - check_server_health() returns False
+      - Raise SembrServerError with clear message
+      - Suggest: "Start server with: mise run sembr-server"
+    test: test_check_server_health_connection_error
+
+  server_timeout:
+    scenario: "Server takes too long to respond"
+    behavior: |
+      - Retry up to max_retries times
+      - Exponential backoff between retries
+      - Eventually raise SembrTimeoutError
+    test: test_process_text_timeout_retry
+
+  content_validation_failure:
+    scenario: "Output has different word count than input"
+    behavior: |
+      - Raise SembrContentError
+      - Log both input and output word counts
+      - Include sample of missing/extra words
+    test: test_process_text_content_validation_fails
+
+# =============================================================================
+# IMPLEMENTATION TASKS (TDD)
+# =============================================================================
+
+implementation_tasks:
+  phase_3_1_test_infrastructure:
+    status: COMPLETE
+    completed_date: 2025-12-15
+    description: "Create test structure (Red Phase)"
+    results:
+      tests_written: 33
+      fixtures_created: 15
+      files_created:
+        - tests/unit/sembr/__init__.py
+        - tests/unit/sembr/test_linebreaker.py (33 tests)
+        - tests/slow/__init__.py
+        - tests/fixtures/sembr/input/ (7 files)
+        - tests/fixtures/sembr/expected/ (5 files)
+        - tests/fixtures/sembr/mock_responses/ (3 files)
+        - conftest.py (8 new fixtures)
+
+  phase_3_2_core_module:
+    status: COMPLETE
+    completed_date: 2025-12-15
+    description: "Implement linebreaker.py (Green Phase)"
+    results:
+      tests_passing: 33
+      lines_of_code: 487
+      file: src/pw_mcp/ingest/linebreaker.py
+      components:
+        - SembrConfig (frozen dataclass, 7 fields)
+        - SembrResult (dataclass, 5 fields)
+        - SembrError, SembrServerError, SembrTimeoutError, SembrContentError
+        - check_server_health() - sync HTTP GET
+        - process_text() - async with retry logic
+        - process_file() - async file I/O wrapper
+        - process_batch() - async with Semaphore concurrency
+        - _extract_clean_text_from_json() helper
+
+  phase_3_3_cli_integration:
+    status: COMPLETE
+    completed_date: 2025-12-15
+    description: "Add sembr CLI subcommand"
+    results:
+      lines_of_code: 362
+      file: src/pw_mcp/ingest/cli.py
+      cli_options: 8
+      mise_tasks_added:
+        - sembr-check
+        - sembr-process
+        - sembr-sample
+
+  phase_3_4_documentation:
+    status: COMPLETE
+    completed_date: 2025-12-15
+    description: "Update documentation"
+    files_updated:
+      - ai-docs/project-status.yaml
+      - ai-docs/sembr.yaml
+      - ai-docs/index.yaml
+      - ai-docs/pipeline.yaml
+      - ai-docs/testing-plan.yaml
+
+# =============================================================================
+# SUCCESS CRITERIA
+# =============================================================================
+
+success_criteria:
+  functionality:
+    - "All unit tests pass with mocked HTTP responses"
+    - "All integration tests pass with real sembr server"
+    - "CLI subcommand works for full corpus"
+    - "Progress bar displays during batch processing"
+
+  performance:
+    - "Full corpus (5,222 files) processed in <2 hours"
+    - "Single file processing <1 second average"
+    - "Server health check <500ms"
+
+  quality:
+    - "No content lost: input words == output words for all files"
+    - "Unicode preserved correctly (Russian, Chinese)"
+    - "Section headers passed through unchanged"
+    - "Proper error messages for server unavailable"
+
+  code_quality:
+    - "mypy strict mode passes"
+    - "ruff lint passes"
+    - "Test coverage >80% for linebreaker.py"
+    - "All functions have docstrings"
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  existing:
+    - httpx: "Async HTTP client (already in requirements)"
+    - sembr: "Semantic linebreaker CLI/server (already in requirements)"
+
+  new_required: []
+
+  pyproject_config:
+    section: "[tool.pw-mcp]"
+    keys:
+      sembr_model: "admko/sembr2023-distilbert-base-multilingual-cased"
+      sembr_server_url: "http://localhost:8384"
+      sembr_timeout_seconds: 60.0
+
+# =============================================================================
+# SOURCES
+# =============================================================================
+
+sources:
+  sembr_github: https://github.com/admk/sembr
+  sembr_spec: https://sembr.org/
