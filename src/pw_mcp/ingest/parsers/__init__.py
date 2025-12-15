@@ -53,6 +53,7 @@ from pw_mcp.ingest.parsers.link import (
     parse_links,
 )
 from pw_mcp.ingest.parsers.types import (
+    ArticleData,
     Citation,
     CitationType,
     InfoboxData,
@@ -62,6 +63,7 @@ from pw_mcp.ingest.parsers.types import (
 )
 
 __all__ = [
+    "ArticleData",
     "Citation",
     "CitationType",
     "InfoboxData",

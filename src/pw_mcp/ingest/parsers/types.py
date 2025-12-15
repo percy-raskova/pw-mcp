@@ -128,3 +128,38 @@ class InfoboxData:
     remaining_text: str
     extracted_links: list[str] = field(default_factory=list)
     raw_fields: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ArticleData:
+    """Represents fully extracted article data from MediaWiki markup.
+
+    This is the output of the extraction pipeline, combining results from
+    all parsers (infobox, citation, link) with additional metadata.
+
+    Attributes:
+        clean_text: Article text with all markup removed (infoboxes, refs,
+            categories, formatting). Internal links are converted to plain text.
+        infobox: Parsed infobox data if present, None otherwise.
+        citations: All citations extracted from <ref> tags and templates.
+        internal_links: All internal [[links]] found in the article.
+        categories: List of category names (from [[Category:X]] links).
+        sections: List of section headers (from == Header == markup).
+        namespace: ProleWiki namespace (Main, Library, Essays, ProleWiki).
+        reference_count: Total count of <ref> tags in the article.
+        is_stub: True if article contains {{Stub}} template.
+        citation_needed_count: Number of {{Citation needed}} templates.
+        has_blockquote: True if article contains <blockquote> tags.
+    """
+
+    clean_text: str
+    infobox: InfoboxData | None
+    citations: list[Citation]
+    internal_links: list[Link]
+    categories: list[str]
+    sections: list[str]
+    namespace: str
+    reference_count: int
+    is_stub: bool
+    citation_needed_count: int
+    has_blockquote: bool
