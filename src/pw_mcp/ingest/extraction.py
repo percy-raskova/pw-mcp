@@ -14,8 +14,11 @@ The extraction pipeline:
 
 from __future__ import annotations
 
+import contextlib
 import re
 from typing import Final
+
+import mwparserfromhell
 
 from pw_mcp.ingest.parsers import (
     ArticleData,
@@ -233,6 +236,42 @@ def _convert_links_to_text(text: str) -> str:
     return INTERNAL_LINK_PATTERN.sub(replace_link, text)
 
 
+def _strip_all_templates(text: str) -> str:
+    """Remove all MediaWiki templates from text using mwparserfromhell.
+
+    This function removes ALL {{template|...}} constructs from the text,
+    regardless of template type. This is essential for generating clean
+    text suitable for semantic linebreaking and embedding.
+
+    Uses mwparserfromhell for reliable parsing of nested templates,
+    multiline templates, and edge cases that regex cannot handle.
+
+    Args:
+        text: MediaWiki markup text potentially containing templates.
+
+    Returns:
+        Text with all templates removed.
+
+    Examples:
+        >>> _strip_all_templates("Hello {{Citation|...}} world")
+        'Hello  world'
+        >>> _strip_all_templates("{{Infobox}}Content{{Navbox}}")
+        'Content'
+    """
+    try:
+        wikicode = mwparserfromhell.parse(text)
+        # Get all templates and remove them
+        for template in wikicode.filter_templates():
+            # Template may already be removed (nested templates)
+            with contextlib.suppress(ValueError):
+                wikicode.remove(template)
+        return str(wikicode)
+    except Exception:
+        # Fallback: if mwparserfromhell fails, return original text
+        # This should be rare but ensures robustness
+        return text
+
+
 def _generate_clean_text(
     text: str,
     infobox: InfoboxData | None,
@@ -241,10 +280,10 @@ def _generate_clean_text(
 
     Removes:
     - Infobox (uses remaining_text from parsed infobox)
+    - ALL {{templates}} (using mwparserfromhell)
     - [[Category:X]] links
     - <ref>...</ref> tags
     - <references /> tags
-    - {{Stub}} and {{Citation needed}} templates
     - Wiki formatting (bold/italic)
 
     Converts:
@@ -277,11 +316,9 @@ def _generate_clean_text(
     # Remove [[Category:X]] links
     clean = CATEGORY_LINK_PATTERN.sub("", clean)
 
-    # Remove {{Stub}} templates
-    clean = STUB_TEMPLATE_PATTERN.sub("", clean)
-
-    # Remove {{Citation needed}} templates
-    clean = CITATION_NEEDED_PATTERN.sub("", clean)
+    # Remove ALL templates using mwparserfromhell
+    # This handles 948+ template types including Citation, Quote, Navbox, etc.
+    clean = _strip_all_templates(clean)
 
     # Convert [[links]] to plain text
     clean = _convert_links_to_text(clean)
