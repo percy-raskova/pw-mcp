@@ -304,6 +304,11 @@ def _create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable progress output",
     )
+    extract_parser.add_argument(
+        "--flat",
+        action="store_true",
+        help="Process flat directory (infer namespace from filename prefix: Essay_, Library_, etc.)",
+    )
 
     # =========================================================================
     # SEMBR SUBCOMMAND
@@ -583,6 +588,24 @@ def _create_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _infer_namespace_from_filename(filename: str) -> str:
+    """Infer namespace from filename prefix for flat directory mode.
+
+    Args:
+        filename: The filename to analyze
+
+    Returns:
+        Namespace string: "Essays", "Library", "ProleWiki", or "Main" (default)
+    """
+    if filename.startswith("Essay_"):
+        return "Essays"
+    if filename.startswith("Library_"):
+        return "Library"
+    if filename.startswith("ProleWiki_"):
+        return "ProleWiki"
+    return "Main"
+
+
 def _run_extract_process(args: argparse.Namespace) -> int:
     """Run extraction process on MediaWiki source files.
 
@@ -600,6 +623,7 @@ def _run_extract_process(args: argparse.Namespace) -> int:
     output_dir: Path = args.output
     sample_count: int | None = args.sample
     show_progress: bool = not args.no_progress
+    flat_mode: bool = args.flat
 
     # Validate input directory
     if not input_dir.exists():
@@ -611,13 +635,20 @@ def _run_extract_process(args: argparse.Namespace) -> int:
     print("=" * 40)
     print(f"Input:     {input_dir}")
     print(f"Output:    {output_dir}")
+    if flat_mode:
+        print("Mode:      flat (namespace from filename prefix)")
 
-    # Discover input files (organized by namespace subdirectories)
+    # Discover input files
     input_files: list[Path] = []
-    for subdir in ["Main", "Library", "Essays", "ProleWiki"]:
-        namespace_dir = input_dir / subdir
-        if namespace_dir.exists():
-            input_files.extend(namespace_dir.rglob("*.txt"))
+    if flat_mode:
+        # Flat mode: find all .txt files, infer namespace from filename
+        input_files = list(input_dir.rglob("*.txt"))
+    else:
+        # Standard mode: organized by namespace subdirectories
+        for subdir in ["Main", "Library", "Essays", "ProleWiki"]:
+            namespace_dir = input_dir / subdir
+            if namespace_dir.exists():
+                input_files.extend(namespace_dir.rglob("*.txt"))
 
     total_available = len(input_files)
 
@@ -629,11 +660,14 @@ def _run_extract_process(args: argparse.Namespace) -> int:
     files_to_process: list[Path] = []
     skipped_count = 0
     for input_file in input_files:
-        # Determine namespace from path
-        relative_to_input = input_file.relative_to(input_dir)
-        namespace = relative_to_input.parts[0] if relative_to_input.parts else "Main"
+        # Determine namespace from filename (flat) or path (standard)
+        if flat_mode:
+            namespace = _infer_namespace_from_filename(input_file.name)
+        else:
+            relative_to_input = input_file.relative_to(input_dir)
+            namespace = relative_to_input.parts[0] if relative_to_input.parts else "Main"
 
-        # Output structure: extracted/{namespace}/{filename}.txt
+        # Output structure: extracted/{namespace}/{filename}.json
         output_file = output_dir / namespace / input_file.name
 
         if output_file.exists():
@@ -670,9 +704,12 @@ def _run_extract_process(args: argparse.Namespace) -> int:
 
     try:
         for i, input_file in enumerate(files_to_process):
-            # Determine namespace from path
-            relative_to_input = input_file.relative_to(input_dir)
-            namespace = relative_to_input.parts[0] if relative_to_input.parts else "Main"
+            # Determine namespace from filename (flat) or path (standard)
+            if flat_mode:
+                namespace = _infer_namespace_from_filename(input_file.name)
+            else:
+                relative_to_input = input_file.relative_to(input_dir)
+                namespace = relative_to_input.parts[0] if relative_to_input.parts else "Main"
 
             # Progress reporting
             if show_progress:
