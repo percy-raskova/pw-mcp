@@ -1,0 +1,559 @@
+# Embedding Documentation - Phase 5
+# Purpose: Vector embedding generation for semantic search
+# Status: IMPLEMENTED - Phase 5 COMPLETE
+# Dependencies: Phase 4 (chunks/*.jsonl)
+
+overview:
+  goal: Generate 768-dimensional vector embeddings for all chunks
+  input: chunks/{namespace}/{title}.jsonl
+  output: embeddings/{namespace}/{title}.npy
+  model: Ollama embeddinggemma (Gemma3-based, 307M params)
+
+# =============================================================================
+# MODEL SPECIFICATION
+# =============================================================================
+
+model:
+  name: embeddinggemma
+  provider: Ollama (local)
+  dimensions: 768
+  max_tokens: 2048
+  normalization: L2-normalized (unit vectors)
+
+  performance:
+    note: Benchmarks needed during implementation
+    estimated_throughput: 50-100 chunks/second (batch of 32)
+    estimated_corpus_time: 3-10 minutes for ~26,000 chunks
+
+  installation: |
+    # Pull the model (one-time setup)
+    ollama pull embeddinggemma
+
+    # Verify it's available
+    ollama list | grep embeddinggemma
+
+  why_embeddinggemma: |
+    - Local/private: No data leaves the machine
+    - Fast: Optimized for embedding generation
+    - Quality: Gemma3-based, good semantic understanding
+    - Size: 307M params, reasonable memory footprint
+    - Already available in Ollama ecosystem
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+config:
+  dataclass: EmbedConfig
+  frozen: true
+  fields:
+    model:
+      type: str
+      default: "embeddinggemma"
+      description: Ollama model name for embeddings
+
+    dimensions:
+      type: int
+      default: 768
+      description: Expected embedding dimensions (for validation)
+
+    batch_size:
+      type: int
+      default: 32
+      description: Number of texts per Ollama API call
+      notes: |
+        Higher = better throughput but more memory
+        32 is a good balance for most GPUs
+        Reduce if OOM errors occur
+
+    ollama_host:
+      type: str
+      default: "http://localhost:11434"
+      description: Ollama server URL
+
+    max_retries:
+      type: int
+      default: 3
+      description: Retry attempts on API failure
+
+    retry_delay:
+      type: float
+      default: 1.0
+      description: Initial delay between retries (exponential backoff)
+
+# =============================================================================
+# DATA STRUCTURES
+# =============================================================================
+
+dataclasses:
+  EmbeddedArticle:
+    description: Article with generated embeddings
+    fields:
+      article_title:
+        type: str
+        description: Article title (from JSONL)
+
+      namespace:
+        type: str
+        description: ProleWiki namespace
+
+      num_chunks:
+        type: int
+        description: Number of chunks embedded
+
+      embeddings:
+        type: np.ndarray
+        shape: (num_chunks, 768)
+        dtype: float32
+        description: Embedding vectors in chunk order
+
+# =============================================================================
+# PUBLIC API
+# =============================================================================
+
+public_api:
+  functions:
+    embed_texts:
+      signature: "def embed_texts(texts: list[str], config: EmbedConfig) -> np.ndarray"
+      description: Embed a batch of texts
+      returns: "np.ndarray of shape (len(texts), 768)"
+      notes: |
+        - Handles batching internally based on config.batch_size
+        - Returns empty array for empty input
+        - Raises OllamaConnectionError if server unreachable
+
+    embed_article_chunks:
+      signature: "def embed_article_chunks(jsonl_path: Path, config: EmbedConfig) -> EmbeddedArticle"
+      description: Embed all chunks from a JSONL file
+      notes: |
+        - Reads JSONL, extracts "text" field from each line
+        - Preserves chunk order (important for Stage 6 loading)
+        - Extracts namespace from path structure
+
+    write_embeddings_npy:
+      signature: "def write_embeddings_npy(article: EmbeddedArticle, output_path: Path) -> None"
+      description: Save embeddings to .npy file
+      notes: |
+        - Creates parent directories if needed
+        - Uses np.save() with allow_pickle=False
+        - File contains shape (num_chunks, 768) float32 array
+
+    check_ollama_ready:
+      signature: "def check_ollama_ready(config: EmbedConfig) -> bool"
+      description: Pre-flight check for Ollama server
+      notes: |
+        - Attempts test embedding
+        - Verifies model returns expected dimensions
+        - Returns False on any error
+
+  exceptions:
+    OllamaConnectionError:
+      description: Server not reachable
+
+    OllamaModelError:
+      description: Model not available or returned wrong dimensions
+
+# =============================================================================
+# OLLAMA INTEGRATION
+# =============================================================================
+
+ollama_integration:
+  library: ollama (Python package)
+  install: "uv add ollama"
+
+  usage_pattern: |
+    from ollama import embed
+
+    response = embed(
+        model='embeddinggemma',
+        input=['text1', 'text2', 'text3']  # Batch support!
+    )
+    embeddings = response.embeddings  # List of lists
+    # len(embeddings) == 3
+    # len(embeddings[0]) == 768
+
+  async_pattern: |
+    from ollama import AsyncClient
+
+    async def embed_async(texts: list[str]) -> list[list[float]]:
+        client = AsyncClient()
+        response = await client.embed(
+            model='embeddinggemma',
+            input=texts
+        )
+        return response.embeddings
+
+  api_endpoint: |
+    POST /api/embed
+    {
+      "model": "embeddinggemma",
+      "input": ["text1", "text2", ...]
+    }
+
+    Response:
+    {
+      "embeddings": [[0.1, 0.2, ...], [0.3, 0.4, ...]]
+    }
+
+# =============================================================================
+# OUTPUT FORMAT
+# =============================================================================
+
+output_format:
+  file_structure: embeddings/{namespace}/{title}.npy
+
+  npy_spec:
+    format: NumPy binary (.npy)
+    dtype: float32
+    shape: (num_chunks, 768)
+    notes: |
+      - Chunk order matches JSONL line order
+      - embeddings[i] corresponds to chunk_index i
+      - Can be loaded with: np.load(path)
+      - Memory-mappable with: np.load(path, mmap_mode='r')
+
+  example:
+    input: chunks/Main/Five-Year_Plans.jsonl (5 chunks)
+    output: embeddings/Main/Five-Year_Plans.npy
+    shape: (5, 768)
+    size: ~15KB (5 * 768 * 4 bytes)
+
+  alignment_with_chunks: |
+    CRITICAL: Embedding order must match JSONL line order!
+
+    chunks/Main/Article.jsonl:
+      Line 0: {"chunk_index": 0, "text": "..."}
+      Line 1: {"chunk_index": 1, "text": "..."}
+      Line 2: {"chunk_index": 2, "text": "..."}
+
+    embeddings/Main/Article.npy:
+      embeddings[0] = vector for chunk_index 0
+      embeddings[1] = vector for chunk_index 1
+      embeddings[2] = vector for chunk_index 2
+
+    Stage 6 loading relies on this alignment!
+
+# =============================================================================
+# CLI INTEGRATION
+# =============================================================================
+
+cli:
+  subcommand: embed
+  description: Generate vector embeddings for chunks
+
+  options:
+    input:
+      flags: [-i, --input]
+      type: Path
+      default: chunks/
+      description: Input directory with JSONL chunk files
+
+    output:
+      flags: [-o, --output]
+      type: Path
+      default: embeddings/
+      description: Output directory for NPY embedding files
+
+    sample:
+      flags: [--sample]
+      type: int
+      default: null
+      description: Process only N random files for testing
+
+    no_progress:
+      flags: [--no-progress]
+      type: bool
+      default: false
+      description: Disable progress display
+
+    model:
+      flags: [--model]
+      type: str
+      default: embeddinggemma
+      description: Ollama embedding model name
+
+    batch_size:
+      flags: [--batch-size]
+      type: int
+      default: 32
+      description: Chunks per Ollama API call
+
+    host:
+      flags: [--host]
+      type: str
+      default: http://localhost:11434
+      description: Ollama server URL
+
+  usage_examples:
+    check_sample: pw-ingest embed --sample 10
+    full_corpus: pw-ingest embed -i chunks/ -o embeddings/
+    custom_batch: pw-ingest embed --batch-size 64
+    remote_ollama: pw-ingest embed --host http://gpu-server:11434
+
+  exit_codes:
+    0: Success
+    1: Error (Ollama not available, no files found)
+    130: Keyboard interrupt
+
+# =============================================================================
+# PROCESSING LOGIC
+# =============================================================================
+
+processing:
+  algorithm: |
+    1. Pre-flight check: verify Ollama is running with correct model
+    2. Discover all .jsonl files in input directory
+    3. For each file (with progress bar):
+       a. Check if corresponding .npy exists → skip (resume support)
+       b. Read JSONL, extract "text" field from each line
+       c. Batch texts into groups of batch_size
+       d. For each batch:
+          - Call ollama.embed(model, input=batch)
+          - Collect embedding vectors
+          - Handle retries on failure
+       e. Stack all embeddings into numpy array
+       f. Save as .npy in output directory (preserving namespace)
+    4. Report summary statistics
+
+  resume_support: |
+    If embeddings/{namespace}/{title}.npy exists:
+      - Skip processing that article
+      - Log "Skipping (already embedded)"
+
+    This enables:
+      - Resuming interrupted runs
+      - Incremental updates (re-run after adding new chunks)
+
+  error_handling: |
+    Connection Error:
+      - Fail fast with clear message: "Ollama not available at {host}"
+      - Suggest: "Run 'ollama serve' or check --host parameter"
+
+    Model Error:
+      - Fail fast: "Model 'embeddinggemma' not found"
+      - Suggest: "Run 'ollama pull embeddinggemma'"
+
+    Per-Article Error:
+      - Log error, skip article, continue processing
+      - Report failed articles at end
+      - Return exit code 1 if any failures
+
+# =============================================================================
+# TESTING STRATEGY
+# =============================================================================
+
+testing:
+  structure:
+    unit:
+      - tests/unit/embedding/__init__.py
+      - tests/unit/embedding/test_embedder.py
+      - tests/unit/embedding/test_embed_cli.py
+    slow:
+      - tests/slow/test_embedding_slow.py
+    fixtures:
+      - tests/fixtures/embedding/sample_chunks.jsonl
+
+  test_categories:
+    config_tests:
+      count: 4
+      tests:
+        - test_embed_config_defaults
+        - test_embed_config_custom_values
+        - test_embed_config_frozen
+        - test_embed_config_validation
+
+    embed_texts_tests:
+      count: 8
+      tests:
+        - test_embed_texts_single
+        - test_embed_texts_batch
+        - test_embed_texts_batching_at_limit
+        - test_embed_texts_empty_list
+        - test_embed_texts_returns_numpy
+        - test_embed_texts_correct_shape
+        - test_embed_texts_correct_dtype
+        - test_embed_texts_retry_on_failure
+
+    embed_article_tests:
+      count: 5
+      tests:
+        - test_embed_article_reads_jsonl
+        - test_embed_article_extracts_text
+        - test_embed_article_preserves_order
+        - test_embed_article_extracts_metadata
+        - test_embed_article_handles_empty
+
+    write_tests:
+      count: 4
+      tests:
+        - test_write_embeddings_creates_file
+        - test_write_embeddings_correct_shape
+        - test_write_embeddings_loadable
+        - test_write_embeddings_creates_dirs
+
+    cli_tests:
+      count: 10
+      tests:
+        - test_embed_subcommand_exists
+        - test_embed_input_default
+        - test_embed_output_default
+        - test_embed_model_default
+        - test_embed_batch_size_default
+        - test_embed_sample_limits_files
+        - test_embed_skip_existing_npy
+        - test_embed_validates_ollama
+        - test_embed_progress_reports
+        - test_embed_preserves_namespace
+
+    integration_tests:
+      count: 4
+      marker: "@pytest.mark.slow"
+      requires: Ollama running with embeddinggemma
+      tests:
+        - test_embed_real_chunk
+        - test_embedding_dimensions
+        - test_embedding_normalized
+        - test_embedding_deterministic
+
+  mock_strategy: |
+    Use unittest.mock.patch to mock ollama.embed:
+
+    @patch('pw_mcp.ingest.embedder.embed')
+    def test_embed_texts(mock_embed):
+        mock_embed.return_value = MagicMock(
+            embeddings=[[0.1] * 768, [0.2] * 768]
+        )
+        result = embed_texts(["a", "b"], config)
+        assert result.shape == (2, 768)
+        mock_embed.assert_called_once()
+
+  fixtures:
+    sample_chunks_jsonl: |
+      {"chunk_id": "Main/Test#0", "text": "First chunk text.", "chunk_index": 0}
+      {"chunk_id": "Main/Test#1", "text": "Second chunk text.", "chunk_index": 1}
+      {"chunk_id": "Main/Test#2", "text": "Third chunk text.", "chunk_index": 2}
+
+# =============================================================================
+# IMPLEMENTATION PHASES (TDD)
+# =============================================================================
+
+implementation:
+  phase_5_1:
+    name: Test Infrastructure (Red Phase)
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tasks:
+      - Create tests/unit/embedding/ directory structure
+      - Create test_embedder.py with 21 tests (pytest.skip)
+      - Create test_embed_cli.py with 10 tests (pytest.skip)
+      - Create tests/fixtures/embedding/sample_chunks.jsonl
+      - Update conftest.py with 6 embedding fixtures
+    deliverables:
+      - tests/unit/embedding/__init__.py
+      - tests/unit/embedding/test_embedder.py (21 tests)
+      - tests/unit/embedding/test_embed_cli.py (10 tests)
+      - tests/fixtures/embedding/sample_chunks.jsonl (5 chunks)
+
+  phase_5_2:
+    name: Core Embedder Module (Green Phase)
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 21 passing
+    tasks:
+      - Add ollama>=0.4.0 dependency to pyproject.toml
+      - Create src/pw_mcp/ingest/embedder.py
+      - Implement EmbedConfig dataclass (frozen, validated)
+      - Implement EmbeddedArticle dataclass
+      - Implement embed_texts() with batching and retry logic
+      - Implement embed_article_chunks()
+      - Implement write_embeddings_npy()
+      - Implement check_ollama_ready()
+      - Custom exceptions (OllamaConnectionError, OllamaModelError)
+      - All 21 unit tests pass (with mocked Ollama)
+    deliverables:
+      - src/pw_mcp/ingest/embedder.py (complete)
+
+  phase_5_3:
+    name: CLI Integration
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 10 passing
+    tasks:
+      - Add "embed" subcommand to cli.py (7 options)
+      - Implement pre-flight Ollama health check
+      - Implement progress display ([n/total] format)
+      - Implement resume support (skip existing .npy)
+      - Preserve namespace directory structure
+      - All 10 CLI tests pass
+    deliverables:
+      - Updated src/pw_mcp/ingest/cli.py
+
+  phase_5_4:
+    name: Integration Tests + Documentation
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 4 passing (slow)
+    tasks:
+      - Add slow integration tests (requires live Ollama)
+      - Update ai-docs/ with final status
+    deliverables:
+      - tests/slow/test_embedding_slow.py (4 tests)
+      - tests/conftest.py (require_ollama_server fixture)
+      - Updated ai-docs/ documentation
+
+# =============================================================================
+# SUCCESS CRITERIA
+# =============================================================================
+
+success_criteria:
+  functionality:
+    - All 35 tests pass (21 embedder + 10 CLI + 4 slow/integration)
+    - Can process full corpus without errors
+    - Output NPY files match chunk count
+    - Resume support works correctly
+
+  quality:
+    - Pre-commit hooks pass (ruff, mypy)
+    - No type errors
+    - Documentation complete
+
+  performance:
+    - Full corpus embedded in < 15 minutes
+    - Memory usage < 2GB during processing
+    - Batch processing provides speedup over sequential
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  required:
+    - Phase 4 chunking (chunks/*.jsonl files)
+    - Ollama server running
+    - embeddinggemma model pulled
+
+  python_packages:
+    - ollama  # Ollama Python client
+    - numpy   # Already in project
+
+  system:
+    - Ollama installed and running
+    - GPU recommended but CPU works
+
+# =============================================================================
+# MISE TASKS
+# =============================================================================
+
+mise_tasks:
+  embed-check:
+    description: Verify Ollama and embeddinggemma are available
+    command: |
+      ollama list | grep -q embeddinggemma && echo "Ready" || echo "Run: ollama pull embeddinggemma"
+
+  embed-sample:
+    description: Test embedding with sample files
+    command: uv run pw-ingest embed --sample 10
+
+  embed-process:
+    description: Embed full corpus
+    command: uv run pw-ingest embed -i chunks/ -o embeddings/

@@ -13,6 +13,9 @@ dependencies = [
     "httpx>=0.28.0",
     "sembr>=0.2.0",
     "pydantic>=2.0.0",
+    "ollama>=0.4.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [dependency-groups]
@@ -127,6 +130,11 @@ module = [
     "sentence_transformers.*",
     "mwparserfromhell.*",
     "sembr.*",
+    "ollama",
+    "ollama.*",
+    "openai",
+    "openai.*",
+    "dotenv.*",
 ]
 ignore_missing_imports = true
 
@@ -144,6 +152,13 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+# =============================================================================
+# UV SOURCE OVERRIDES (for local development)
+# =============================================================================
+[tool.uv.sources]
+# Use local sembr with graceful CUDA shutdown fixes
+sembr = { path = "/home/user/projects/sembr", editable = true }
 
 # =============================================================================
 # PW-MCP PROJECT CONFIGURATION
