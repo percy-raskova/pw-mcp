@@ -198,40 +198,89 @@ description = "Clear ChromaDB and reload all data"
 run = "uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/ --reset"
 
 # =============================================================================
-# FULL PIPELINE
+# FULL CORPUS PIPELINE (individual stage commands)
 # =============================================================================
 
-[tasks.pipeline]
-description = "Run full pipeline: extract → sembr → chunk → embed → load"
+[tasks.corpus-status]
+description = "Show full corpus pipeline status"
 run = """
-echo "Starting full pipeline..."
+echo "=== Full Corpus Pipeline Status ==="
+printf "%-12s %s files\n" "Source:" "$(find prolewiki-exports -name '*.txt' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Extracted:" "$(find extracted -name '*.json' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Sembr'd:" "$(find sembr -name '*.txt' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Chunks:" "$(find chunks -name '*.jsonl' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Embeddings:" "$(find embeddings -name '*.npy' 2>/dev/null | wc -l)"
+"""
+
+[tasks.corpus-extract]
+description = "Stage 1: Extract articles from MediaWiki markup"
+run = "uv run pw-ingest extract -i prolewiki-exports/ -o extracted/"
+
+[tasks.corpus-sembr]
+description = "Stage 2: Semantic linebreaking (requires sembr server)"
+depends = ["sembr-check"]
+run = "uv run pw-ingest sembr -i extracted/ -o sembr/"
+
+[tasks.corpus-chunk]
+description = "Stage 3: Chunk sembr'd text into embedding segments"
+run = "uv run pw-ingest chunk -i sembr/ -o chunks/"
+
+[tasks.corpus-embed]
+description = "Stage 4: Generate embeddings (OpenAI)"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai"
+
+[tasks.corpus-embed-ollama]
+description = "Stage 4: Generate embeddings (Ollama local)"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider ollama"
+
+[tasks.corpus-load]
+description = "Stage 5: Load into ChromaDB"
+run = "uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/"
+
+[tasks.corpus-pipeline]
+description = "Run full corpus pipeline: extract → sembr → chunk → embed → load"
+run = """
+echo "Starting full corpus pipeline..."
+echo ""
+mise run corpus-status
 echo ""
 echo "Step 1/5: Extracting from MediaWiki..."
-uv run pw-ingest extract -i prolewiki-exports/ -o extracted/
+mise run corpus-extract
 echo ""
 echo "Step 2/5: Semantic linebreaking (requires sembr server)..."
-if ! curl -s http://localhost:8384/check >/dev/null 2>&1; then
-  echo "ERROR: Sembr server not running. Start with: mise run sembr-server"
-  exit 1
-fi
-uv run pw-ingest sembr -i extracted/ -o sembr/
+mise run corpus-sembr
 echo ""
 echo "Step 3/5: Chunking..."
-uv run pw-ingest chunk -i sembr/ -o chunks/
+mise run corpus-chunk
 echo ""
-echo "Step 4/5: Generating embeddings..."
-uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+echo "Step 4/5: Generating embeddings (OpenAI)..."
+mise run corpus-embed
 echo ""
 echo "Step 5/5: Loading into ChromaDB..."
-uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/
+mise run corpus-load
 echo ""
-echo "Pipeline complete!"
+mise run corpus-status
+echo ""
+echo "Full corpus pipeline complete!"
 """
+
+[tasks.corpus-clean]
+description = "Clean corpus pipeline output (keep source)"
+run = """
+rm -rf extracted/ sembr/ chunks/ embeddings/ chroma_data/
+mkdir -p extracted/ sembr/ chunks/ embeddings/ chroma_data/
+echo "Corpus pipeline cleaned (source preserved)"
+"""
+
+# Aliases for backward compatibility
+[tasks.pipeline]
+description = "Run full pipeline (alias for corpus-pipeline)"
+depends = ["corpus-pipeline"]
 
 [tasks.pipeline-sample]
 description = "Run pipeline on 10 sample files (for testing)"
 run = """
-echo "Running sample pipeline (10 files)..."
+echo "Running sample pipeline (10 files from prolewiki-exports)..."
 uv run pw-ingest extract -i prolewiki-exports/ -o extracted/ --sample 10
 uv run pw-ingest sembr -i extracted/ -o sembr/ --sample 10
 uv run pw-ingest chunk -i sembr/ -o chunks/ --sample 10
