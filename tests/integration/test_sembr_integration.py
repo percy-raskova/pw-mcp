@@ -101,9 +101,19 @@ class TestBatchProcessingIntegration:
         (input_dir / "Library" / "Marxist").mkdir(parents=True)
         (input_dir / "Essays").mkdir(parents=True)
 
-        (input_dir / "Main" / "article1.txt").write_text("Main article content.")
-        (input_dir / "Library" / "Marxist" / "capital.txt").write_text("Capital content.")
-        (input_dir / "Essays" / "essay1.txt").write_text("Essay content.")
+        # Content must be >100 bytes to pass stub detection
+        (input_dir / "Main" / "article1.txt").write_text(
+            "Main article content with substantial text that exceeds the minimum content threshold. "
+            "This ensures the stub detection does not skip this test file."
+        )
+        (input_dir / "Library" / "Marxist" / "capital.txt").write_text(
+            "Capital content from Karl Marx with substantial text that exceeds the minimum threshold. "
+            "This ensures the stub detection does not skip this test file."
+        )
+        (input_dir / "Essays" / "essay1.txt").write_text(
+            "Essay content with substantial text that exceeds the minimum content threshold for processing. "
+            "This ensures the stub detection does not skip this test file."
+        )
 
         output_dir = tmp_path / "sembr"
 
@@ -161,7 +171,9 @@ class TestJsonExtractionIntegration:
 
         json_content = {
             "title": "Test",
-            "clean_text": "Content to process.",
+            # clean_text must be >100 bytes to pass stub detection
+            "clean_text": "Content to process with substantial text that exceeds the minimum threshold. "
+            "This ensures the stub detection does not skip this test file.",
         }
         (input_dir / "Main" / "test.json").write_text(json.dumps(json_content))
 
@@ -171,11 +183,16 @@ class TestJsonExtractionIntegration:
             with patch("httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value.__aenter__.return_value = mock_client
+                # Mock response must be similar length to input to pass content validation
+                mock_response = (
+                    "Content to process with substantial text that exceeds the minimum threshold.\n"
+                    "This ensures the stub detection does not skip this test file."
+                )
                 mock_client.post.return_value = MagicMock(
                     status_code=200,
                     json=lambda: {
                         "status": "success",
-                        "text": "Content\nto process.",
+                        "text": mock_response,
                     },
                 )
 
@@ -198,9 +215,12 @@ class TestConcurrencyIntegration:
         input_dir = tmp_path / "input"
         input_dir.mkdir()
 
-        # Create 10 files
+        # Create 10 files (content must be >100 bytes to pass stub detection)
         for i in range(10):
-            (input_dir / f"file_{i}.txt").write_text(f"Content {i}")
+            (input_dir / f"file_{i}.txt").write_text(
+                f"Content {i} with substantial text that exceeds the minimum threshold for processing. "
+                "This ensures the stub detection does not skip this test file."
+            )
 
         output_dir = tmp_path / "output"
 
@@ -237,9 +257,19 @@ class TestConcurrencyIntegration:
         input_dir = tmp_path / "input"
         input_dir.mkdir()
 
-        (input_dir / "good1.txt").write_text("Good content one.")
-        (input_dir / "bad.txt").write_text("This will fail.")
-        (input_dir / "good2.txt").write_text("Good content two.")
+        # Content must be >100 bytes to pass stub detection
+        (input_dir / "good1.txt").write_text(
+            "Good content one with substantial text that exceeds the minimum threshold for processing. "
+            "This ensures the stub detection does not skip this test file."
+        )
+        (input_dir / "bad.txt").write_text(
+            "This will fail with substantial text that exceeds the minimum threshold for processing. "
+            "This ensures the stub detection does not skip this test file."
+        )
+        (input_dir / "good2.txt").write_text(
+            "Good content two with substantial text that exceeds the minimum threshold for processing. "
+            "This ensures the stub detection does not skip this test file."
+        )
 
         output_dir = tmp_path / "output"
 

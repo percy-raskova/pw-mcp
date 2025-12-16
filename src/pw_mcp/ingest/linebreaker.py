@@ -57,14 +57,47 @@ class SembrContentError(SembrError):
     pass
 
 
+class SembrSkipError(SembrError):
+    """Raised when a file should be skipped (stub content, etc.)."""
+
+    pass
+
+
 # =============================================================================
 # CONSTANTS
 # =============================================================================
 
 LARGE_FILE_THRESHOLD_BYTES = 400_000  # 400KB - warn when input exceeds this
+CHUNK_TARGET_BYTES = 300_000  # 300KB - target chunk size for large files
+MIN_CHUNK_BYTES = 50_000  # 50KB - avoid tiny trailing chunks
 HEALTH_CHECK_TIMEOUT_SECONDS = 5.0  # Shorter timeout for health checks
 MIN_CONTENT_TOLERANCE_CHARS = 10  # Minimum tolerance for content validation
 CONTENT_TOLERANCE_RATIO = 0.001  # 0.1% tolerance for content length mismatch
+
+# Stub detection constants
+MIN_CONTENT_BYTES = 100  # Files smaller than this are likely stubs
+URL_PREFIXES = ("http://", "https://", "ftp://")
+
+# Global HTTP semaphore to serialize requests to single-threaded sembr server
+# This prevents "Already borrowed" errors when processing multiple files
+_SEMBR_HTTP_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _get_sembr_http_semaphore() -> asyncio.Semaphore:
+    """Get or create the global HTTP semaphore for sembr requests.
+
+    The sembr server is single-threaded and returns "Already borrowed" errors
+    when it's processing a request. This semaphore ensures only one HTTP
+    request is in flight at a time, while still allowing file-level
+    parallelism for I/O operations.
+
+    Returns:
+        asyncio.Semaphore with limit of 1
+    """
+    global _SEMBR_HTTP_SEMAPHORE
+    if _SEMBR_HTTP_SEMAPHORE is None:
+        _SEMBR_HTTP_SEMAPHORE = asyncio.Semaphore(1)
+    return _SEMBR_HTTP_SEMAPHORE
 
 
 # =============================================================================
@@ -122,6 +155,42 @@ class SembrResult:
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
+
+
+def is_stub_content(text: str) -> bool:
+    """Check if text is stub content (URL only, too short, etc.).
+
+    Stub files are problematic for sembr processing and can cause CUDA crashes.
+    This function detects common stub patterns found in the ProleWiki corpus.
+
+    Args:
+        text: Input text to check
+
+    Returns:
+        True if text is stub content that should be skipped, False otherwise
+    """
+    text_stripped = text.strip()
+
+    # Empty or whitespace only
+    if not text_stripped:
+        return True
+
+    # Too short to be real content (count bytes, not chars, for Unicode support)
+    if len(text_stripped.encode("utf-8")) < MIN_CONTENT_BYTES:
+        return True
+
+    # URL-only content (common in Library stubs pointing to PDFs)
+    if text_stripped.startswith(URL_PREFIXES):
+        # Allow if there's substantial non-URL content after the URL
+        lines = text_stripped.split("\n")
+        # Check if all lines are either URLs or empty
+        all_urls_or_empty = all(
+            line.strip().startswith(URL_PREFIXES) or not line.strip() for line in lines
+        )
+        if all_urls_or_empty:
+            return True
+
+    return False
 
 
 def _count_words(text: str) -> int:
@@ -190,6 +259,325 @@ def _should_validate_content(input_text: str, output_text: str) -> bool:
 
     # If first word matches, this is real sembr output - validate
     return input_words[0] == output_words[0]
+
+
+# =============================================================================
+# LARGE FILE CHUNKING
+# =============================================================================
+
+
+def _split_at_byte_boundary(text: str, target_bytes: int) -> list[str]:
+    """Split text at arbitrary byte boundaries as last resort.
+
+    Used when text has no natural break points (no paragraphs or lines).
+    Tries to split at word boundaries when possible.
+
+    Args:
+        text: Text to split
+        target_bytes: Target maximum size for each chunk in bytes
+
+    Returns:
+        List of text chunks, each approximately under target_bytes
+    """
+    # Try to split at word boundaries first
+    words = text.split(" ")
+    if len(words) > 1:
+        chunks: list[str] = []
+        current_words: list[str] = []
+        current_size = 0
+
+        for word in words:
+            word_size = len(word.encode("utf-8"))
+            if current_size + word_size + 1 > target_bytes and current_words:
+                chunks.append(" ".join(current_words))
+                current_words = [word]
+                current_size = word_size
+            else:
+                current_words.append(word)
+                current_size += word_size + 1
+
+        if current_words:
+            chunks.append(" ".join(current_words))
+
+        return chunks
+
+    # No word boundaries - split at raw byte boundaries
+    # Encode to bytes, split, decode back
+    text_bytes = text.encode("utf-8")
+    chunks = []
+    offset = 0
+
+    while offset < len(text_bytes):
+        end = min(offset + target_bytes, len(text_bytes))
+        # Decode may fail if we split in the middle of a multi-byte char
+        # Back up to a valid boundary
+        while end > offset:
+            try:
+                chunk = text_bytes[offset:end].decode("utf-8")
+                chunks.append(chunk)
+                break
+            except UnicodeDecodeError:
+                end -= 1
+        offset = end
+
+    return chunks if chunks else [text]
+
+
+def _split_large_paragraph(para: str, target_bytes: int) -> list[str]:
+    """Split a single large paragraph on line boundaries.
+
+    When a paragraph exceeds the target size and has no paragraph breaks (\n\n),
+    this function splits it at line boundaries (\n) instead. If no line breaks
+    exist, falls back to word or byte boundaries.
+
+    Args:
+        para: Large paragraph text to split
+        target_bytes: Target maximum size for each chunk in bytes
+
+    Returns:
+        List of text chunks, each approximately under target_bytes
+    """
+    lines = para.split("\n")
+
+    # If single line exceeds target, split it further
+    if len(lines) == 1 and len(para.encode("utf-8")) > target_bytes:
+        return _split_at_byte_boundary(para, target_bytes)
+
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_size = 0
+
+    for line in lines:
+        line_size = len(line.encode("utf-8"))
+
+        # If single line exceeds target, split it further
+        if line_size > target_bytes:
+            # Flush current accumulated lines first
+            if current_lines:
+                chunks.append("\n".join(current_lines))
+                current_lines = []
+                current_size = 0
+            # Split the oversized line
+            chunks.extend(_split_at_byte_boundary(line, target_bytes))
+        elif current_size + line_size + 1 > target_bytes and current_lines:
+            # Flush current chunk
+            chunks.append("\n".join(current_lines))
+            current_lines = [line]
+            current_size = line_size
+        else:
+            current_lines.append(line)
+            current_size += line_size + 1  # +1 for newline
+
+    # Don't forget remaining lines
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+
+    return chunks
+
+
+def _split_text_for_processing(text: str, target_bytes: int = CHUNK_TARGET_BYTES) -> list[str]:
+    """Split large text into processable chunks at paragraph boundaries.
+
+    Strategy:
+    1. Try splitting on paragraph boundaries (\n\n)
+    2. If single paragraph is too large, split on line boundaries (\n)
+    3. Preserves semantic structure by respecting document formatting
+
+    Args:
+        text: Large text to split
+        target_bytes: Target maximum size for each chunk in bytes
+
+    Returns:
+        List of text chunks, each approximately under target_bytes
+    """
+    text_bytes = len(text.encode("utf-8"))
+
+    # If text is small enough, return as single chunk
+    if text_bytes <= target_bytes:
+        return [text]
+
+    chunks: list[str] = []
+    paragraphs = text.split("\n\n")
+    current_chunk: list[str] = []
+    current_size = 0
+
+    for para in paragraphs:
+        para_size = len(para.encode("utf-8"))
+
+        if para_size > target_bytes:
+            # Flush current accumulated chunk first
+            if current_chunk:
+                chunks.append("\n\n".join(current_chunk))
+                current_chunk = []
+                current_size = 0
+            # Split large paragraph on line boundaries
+            chunks.extend(_split_large_paragraph(para, target_bytes))
+        elif current_size + para_size + 2 > target_bytes:
+            # Adding this paragraph would exceed target - start new chunk
+            chunks.append("\n\n".join(current_chunk))
+            current_chunk = [para]
+            current_size = para_size
+        else:
+            # Add paragraph to current chunk
+            current_chunk.append(para)
+            current_size += para_size + 2  # +2 for \n\n delimiter
+
+    # Don't forget remaining paragraphs
+    if current_chunk:
+        chunks.append("\n\n".join(current_chunk))
+
+    return chunks
+
+
+async def _process_single_chunk(
+    text: str,
+    config: SembrConfig,
+) -> str:
+    """Process a single chunk through sembr server.
+
+    This is a simplified version of process_text for internal use,
+    returning just the text without the full SembrResult wrapper.
+
+    Uses a global semaphore to serialize HTTP requests to the single-threaded
+    sembr server, preventing "Already borrowed" errors.
+
+    Args:
+        text: Text chunk to process
+        config: Sembr configuration
+
+    Returns:
+        Processed text with semantic line breaks
+
+    Raises:
+        SembrServerError: If server returns error after all retries
+        SembrTimeoutError: If all requests time out
+    """
+    url = f"{config.server_url}/rewrap"
+    payload = {"text": text, "predict_func": config.predict_func}
+
+    max_attempts = config.max_retries + 1
+    last_error: Exception | None = None
+
+    # Serialize HTTP requests to single-threaded sembr server
+    async with _get_sembr_http_semaphore():
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_attempts):
+                try:
+                    response = await client.post(
+                        url,
+                        data=payload,
+                        timeout=config.timeout_seconds,
+                    )
+
+                    # Check for server error (500)
+                    if response.status_code == 500:
+                        last_error = SembrServerError(f"Server returned 500: {response.text}")
+                        if attempt < max_attempts - 1:
+                            delay = config.retry_delay_seconds * (2**attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        raise last_error
+
+                    # Check for empty response body
+                    if not response.text or not response.text.strip():
+                        last_error = SembrServerError(
+                            f"Server returned empty response (attempt {attempt + 1}/{max_attempts})"
+                        )
+                        if attempt < max_attempts - 1:
+                            delay = config.retry_delay_seconds * (2**attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        raise last_error
+
+                    # Parse JSON
+                    try:
+                        data = response.json()
+                    except JSONDecodeError as e:
+                        last_error = SembrServerError(
+                            f"Server returned invalid JSON: {e} (attempt {attempt + 1}/{max_attempts})"
+                        )
+                        if attempt < max_attempts - 1:
+                            delay = config.retry_delay_seconds * (2**attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        raise last_error from e
+
+                    # Check response status
+                    if data.get("status") != "success":
+                        error_msg = data.get("error", "Unknown error")
+                        last_error = SembrServerError(f"Server error: {error_msg}")
+                        is_busy = "already borrowed" in error_msg.lower()
+                        if attempt < max_attempts - 1:
+                            base_delay = config.retry_delay_seconds * (2**attempt)
+                            jitter = random.uniform(0, base_delay) if is_busy else 0
+                            await asyncio.sleep(base_delay + jitter)
+                            continue
+                        raise last_error
+
+                    return str(data.get("text", ""))
+
+                except httpx.TimeoutException as e:
+                    last_error = SembrTimeoutError(
+                        f"Request timed out after {config.timeout_seconds}s"
+                    )
+                    if attempt < max_attempts - 1:
+                        delay = config.retry_delay_seconds * (2**attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                    raise SembrTimeoutError(
+                        f"Request timed out after {config.timeout_seconds}s"
+                    ) from e
+
+        if last_error is not None:
+            raise last_error
+        raise SembrServerError("Unexpected error in retry loop")
+
+
+async def _process_large_text(text: str, config: SembrConfig) -> SembrResult:
+    """Process large text by chunking and reassembling.
+
+    Splits the text at semantic boundaries (paragraphs, then lines),
+    processes each chunk sequentially through sembr, and reassembles
+    the results.
+
+    Args:
+        text: Large input text to process
+        config: Sembr configuration
+
+    Returns:
+        SembrResult with combined processed text
+
+    Raises:
+        SembrServerError: If server returns error
+        SembrTimeoutError: If request times out
+    """
+    start_time = time.perf_counter()
+    input_word_count = _count_words(text)
+
+    chunks = _split_text_for_processing(text)
+    logger.info("Split large file into %d chunks", len(chunks))
+
+    # Process chunks SEQUENTIALLY to reduce GPU memory pressure
+    processed_chunks: list[str] = []
+    for i, chunk in enumerate(chunks, 1):
+        chunk_size = len(chunk.encode("utf-8"))
+        logger.debug("Processing chunk %d/%d (%d bytes)", i, len(chunks), chunk_size)
+        result = await _process_single_chunk(chunk, config)
+        processed_chunks.append(result)
+
+    # Reassemble with paragraph separators
+    final_text = "\n\n".join(processed_chunks)
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    output_word_count = _count_words(final_text)
+
+    return SembrResult(
+        text=final_text,
+        line_count=_count_lines(final_text),
+        processing_time_ms=elapsed_ms,
+        input_word_count=input_word_count,
+        output_word_count=output_word_count,
+    )
 
 
 # =============================================================================
@@ -272,18 +660,19 @@ async def process_text(
             output_word_count=0,
         )
 
-    input_word_count = _count_words(text)
-    url = f"{config.server_url}/rewrap"
-    payload = {"text": text, "predict_func": config.predict_func}
-
-    # Warn about large input files that may cause server issues
+    # Check for large input - use chunked processing to avoid CUDA memory errors
     input_size = len(text.encode("utf-8"))
     if input_size > LARGE_FILE_THRESHOLD_BYTES:
-        logger.warning(
-            "Large input detected (%d bytes > %d threshold)",
+        logger.info(
+            "Large input detected (%d bytes > %d threshold), using chunked processing",
             input_size,
             LARGE_FILE_THRESHOLD_BYTES,
         )
+        return await _process_large_text(text, config)
+
+    input_word_count = _count_words(text)
+    url = f"{config.server_url}/rewrap"
+    payload = {"text": text, "predict_func": config.predict_func}
 
     start_time = time.perf_counter()
     last_error: Exception | None = None
@@ -435,6 +824,7 @@ async def process_file(
 
     Raises:
         FileNotFoundError: If input file doesn't exist
+        SembrSkipError: If content is stub (URL only, too short, etc.)
         SembrServerError: If server returns error
         SembrTimeoutError: If request times out
         SembrContentError: If word count doesn't match
@@ -448,6 +838,10 @@ async def process_file(
         text = _extract_clean_text_from_json(input_path)
     else:
         text = input_path.read_text(encoding="utf-8")
+
+    # Check for stub content before processing
+    if is_stub_content(text):
+        raise SembrSkipError(f"Stub content detected (size={len(text.encode('utf-8'))} bytes)")
 
     # Process through sembr
     result = await process_text(text, config)

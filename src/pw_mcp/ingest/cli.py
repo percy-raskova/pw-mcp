@@ -126,6 +126,30 @@ def _log_exception(msg: str, exc: Exception) -> None:
 _SERVER_STARTUP_TIMEOUT = 30
 _SERVER_STARTUP_POLL_INTERVAL = 1.0
 
+# CUDA error patterns that indicate server restart is needed
+_CUDA_ERROR_PATTERNS = (
+    "cuda error",
+    "device-side assert",
+    "cudaerrorassert",
+)
+
+
+def is_cuda_crash(error: Exception) -> bool:
+    """Check if error indicates CUDA crash requiring server restart.
+
+    CUDA device-side assert errors leave the GPU in a corrupted state
+    that persists until the process is restarted. This function detects
+    error messages that indicate such a state.
+
+    Args:
+        error: The exception to check
+
+    Returns:
+        True if the error indicates a CUDA crash, False otherwise
+    """
+    msg = str(error).lower()
+    return any(pattern in msg for pattern in _CUDA_ERROR_PATTERNS)
+
 
 def _reset_cuda_device(gpu_id: int = 0) -> bool:
     """Attempt to reset CUDA device state.
@@ -356,8 +380,14 @@ def _create_parser() -> argparse.ArgumentParser:
     sembr_parser.add_argument(
         "--max-concurrent",
         type=int,
-        default=10,
-        help="Maximum concurrent file processing (default: 10)",
+        default=3,
+        help="Maximum concurrent file processing (default: 3, lower is safer for GPU)",
+    )
+    sembr_parser.add_argument(
+        "--stagger-delay",
+        type=float,
+        default=0.1,
+        help="Delay in seconds between requests (default: 0.1 for GPU stability)",
     )
     sembr_parser.add_argument(
         "--no-progress",
@@ -823,6 +853,7 @@ def _run_sembr_process(args: argparse.Namespace) -> int:
     server_url: str = args.server
     sample_count: int | None = args.sample
     max_concurrent: int = args.max_concurrent
+    stagger_delay: float = getattr(args, "stagger_delay", 0.0)
     show_progress: bool = not args.no_progress
     timeout: float = args.timeout
     should_restart: bool = args.restart_server and not args.no_restart
@@ -983,6 +1014,7 @@ def _run_sembr_process(args: argparse.Namespace) -> int:
                 config=config,
                 files_to_process=files_to_process,
                 max_concurrent=max_concurrent,
+                stagger_delay=stagger_delay,
                 progress_callback=progress_callback if show_progress else None,
                 error_callback=error_callback,
                 health_interval=health_interval,
@@ -1103,6 +1135,7 @@ async def _run_sembr_batch_with_errors(
     config: SembrConfig,
     files_to_process: list[Path],
     max_concurrent: int,
+    stagger_delay: float,
     progress_callback: Callable[[int, int, str], None] | None,
     error_callback: Callable[[str, Exception], None] | None,
     health_interval: float = 60.0,
@@ -1119,6 +1152,7 @@ async def _run_sembr_batch_with_errors(
         config: Sembr configuration
         files_to_process: List of specific files to process
         max_concurrent: Maximum concurrent processing (used for semaphore)
+        stagger_delay: Delay in seconds between requests (for GPU stability)
         progress_callback: Optional callback for progress updates
         error_callback: Optional callback for error reporting
         health_interval: Seconds between health checks (default: 60.0)
@@ -1127,7 +1161,7 @@ async def _run_sembr_batch_with_errors(
     Returns:
         List of successful processing results
     """
-    from pw_mcp.ingest.linebreaker import process_file
+    from pw_mcp.ingest.linebreaker import SembrSkipError, process_file
     from pw_mcp.ingest.server_manager import (
         HealthMonitor,
         is_shutdown_requested,
@@ -1138,6 +1172,7 @@ async def _run_sembr_batch_with_errors(
     total = len(files_to_process)
     semaphore = asyncio.Semaphore(max_concurrent)
     processed_count = 0
+    skipped_count = 0
 
     # Set up health monitor
     def recovery_callback() -> bool:
@@ -1161,8 +1196,14 @@ async def _run_sembr_batch_with_errors(
     health_monitor.start()
 
     async def process_single(index: int, input_file: Path) -> SembrResult | None:
-        """Process a single file with error handling."""
-        nonlocal processed_count
+        """Process a single file with error handling.
+
+        Handles:
+        - SembrSkipError: Logs as info and skips (stub files)
+        - CUDA crashes: Restarts server and retries once
+        - Other errors: Logs as error and continues
+        """
+        nonlocal processed_count, skipped_count
 
         # Check for shutdown request before processing
         if is_shutdown_requested():
@@ -1185,8 +1226,45 @@ async def _run_sembr_batch_with_errors(
                 result = await process_file(input_file, output_file, config)
                 processed_count += 1
                 logger.debug(f"Successfully processed: {relative_path}")
+                # Stagger delay between requests for GPU stability
+                if stagger_delay > 0:
+                    await asyncio.sleep(stagger_delay)
                 return result
+            except SembrSkipError as e:
+                # Stub files - log as info, not error
+                skipped_count += 1
+                logger.info(f"Skipped {relative_path}: {e}")
+                return None
             except Exception as e:
+                # Check if this is a CUDA crash
+                if is_cuda_crash(e) and enable_failover:
+                    logger.warning(f"CUDA crash on {relative_path}, restarting server...")
+                    # Attempt server restart
+                    server = restart_server("sembr")
+                    if server is not None:
+                        logger.info(f"Server restarted (PID: {server.pid}), retrying file")
+                        # Retry once after restart
+                        try:
+                            result = await process_file(input_file, output_file, config)
+                            processed_count += 1
+                            logger.info(f"Retry succeeded: {relative_path}")
+                            return result
+                        except SembrSkipError as skip_err:
+                            # Stub detected on retry
+                            skipped_count += 1
+                            logger.info(f"Skipped on retry {relative_path}: {skip_err}")
+                            return None
+                        except Exception as retry_err:
+                            logger.error(
+                                f"Retry failed for {relative_path}: "
+                                f"{type(retry_err).__name__}: {retry_err}"
+                            )
+                            if error_callback:
+                                error_callback(str(relative_path), retry_err)
+                            return None
+                    else:
+                        logger.error("Server restart failed, cannot retry")
+
                 if error_callback:
                     error_callback(str(relative_path), e)
                 return None
@@ -1209,7 +1287,10 @@ async def _run_sembr_batch_with_errors(
 
     finally:
         health_monitor.stop()
-        logger.info(f"Batch processing complete: {len(results)}/{total} files succeeded")
+        logger.info(
+            f"Batch processing complete: {len(results)}/{total} files succeeded, "
+            f"{skipped_count} skipped (stub content)"
+        )
 
     return results
 
