@@ -413,9 +413,10 @@ class TestProcessText:
 
     @pytest.mark.unit
     async def test_process_text_content_validation_fails(self) -> None:
-        """Should raise SembrContentError when word count doesn't match."""
-        input_text = "One two three four five."  # 5 words
-        corrupted_output = "One two three."  # Only 3 words (content lost!)
+        """Should raise SembrContentError when content significantly differs."""
+        # Use longer text to ensure difference exceeds tolerance (10 chars min)
+        input_text = "One two three four five six seven eight nine ten."  # 10 words
+        corrupted_output = "One two."  # Only 2 words (significant content lost!)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -429,7 +430,7 @@ class TestProcessText:
                 await process_text(input_text)
 
             # Error should include details about the mismatch
-            assert "5" in str(exc_info.value) or "3" in str(exc_info.value)
+            assert "10" in str(exc_info.value) or "2" in str(exc_info.value)
 
 
 # =============================================================================

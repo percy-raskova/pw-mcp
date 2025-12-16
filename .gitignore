@@ -31,3 +31,11 @@ chroma_data/
 
 # Sembr sample output (for testing)
 prolewiki-sembr-sample/
+
+# Pipeline output directories
+extracted/
+# Sembr output directory (not tests/unit/sembr/)
+/sembr/
+chunks/
+embeddings/
+logs/

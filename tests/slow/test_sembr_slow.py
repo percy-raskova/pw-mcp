@@ -130,11 +130,15 @@ class TestRealServerProcessing:
 
         output_dir = tmp_path / "output"
 
-        results = await process_batch(input_dir, output_dir)
+        # Use max_concurrent=1 because sembr server is single-threaded
+        # Concurrent requests cause "Already borrowed" errors
+        results = await process_batch(input_dir, output_dir, max_concurrent=1)
 
-        # Should process all 100
+        # Should process all 100 (None values indicate failures)
         assert len(results) == 100
 
-        # All should preserve word count
-        for result in results:
+        # All successful results should preserve word count
+        successful = [r for r in results if r is not None]
+        assert len(successful) == 100, f"Expected 100 successes, got {len(successful)}"
+        for result in successful:
             assert result.input_word_count == result.output_word_count
