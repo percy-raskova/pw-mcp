@@ -38,16 +38,17 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^prolewiki-exports/
+        exclude: ^(prolewiki-exports/|sample-pipeline/)
       - id: end-of-file-fixer
-        exclude: ^prolewiki-exports/
+        exclude: ^(prolewiki-exports/|sample-pipeline/)
       - id: check-yaml
         args: [--unsafe]  # Allow custom tags in GitHub Actions
       - id: check-json
+        exclude: ^sample-pipeline/
       - id: check-toml
       - id: check-added-large-files
         args: ['--maxkb=500']
-        exclude: ^(prolewiki-exports/|uv\.lock)$
+        exclude: ^(prolewiki-exports/|sample-pipeline/|uv\.lock)$
       - id: check-merge-conflict
       - id: debug-statements
 

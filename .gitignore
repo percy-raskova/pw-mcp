@@ -43,3 +43,5 @@ chunks/*
 embeddings/*
 !embeddings/.gitkeep
 logs/
+
+# Sample pipeline: ALL outputs tracked to demonstrate pipeline workflow

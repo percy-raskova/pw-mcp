@@ -313,6 +313,64 @@ description = "Clean everything (pipeline + chroma + build artifacts)"
 depends = ["clean-pipeline", "clean-chroma", "clean"]
 
 # =============================================================================
+# SAMPLE PIPELINE (distributable demo with public domain works)
+# =============================================================================
+
+[tasks.sample-status]
+description = "Show sample pipeline status"
+run = """
+echo "=== Sample Pipeline Status ==="
+printf "%-12s %s files\n" "Source:" "$(find sample-pipeline/source -name '*.txt' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Extracted:" "$(find sample-pipeline/extracted -name '*.txt' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Sembr'd:" "$(find sample-pipeline/sembr -name '*.txt' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Chunks:" "$(find sample-pipeline/chunks -name '*.jsonl' 2>/dev/null | wc -l)"
+printf "%-12s %s files\n" "Embeddings:" "$(find sample-pipeline/embeddings -name '*.npy' 2>/dev/null | wc -l)"
+"""
+
+[tasks.sample-extract]
+description = "Extract sample pipeline files (flat directory)"
+run = "uv run pw-ingest extract --flat -i sample-pipeline/source -o sample-pipeline/extracted"
+
+[tasks.sample-sembr]
+description = "Run sembr on sample files (requires sembr server)"
+depends = ["sembr-check"]
+run = "uv run pw-ingest sembr -i sample-pipeline/extracted -o sample-pipeline/sembr"
+
+[tasks.sample-chunk]
+description = "Chunk sample sembr'd files"
+run = "uv run pw-ingest chunk -i sample-pipeline/sembr -o sample-pipeline/chunks"
+
+[tasks.sample-embed]
+description = "Generate embeddings for sample chunks (OpenAI)"
+run = "uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embeddings --provider openai"
+
+[tasks.sample-embed-ollama]
+description = "Generate embeddings for sample chunks (Ollama local)"
+run = "uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embeddings --provider ollama"
+
+[tasks.sample-pipeline]
+description = "Run full sample pipeline (requires sembr server)"
+run = """
+echo "Running sample pipeline..."
+mise run sample-extract
+mise run sample-sembr
+mise run sample-chunk
+mise run sample-embed
+echo ""
+mise run sample-status
+echo ""
+echo "Sample pipeline complete!"
+"""
+
+[tasks.sample-clean]
+description = "Clean sample pipeline output (keep source)"
+run = """
+rm -rf sample-pipeline/extracted sample-pipeline/sembr sample-pipeline/chunks sample-pipeline/embeddings sample-pipeline/chroma_data
+mkdir -p sample-pipeline/extracted sample-pipeline/sembr sample-pipeline/chunks sample-pipeline/embeddings sample-pipeline/chroma_data
+echo "Sample pipeline cleaned (source preserved)"
+"""
+
+# =============================================================================
 # MCP SERVER
 # =============================================================================
 

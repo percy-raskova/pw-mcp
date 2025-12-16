@@ -1,0 +1,475 @@
+{
+  "title": "Vladimir Lenin",
+  "namespace": "Main",
+  "categories": [
+    "1870 births",
+    "1924 deaths",
+    "Communist leaders",
+    "Communists",
+    "Featured page",
+    "Leninism",
+    "Marxist theorists",
+    "Marxists",
+    "Revolutionaries",
+    "Russian Marxists",
+    "Russians of German descent",
+    "Russians of Jewish descent",
+    "Russians of Swedish descent",
+    "Russians of Ukrainian descent"
+  ],
+  "internal_links": [
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russian"
+    },
+    {
+      "target": "Soviet Union",
+      "display": "Soviet"
+    },
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russian Empire"
+    },
+    {
+      "target": "Russian Soviet Federative Socialist Republic",
+      "display": "Russian SFSR"
+    },
+    {
+      "target": "Soviet Union",
+      "display": "Soviet Union"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxism"
+    },
+    {
+      "target": "Marxism–Leninism",
+      "display": "Marxism–Leninism"
+    },
+    {
+      "target": "Russian Social Democratic Labor Party",
+      "display": "Russian Social Democratic Labor Party"
+    },
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russian"
+    },
+    {
+      "target": "Political economy",
+      "display": "political and economic"
+    },
+    {
+      "target": "Russian revolution of 1917",
+      "display": "October Revolution"
+    },
+    {
+      "target": "Union of Soviet Socialist Republics (1922–1991)",
+      "display": "Union of Soviet Socialist Republics"
+    },
+    {
+      "target": "Dictatorship of the proletariat",
+      "display": "workers' and peasants' state"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxist"
+    },
+    {
+      "target": "imperialism",
+      "display": "imperialism"
+    },
+    {
+      "target": "praxis",
+      "display": "praxis"
+    },
+    {
+      "target": "revolution",
+      "display": "revolution"
+    },
+    {
+      "target": "state",
+      "display": "state"
+    },
+    {
+      "target": "democratic centralism",
+      "display": "democratic centralism"
+    },
+    {
+      "target": "opportunism",
+      "display": "opportunism"
+    },
+    {
+      "target": "Revisionism",
+      "display": "revisionist"
+    },
+    {
+      "target": "political party",
+      "display": "political party"
+    },
+    {
+      "target": "Leninism",
+      "display": "Leninist"
+    },
+    {
+      "target": "Marxism–Leninism",
+      "display": "Marxism–Leninism"
+    },
+    {
+      "target": "Russian Empire",
+      "display": "Russian Empire"
+    },
+    {
+      "target": "Russian Federation",
+      "display": "Russian Federation"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxist"
+    },
+    {
+      "target": "reactionary",
+      "display": "reactionary"
+    },
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russia"
+    },
+    {
+      "target": "political economy",
+      "display": "political economy"
+    },
+    {
+      "target": "Karl Marx",
+      "display": "Karl Marx"
+    },
+    {
+      "target": "Capital, vol. I",
+      "display": "Capital, vol. I"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxist"
+    },
+    {
+      "target": "Karl Marx",
+      "display": "Marx"
+    },
+    {
+      "target": "Friedrich Engels",
+      "display": "Engels"
+    },
+    {
+      "target": "Plekhanov",
+      "display": "Plekhanov"
+    },
+    {
+      "target": "Peasantry",
+      "display": "peasant"
+    },
+    {
+      "target": "Liberalism",
+      "display": "liberal"
+    },
+    {
+      "target": "Narodniks",
+      "display": "Narodniks"
+    },
+    {
+      "target": "What the “friends of the people” are and how they fight the social-democrats? (1894)",
+      "display": "''What the “friends of the people” are and how they fight the social-democrats?''"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Nadezhda Krupskaya"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxism"
+    },
+    {
+      "target": "Wilhelm Liebknecht",
+      "display": "Wilhelm Liebknecht"
+    },
+    {
+      "target": "German Empire (1871–1918)",
+      "display": "German"
+    },
+    {
+      "target": "Paul Lafargue",
+      "display": "Paul Lafargue"
+    },
+    {
+      "target": "Karl Marx",
+      "display": "Marx"
+    },
+    {
+      "target": "Friedrich Engels",
+      "display": "Friedrich Engels"
+    },
+    {
+      "target": "The development of capitalism in Russia (1899)",
+      "display": "The development of capitalism in Russia"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Nadezhda Krupskaya"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Krupskaya"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Nadezhda Krupskaya"
+    },
+    {
+      "target": "Karl Marx",
+      "display": "Karl Marx"
+    },
+    {
+      "target": "Friedrich Engels",
+      "display": "Friedrich Engels"
+    },
+    {
+      "target": "The poverty of philosophy (1847)",
+      "display": "''The poverty of philosophy''"
+    },
+    {
+      "target": "Critique of Hegel's philosophy of right (1843)",
+      "display": "''Critique of Hegel's philosophy of right''"
+    },
+    {
+      "target": "Anti-Dühring (1878)",
+      "display": "''Anti-Dühring''"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Krupskaya"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Nadezhda Krupskaya"
+    },
+    {
+      "target": "The tasks of the Russian social-democrats (1898)",
+      "display": "The tasks of the Russian social-democrats"
+    },
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russian"
+    },
+    {
+      "target": "scientific socialism",
+      "display": "scientific socialism"
+    },
+    {
+      "target": "The development of capitalism in Russia (1899)",
+      "display": "''The development of capitalism in Russia''"
+    },
+    {
+      "target": "Eduard Bernstein",
+      "display": "Bernstein"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Krupskaya"
+    },
+    {
+      "target": "Marxism",
+      "display": "Marxists"
+    },
+    {
+      "target": "dictatorship of the proletariat",
+      "display": "dictatorship of the proletariat"
+    },
+    {
+      "target": "Library:What is to be done?",
+      "display": "What is to be done?"
+    },
+    {
+      "target": "Mensheviks",
+      "display": "Mensheviks"
+    },
+    {
+      "target": "One step forward, two steps back (1904)",
+      "display": "One step forward, two steps back"
+    },
+    {
+      "target": "Nadezhda Krupskaya",
+      "display": "Krupskaya"
+    },
+    {
+      "target": "Russian Empire (1721–1917)",
+      "display": "Russian"
+    },
+    {
+      "target": "Empire of Japan (1868–1947)",
+      "display": "Japanese"
+    },
+    {
+      "target": "Bourgeoisie",
+      "display": "bourgeois"
+    },
+    {
+      "target": "Imperialism",
+      "display": "imperial"
+    },
+    {
+      "target": "Russian revolution of 1905",
+      "display": "Russian revolution of 1905"
+    },
+    {
+      "target": "Library:Two tactics of social-democracy in the democratic revolution",
+      "display": "Two tactics of social-democracy in the democratic revolution"
+    },
+    {
+      "target": "Soviet (governmental body)",
+      "display": "Soviets"
+    },
+    {
+      "target": "Grand Duchy of Finland (1809–1917)",
+      "display": "Finland"
+    },
+    {
+      "target": "Yakov Sverdlov",
+      "display": "Sverdlov"
+    },
+    {
+      "target": "Felix Dzerzhinsky",
+      "display": "Dzerzhinsky"
+    },
+    {
+      "target": "Colonialism",
+      "display": "colonized"
+    },
+    {
+      "target": "April Theses",
+      "display": "April Theses"
+    },
+    {
+      "target": "First World War",
+      "display": "Great War"
+    },
+    {
+      "target": "Russian provisional government",
+      "display": "provisional government"
+    },
+    {
+      "target": "soviet republic",
+      "display": "soviet republic"
+    },
+    {
+      "target": "Communist International (1919–1943)",
+      "display": "Third International"
+    },
+    {
+      "target": "Vijay Prashad",
+      "display": "Vijay Prashad"
+    },
+    {
+      "target": "Russian Civil War",
+      "display": "Civil War"
+    },
+    {
+      "target": "Empire of Japan (1868–1947)",
+      "display": "Japanese"
+    },
+    {
+      "target": "K. Fussa",
+      "display": "K. Fussa"
+    },
+    {
+      "target": "M. Nakahira",
+      "display": "M. Nakahira"
+    },
+    {
+      "target": "Vijay Prashad",
+      "display": "Vijay Prashad"
+    },
+    {
+      "target": "Trotskyism",
+      "display": "Trotskyists"
+    },
+    {
+      "target": "Anti-communism",
+      "display": "anti-communists"
+    },
+    {
+      "target": "Leon Trotsky",
+      "display": "Trotsky"
+    },
+    {
+      "target": "Joseph Stalin",
+      "display": "Stalin"
+    },
+    {
+      "target": "Grigory Zinoviev",
+      "display": "Zinoviev"
+    },
+    {
+      "target": "Lev Kamenev",
+      "display": "Kamenev"
+    },
+    {
+      "target": "Nikolai Bukharin",
+      "display": "Bukharin"
+    },
+    {
+      "target": "dialectics",
+      "display": "dialectics"
+    },
+    {
+      "target": "Library:What is to be done?",
+      "display": "What is to be done?"
+    },
+    {
+      "target": "Library:Two tactics of social-democracy in the democratic revolution",
+      "display": "Two tactics of social-democracy in the democratic revolution"
+    },
+    {
+      "target": "Library:Materialism and empiriocriticism",
+      "display": "Materialism and empiriocriticism"
+    },
+    {
+      "target": "Library:The three sources and three component parts of Marxism",
+      "display": "The three sources and three component parts of Marxism"
+    },
+    {
+      "target": "Library:Imperialism, the highest stage of capitalism",
+      "display": "Imperialism, the highest stage of capitalism"
+    },
+    {
+      "target": "Library:The state and revolution",
+      "display": "The state and revolution"
+    },
+    {
+      "target": "Library:The proletarian revolution and the renegade Kautsky",
+      "display": "The proletarian revolution and the renegade Kautsky"
+    },
+    {
+      "target": "Library:\"Left-wing\" communism, an infantile disorder",
+      "display": "“Left-wing” communism, an infantile disorder"
+    }
+  ],
+  "sections": [
+    "Early life (1870–1888)",
+    "Early revolutionary activities (1889–1895)",
+    "Establishment of a united Marxist organization and arrest (1895–1897)",
+    "Siberian exile (1897–1900)",
+    "Development of a proletarian party (1900–1903)",
+    "Initial struggles against Menshevik opportunism inside the RSDLP (1903–1905)",
+    "First Russian revolution (1905–1907)",
+    "Self-exile (1907–1917)",
+    "Second Revolution (1917)",
+    "Soviet government (1918–1923)",
+    "Declining health and death (1923–1924)",
+    "Lenin's 'will'",
+    "Library works",
+    "References",
+    "Notes"
+  ],
+  "is_stub": false,
+  "citation_needed_count": 0,
+  "has_blockquote": false,
+  "source_file": "sample-pipeline/source/Vladimir Lenin.txt"
+}
