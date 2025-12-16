@@ -101,12 +101,216 @@ description = "Run pre-commit on all files"
 run = "uv run pre-commit run --all-files"
 
 # =============================================================================
-# INGESTION
+# PIPELINE STATUS
 # =============================================================================
 
-[tasks.ingest]
-description = "Run corpus ingestion pipeline"
-run = "uv run pw-ingest --source prolewiki-exports --output chroma_data"
+[tasks.status]
+description = "Show pipeline status (file counts at each stage)"
+run = """
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║                    PIPELINE STATUS                           ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+printf "║ %-20s %10s %10s %10s ║\n" "Stage" "Files" "Dir" "Size"
+echo "╠══════════════════════════════════════════════════════════════╣"
+EXTRACTED=$(find extracted/ -name "*.json" 2>/dev/null | wc -l)
+SEMBR=$(find sembr/ -name "*.txt" 2>/dev/null | wc -l)
+CHUNKS=$(find chunks/ -name "*.jsonl" 2>/dev/null | wc -l)
+EMBEDS=$(find embeddings/ -name "*.npy" 2>/dev/null | wc -l)
+EXTRACT_SIZE=$(du -sh extracted/ 2>/dev/null | cut -f1 || echo "N/A")
+SEMBR_SIZE=$(du -sh sembr/ 2>/dev/null | cut -f1 || echo "N/A")
+CHUNKS_SIZE=$(du -sh chunks/ 2>/dev/null | cut -f1 || echo "N/A")
+EMBEDS_SIZE=$(du -sh embeddings/ 2>/dev/null | cut -f1 || echo "N/A")
+printf "║ %-20s %10s %10s %10s ║\n" "1. Extracted" "$EXTRACTED" "extracted/" "$EXTRACT_SIZE"
+printf "║ %-20s %10s %10s %10s ║\n" "2. Sembr'd" "$SEMBR" "sembr/" "$SEMBR_SIZE"
+printf "║ %-20s %10s %10s %10s ║\n" "3. Chunks" "$CHUNKS" "chunks/" "$CHUNKS_SIZE"
+printf "║ %-20s %10s %10s %10s ║\n" "4. Embeddings" "$EMBEDS" "embeddings/" "$EMBEDS_SIZE"
+echo "╠══════════════════════════════════════════════════════════════╣"
+if curl -s http://localhost:8384/check >/dev/null 2>&1; then
+  echo "║ Sembr Server: ✓ Running on :8384                            ║"
+else
+  echo "║ Sembr Server: ✗ Not running (start with: mise run sembr-server) ║"
+fi
+echo "╚══════════════════════════════════════════════════════════════╝"
+"""
+
+# =============================================================================
+# PIPELINE STAGES
+# =============================================================================
+
+[tasks.extract]
+description = "Extract clean text from MediaWiki source files"
+run = "uv run pw-ingest extract -i prolewiki-exports/ -o extracted/"
+
+[tasks.extract-sample]
+description = "Extract 10 sample files for testing"
+run = "uv run pw-ingest extract -i prolewiki-exports/ -o extracted/ --sample 10"
+
+# -----------------------------------------------------------------------------
+# Chunking
+# -----------------------------------------------------------------------------
+
+[tasks.chunk]
+description = "Chunk sembr'd text into embedding-ready segments"
+run = "uv run pw-ingest chunk -i sembr/ -o chunks/"
+
+[tasks.chunk-sample]
+description = "Chunk 10 sample files for testing"
+run = "uv run pw-ingest chunk -i sembr/ -o chunks/ --sample 10"
+
+[tasks.chunk-verbose]
+description = "Chunk with verbose logging"
+run = "uv run pw-ingest chunk -i sembr/ -o chunks/ --verbose"
+
+# -----------------------------------------------------------------------------
+# Embedding
+# -----------------------------------------------------------------------------
+
+[tasks.embed]
+description = "Generate embeddings (OpenAI by default, set --provider ollama for local)"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai"
+
+[tasks.embed-openai]
+description = "Generate embeddings using OpenAI API (requires OPENAI_API_KEY)"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai"
+
+[tasks.embed-ollama]
+description = "Generate embeddings using local Ollama server"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider ollama --model nomic-embed-text"
+
+[tasks.embed-sample]
+description = "Embed 10 sample files for testing"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai --sample 10"
+
+[tasks.embed-verbose]
+description = "Embed with verbose logging"
+run = "uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai --verbose"
+
+# -----------------------------------------------------------------------------
+# ChromaDB Loading
+# -----------------------------------------------------------------------------
+
+[tasks.load]
+description = "Load chunks and embeddings into ChromaDB"
+run = "uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/"
+
+[tasks.load-reset]
+description = "Clear ChromaDB and reload all data"
+run = "uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/ --reset"
+
+# =============================================================================
+# FULL PIPELINE
+# =============================================================================
+
+[tasks.pipeline]
+description = "Run full pipeline: extract → sembr → chunk → embed → load"
+run = """
+echo "Starting full pipeline..."
+echo ""
+echo "Step 1/5: Extracting from MediaWiki..."
+uv run pw-ingest extract -i prolewiki-exports/ -o extracted/
+echo ""
+echo "Step 2/5: Semantic linebreaking (requires sembr server)..."
+if ! curl -s http://localhost:8384/check >/dev/null 2>&1; then
+  echo "ERROR: Sembr server not running. Start with: mise run sembr-server"
+  exit 1
+fi
+uv run pw-ingest sembr -i extracted/ -o sembr/
+echo ""
+echo "Step 3/5: Chunking..."
+uv run pw-ingest chunk -i sembr/ -o chunks/
+echo ""
+echo "Step 4/5: Generating embeddings..."
+uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+echo ""
+echo "Step 5/5: Loading into ChromaDB..."
+uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/
+echo ""
+echo "Pipeline complete!"
+"""
+
+[tasks.pipeline-sample]
+description = "Run pipeline on 10 sample files (for testing)"
+run = """
+echo "Running sample pipeline (10 files)..."
+uv run pw-ingest extract -i prolewiki-exports/ -o extracted/ --sample 10
+uv run pw-ingest sembr -i extracted/ -o sembr/ --sample 10
+uv run pw-ingest chunk -i sembr/ -o chunks/ --sample 10
+uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai --sample 10
+uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/
+echo "Sample pipeline complete!"
+"""
+
+[tasks.pipeline-continue]
+description = "Continue pipeline from where it left off (resumes each stage)"
+run = """
+echo "Continuing pipeline (skipping existing files)..."
+mise run sembr-check || { echo "Start sembr server first: mise run sembr-server"; exit 1; }
+uv run pw-ingest sembr -i extracted/ -o sembr/
+uv run pw-ingest chunk -i sembr/ -o chunks/
+uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+uv run pw-ingest load --chunks-dir chunks/ --embeddings-dir embeddings/
+echo "Pipeline continuation complete!"
+"""
+
+# =============================================================================
+# GPU & SERVER MANAGEMENT
+# =============================================================================
+
+[tasks.gpu-status]
+description = "Show GPU status and memory usage"
+run = "nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv"
+
+[tasks.sembr-restart]
+description = "Restart sembr server (kills existing, starts fresh)"
+run = """
+echo "Stopping existing sembr server..."
+pkill -f "sembr --listen" 2>/dev/null || true
+sleep 2
+echo "Starting sembr server..."
+uv run sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased &
+sleep 5
+if curl -s http://localhost:8384/check >/dev/null 2>&1; then
+  echo "Sembr server started successfully"
+else
+  echo "ERROR: Sembr server failed to start"
+  exit 1
+fi
+"""
+
+[tasks.sembr-stop]
+description = "Stop sembr server"
+run = """
+echo "Stopping sembr server..."
+pkill -f "sembr --listen" 2>/dev/null || echo "No sembr server running"
+"""
+
+[tasks.sembr-server-gpu1]
+description = "Start sembr server on GPU 1 (secondary GPU)"
+run = "CUDA_VISIBLE_DEVICES=1 uv run sembr --listen -p 8384"
+
+# =============================================================================
+# CLEANUP
+# =============================================================================
+
+[tasks.clean-pipeline]
+description = "Clean all pipeline output directories"
+run = """
+echo "Cleaning pipeline output directories..."
+rm -rf extracted/ sembr/ chunks/ embeddings/
+echo "Pipeline directories cleaned"
+"""
+
+[tasks.clean-chroma]
+description = "Clean ChromaDB data"
+run = """
+echo "Cleaning ChromaDB..."
+rm -rf chroma_data/
+echo "ChromaDB cleaned"
+"""
+
+[tasks.clean-all]
+description = "Clean everything (pipeline + chroma + build artifacts)"
+depends = ["clean-pipeline", "clean-chroma", "clean"]
 
 # =============================================================================
 # MCP SERVER
