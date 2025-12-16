@@ -1,6 +1,0 @@
-{
-  "status": "success",
-  "model": "BertForTokenClassification",
-  "tokenizer": "DistilBertTokenizerFast",
-  "processor": "SemBrProcessor"
-}

@@ -1,24 +1,17 @@
 """CLI for corpus ingestion pipeline.
 
 Commands:
-    pw-ingest sembr     Apply semantic linebreaking to extracted text
-    pw-ingest chunk     Chunk sembr'd text into embedding-ready segments
+    pw-ingest extract   Extract text from MediaWiki exports
+    pw-ingest chunk     Chunk text into embedding-ready segments (tiktoken-based)
     pw-ingest embed     Generate vector embeddings for chunks
     pw-ingest load      Load chunks and embeddings into ChromaDB
-    pw-ingest           Legacy ingestion (not yet implemented)
+
+Pipeline:
+    extract → chunk → embed → load
 
 Examples:
-    # Check if sembr server is running
-    pw-ingest sembr --check-only
-
-    # Process full corpus through sembr
-    pw-ingest sembr -i extracted/ -o sembr/
-
-    # Process 10 files for testing
-    pw-ingest sembr --sample 10
-
-    # Chunk sembr'd text
-    pw-ingest chunk -i sembr/ -o chunks/
+    # Chunk extracted text (uses tiktoken for accurate token counting)
+    pw-ingest chunk -i extracted/ -o chunks/
 
     # Chunk with random sample
     pw-ingest chunk --sample 100
@@ -36,23 +29,15 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import random
-import subprocess
 import sys
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from pw_mcp.ingest.linebreaker import SembrConfig, SembrResult
-
+from typing import Any
 
 # =============================================================================
 # LOGGING SETUP
@@ -116,151 +101,6 @@ def _log_exception(msg: str, exc: Exception) -> None:
     """
     logger.error(f"{msg}: {type(exc).__name__}: {exc}")
     logger.debug(f"Traceback:\n{traceback.format_exc()}")
-
-
-# =============================================================================
-# SERVER MANAGEMENT
-# =============================================================================
-
-# Default timeout for server startup (seconds)
-_SERVER_STARTUP_TIMEOUT = 30
-_SERVER_STARTUP_POLL_INTERVAL = 1.0
-
-# CUDA error patterns that indicate server restart is needed
-_CUDA_ERROR_PATTERNS = (
-    "cuda error",
-    "device-side assert",
-    "cudaerrorassert",
-)
-
-
-def is_cuda_crash(error: Exception) -> bool:
-    """Check if error indicates CUDA crash requiring server restart.
-
-    CUDA device-side assert errors leave the GPU in a corrupted state
-    that persists until the process is restarted. This function detects
-    error messages that indicate such a state.
-
-    Args:
-        error: The exception to check
-
-    Returns:
-        True if the error indicates a CUDA crash, False otherwise
-    """
-    msg = str(error).lower()
-    return any(pattern in msg for pattern in _CUDA_ERROR_PATTERNS)
-
-
-def _reset_cuda_device(gpu_id: int = 0) -> bool:
-    """Attempt to reset CUDA device state.
-
-    Note: This may require root privileges on some systems.
-
-    Args:
-        gpu_id: GPU device ID to reset (default: 0)
-
-    Returns:
-        True if reset succeeded or was unnecessary, False on failure
-    """
-    try:
-        # Try PyTorch CUDA reset first (doesn't require root)
-        result = subprocess.run(
-            [
-                "python3",
-                "-c",
-                f"import torch; torch.cuda.device({gpu_id}); torch.cuda.empty_cache(); "
-                f"torch.cuda.reset_peak_memory_stats({gpu_id}); print('CUDA cache cleared')",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            print(f"  CUDA cache cleared for GPU {gpu_id}")
-            return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-
-    # If that didn't work, inform user about nvidia-smi reset
-    print(f"  Note: For persistent CUDA errors, try: sudo nvidia-smi --gpu-reset -i {gpu_id}")
-    return True  # Continue anyway
-
-
-def _restart_sembr_server(
-    server_url: str = "http://localhost:8384",
-    timeout: float = _SERVER_STARTUP_TIMEOUT,
-    reset_cuda: bool = True,
-    gpu_id: int | None = None,
-) -> bool:
-    """Restart the sembr server to ensure clean CUDA state.
-
-    This uses server_manager to properly stop and start the sembr server,
-    ensuring CUDA cleanup and GPU environment setup.
-
-    Args:
-        server_url: URL of the sembr server (used to extract port)
-        timeout: Maximum seconds to wait for server startup
-        reset_cuda: Whether to attempt CUDA cache reset before starting
-        gpu_id: GPU device ID to use (None for auto-detect)
-
-    Returns:
-        True if server started successfully, False otherwise
-    """
-    from pw_mcp.ingest.server_manager import (
-        SEMBR_CONFIG,
-        ServerConfig,
-        start_server,
-        stop_server,
-    )
-
-    # Extract port from URL
-    port = 8384
-    if ":" in server_url:
-        port_str = server_url.split(":")[-1].split("/")[0]
-        try:
-            port = int(port_str)
-        except ValueError:
-            port = 8384
-
-    print("Restarting sembr server (clean CUDA state)...")
-    logger.info(f"Restarting sembr server on port {port}, gpu_id={gpu_id}")
-
-    # Stop existing server (graceful with CUDA cleanup)
-    if stop_server("sembr", graceful=True, timeout=5.0):
-        logger.info("Stopped existing sembr server")
-    else:
-        logger.debug("No existing sembr server to stop or stop timed out")
-
-    # Additional CUDA reset if requested
-    if reset_cuda:
-        _reset_cuda_device(gpu_id if gpu_id is not None else 0)
-
-    # Create config with custom port if different from default
-    config = SEMBR_CONFIG
-    if port != 8384:
-        config = ServerConfig(
-            server_type="sembr",
-            port=port,
-            health_endpoint="/check",
-            start_command=["uv", "run", "sembr", "--listen", "-p", str(port)],
-            startup_timeout=timeout,
-        )
-
-    # Start server with GPU selection
-    try:
-        server = start_server(config, gpu_id=gpu_id)
-        if server is not None:
-            print(f"  Server started (PID: {server.pid}, GPU: {server.gpu_id})")
-            logger.info(f"Sembr server started: PID={server.pid}, GPU={server.gpu_id}")
-            return True
-        else:
-            print("  Error: Server failed to start")
-            logger.error("start_server returned None")
-            return False
-    except Exception as e:
-        print(f"  Error starting server: {e}")
-        logger.error(f"Failed to start sembr server: {type(e).__name__}: {e}")
-        return False
 
 
 def _create_parser() -> argparse.ArgumentParser:
@@ -335,116 +175,14 @@ def _create_parser() -> argparse.ArgumentParser:
     )
 
     # =========================================================================
-    # SEMBR SUBCOMMAND
-    # =========================================================================
-    sembr_parser = subparsers.add_parser(
-        "sembr",
-        help="Apply semantic linebreaking using sembr server",
-        description=(
-            "Process text files through sembr server for semantic linebreaking. "
-            "Requires sembr server to be running: mise run sembr-server"
-        ),
-    )
-
-    sembr_parser.add_argument(
-        "-i",
-        "--input",
-        type=Path,
-        default=Path("extracted"),
-        help="Input directory containing .txt files (default: extracted/)",
-    )
-    sembr_parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=Path("sembr"),
-        help="Output directory for processed files (default: sembr/)",
-    )
-    sembr_parser.add_argument(
-        "-s",
-        "--server",
-        default="http://localhost:8384",
-        help="Sembr server URL (default: http://localhost:8384)",
-    )
-    sembr_parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Only check server health, don't process files",
-    )
-    sembr_parser.add_argument(
-        "--sample",
-        type=int,
-        metavar="N",
-        help="Process only N files (for testing)",
-    )
-    sembr_parser.add_argument(
-        "--max-concurrent",
-        type=int,
-        default=3,
-        help="Maximum concurrent file processing (default: 3, lower is safer for GPU)",
-    )
-    sembr_parser.add_argument(
-        "--stagger-delay",
-        type=float,
-        default=0.1,
-        help="Delay in seconds between requests (default: 0.1 for GPU stability)",
-    )
-    sembr_parser.add_argument(
-        "--no-progress",
-        action="store_true",
-        help="Disable progress output",
-    )
-    sembr_parser.add_argument(
-        "--timeout",
-        type=float,
-        default=60.0,
-        help="Request timeout in seconds (default: 60.0)",
-    )
-    sembr_parser.add_argument(
-        "--restart-server",
-        action="store_true",
-        default=True,
-        help="Restart sembr server before processing (default: True, ensures clean CUDA state)",
-    )
-    sembr_parser.add_argument(
-        "--no-restart",
-        action="store_true",
-        help="Don't restart server (use existing server instance)",
-    )
-    sembr_parser.add_argument(
-        "--gpu",
-        type=int,
-        metavar="ID",
-        help="GPU device ID to use (default: auto-detect available GPU)",
-    )
-    sembr_parser.add_argument(
-        "--no-gpu-failover",
-        action="store_true",
-        help="Disable automatic GPU failover on errors (default: enabled)",
-    )
-    sembr_parser.add_argument(
-        "--health-interval",
-        type=float,
-        default=60.0,
-        metavar="SECS",
-        help="Health check interval during batch processing (default: 60.0)",
-    )
-    sembr_parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Enable verbose logging output",
-    )
-
-    # =========================================================================
     # CHUNK SUBCOMMAND
     # =========================================================================
     chunk_parser = subparsers.add_parser(
         "chunk",
-        help="Chunk sembr'd text into embedding-ready segments",
+        help="Chunk extracted text into embedding-ready segments",
         description=(
-            "Process sembr'd text files through the chunker to create "
-            "embedding-ready JSONL files with metadata."
+            "Process extracted text files through tiktoken-based chunker to create "
+            "embedding-ready JSONL files with accurate token counts and overlap."
         ),
     )
 
@@ -452,8 +190,8 @@ def _create_parser() -> argparse.ArgumentParser:
         "-i",
         "--input",
         type=Path,
-        default=Path("sembr"),
-        help="Input directory containing sembr'd .txt files (default: sembr/)",
+        default=Path("extracted"),
+        help="Input directory containing extracted .txt files (default: extracted/)",
     )
     chunk_parser.add_argument(
         "-o",
@@ -491,6 +229,12 @@ def _create_parser() -> argparse.ArgumentParser:
         type=int,
         default=1000,
         help="Maximum token count per chunk (default: 1000)",
+    )
+    chunk_parser.add_argument(
+        "--overlap-tokens",
+        type=int,
+        default=50,
+        help="Token overlap between chunks for RAG context continuity (default: 50)",
     )
 
     # =========================================================================
@@ -797,504 +541,6 @@ def _run_extract_process(args: argparse.Namespace) -> int:
         return 130  # Standard exit code for SIGINT
 
 
-def _run_sembr_check(server_url: str) -> bool:
-    """Check sembr server health and print status.
-
-    Args:
-        server_url: URL of the sembr server
-
-    Returns:
-        True if server is healthy, False otherwise
-    """
-    # Import here to avoid circular imports and speed up --help
-    from pw_mcp.ingest.linebreaker import SembrConfig, check_server_health
-
-    config = SembrConfig(server_url=server_url)
-    healthy = check_server_health(config)
-
-    if healthy:
-        print(f"✓ Sembr server is healthy at {server_url}")
-        return True
-    else:
-        print(f"✗ Sembr server is not responding at {server_url}")
-        print("  Start the server with: mise run sembr-server")
-        return False
-
-
-def _run_sembr_process(args: argparse.Namespace) -> int:
-    """Run sembr processing on input directory.
-
-    Args:
-        args: Parsed command line arguments
-
-    Returns:
-        Exit code (0 for success, 1 for error)
-    """
-    # Import here to avoid circular imports and speed up --help
-    from pw_mcp.ingest.gpu_manager import (
-        detect_gpus,
-        get_available_gpu,
-    )
-    from pw_mcp.ingest.linebreaker import (
-        SembrConfig,
-        SembrContentError,
-        SembrError,
-        SembrServerError,
-        SembrTimeoutError,
-        check_server_health,
-    )
-    from pw_mcp.ingest.server_manager import (
-        register_cleanup,
-        setup_signal_handlers,
-    )
-
-    input_dir: Path = args.input
-    output_dir: Path = args.output
-    server_url: str = args.server
-    sample_count: int | None = args.sample
-    max_concurrent: int = args.max_concurrent
-    stagger_delay: float = getattr(args, "stagger_delay", 0.0)
-    show_progress: bool = not args.no_progress
-    timeout: float = args.timeout
-    should_restart: bool = args.restart_server and not args.no_restart
-    gpu_id: int | None = getattr(args, "gpu", None)
-    enable_gpu_failover: bool = not getattr(args, "no_gpu_failover", False)
-    health_interval: float = getattr(args, "health_interval", 60.0)
-    verbose: bool = getattr(args, "verbose", False)
-
-    # Initialize logging
-    log_file = _setup_logging(verbose=verbose or show_progress)
-    logger.info(f"Starting sembr processing: {input_dir} -> {output_dir}")
-
-    # Set up signal handlers for graceful shutdown
-    setup_signal_handlers()
-    register_cleanup()
-
-    # Validate input directory
-    if not input_dir.exists():
-        print(f"Error: Input directory does not exist: {input_dir}")
-        logger.error(f"Input directory does not exist: {input_dir}")
-        return 1
-
-    # Print header
-    print("Sembr Processing")
-    print("=" * 40)
-    print(f"Log file: {log_file}")
-
-    # GPU detection and selection
-    gpus = detect_gpus()
-    if gpus:
-        logger.info(f"Detected {len(gpus)} GPU(s)")
-        for g in gpus:
-            logger.debug(f"  GPU {g.index}: {g.name} ({g.memory_used_mb}/{g.memory_total_mb} MB)")
-
-        # Select GPU
-        if gpu_id is not None:
-            if any(g.index == gpu_id for g in gpus):
-                print(f"GPU:     {gpu_id} (specified)")
-                logger.info(f"Using specified GPU {gpu_id}")
-            else:
-                print(f"Warning: GPU {gpu_id} not found, using auto-detection")
-                logger.warning(f"Specified GPU {gpu_id} not found")
-                gpu_id = get_available_gpu()
-        else:
-            gpu_id = get_available_gpu()
-            if gpu_id is not None:
-                print(f"GPU:     {gpu_id} (auto-detected)")
-                logger.info(f"Auto-selected GPU {gpu_id}")
-
-        if gpu_id is None:
-            print("Warning: No GPU available, server may use any GPU")
-            logger.warning("No GPU selected, server will use default")
-    else:
-        logger.info("No GPUs detected (nvidia-smi not available)")
-        print("GPU:     None detected")
-
-    # Restart server if requested (default: True for clean CUDA state)
-    if should_restart:
-        logger.info("Restarting sembr server for clean CUDA state")
-        if not _restart_sembr_server(server_url, gpu_id=gpu_id):
-            print("\nError: Failed to restart sembr server")
-            print("Try starting manually: mise run sembr-server")
-            logger.error("Failed to restart sembr server")
-            return 1
-    else:
-        # Just check health if not restarting
-        print(f"Server:  {server_url}", end=" ")
-        if not check_server_health():
-            print("X")
-            print("\nError: Sembr server is not responding")
-            print("Start the server with: mise run sembr-server")
-            print("Or use --restart-server to auto-restart")
-            logger.error(f"Sembr server not responding at {server_url}")
-            return 1
-        print("[OK]")
-        logger.info(f"Server health check passed: {server_url}")
-
-    # Create config
-    config = SembrConfig(
-        server_url=server_url,
-        timeout_seconds=timeout,
-    )
-
-    print(f"Input:   {input_dir}")
-    print(f"Output:  {output_dir}")
-
-    # Discover input files
-    all_input_files = list(input_dir.rglob("*.txt"))
-    total_available = len(all_input_files)
-
-    if total_available == 0:
-        print("\nNo .txt files found in input directory")
-        logger.warning("No .txt files found in input directory")
-        return 1
-
-    # Filter out already-processed files (resume support)
-    files_to_process: list[Path] = []
-    skipped_count = 0
-    for input_file in all_input_files:
-        relative_path = input_file.relative_to(input_dir)
-        output_file = output_dir / relative_path
-        if output_file.exists():
-            skipped_count += 1
-        else:
-            files_to_process.append(input_file)
-
-    # Apply sample limit with random selection
-    if sample_count is not None:
-        if sample_count < len(files_to_process):
-            files_to_process = random.sample(files_to_process, sample_count)
-        print(f"Sample:  {len(files_to_process)} files (randomly selected)")
-
-    total_files = len(files_to_process)
-
-    if skipped_count > 0:
-        print(f"Skipped: {skipped_count} files (already processed)")
-        logger.info(f"Skipping {skipped_count} already-processed files")
-    print(f"Files:   {total_files}")
-    print()
-
-    if total_files == 0:
-        print("No files to process (all already have sembr output)")
-        logger.info("No files to process - all already complete")
-        return 0
-
-    logger.info(f"Processing {total_files} files with max_concurrent={max_concurrent}")
-
-    # Progress tracking
-    processed_count = 0
-    error_count = 0
-    errors: list[tuple[str, str]] = []  # (filename, error_message)
-    start_time = time.perf_counter()
-
-    def progress_callback(current: int, total: int, filename: str) -> None:
-        nonlocal processed_count
-        processed_count = current
-        if show_progress:
-            elapsed = time.perf_counter() - start_time
-            rate = current / elapsed if elapsed > 0 else 0
-            print(f"[{current}/{total}] {filename} ({rate:.1f} files/s)")
-        logger.debug(f"Processing [{current}/{total}]: {filename}")
-
-    def error_callback(filename: str, error: Exception) -> None:
-        nonlocal error_count
-        error_count += 1
-        error_msg = f"{type(error).__name__}: {error}"
-        errors.append((filename, error_msg))
-        _log_exception(f"Failed to process {filename}", error)
-        if show_progress:
-            print(f"  ERROR: {error_msg}")
-
-    # Run async processing
-    try:
-        results = asyncio.run(
-            _run_sembr_batch_with_errors(
-                input_dir=input_dir,
-                output_dir=output_dir,
-                config=config,
-                files_to_process=files_to_process,
-                max_concurrent=max_concurrent,
-                stagger_delay=stagger_delay,
-                progress_callback=progress_callback if show_progress else None,
-                error_callback=error_callback,
-                health_interval=health_interval,
-                enable_failover=enable_gpu_failover,
-            )
-        )
-
-        elapsed = time.perf_counter() - start_time
-        print()
-        print(f"Complete: {len(results)} files processed in {elapsed:.1f}s")
-        logger.info(f"Completed {len(results)} files in {elapsed:.1f}s")
-
-        # Summary stats
-        if results:
-            total_lines = sum(r.line_count for r in results)
-            total_words = sum(r.input_word_count for r in results)
-            print(f"Total:    {total_lines:,} lines, {total_words:,} words")
-            logger.info(f"Total: {total_lines:,} lines, {total_words:,} words")
-
-        if error_count > 0:
-            print(f"Errors:   {error_count} files failed")
-            logger.warning(f"{error_count} files failed - see log for details")
-            for filename, err in errors[:5]:
-                print(f"  - {filename}: {err}")
-            if len(errors) > 5:
-                print(f"  ... and {len(errors) - 5} more (see log file)")
-
-        return 0 if error_count == 0 else 1
-
-    except SembrServerError as e:
-        print(f"\nError: Server error - {e}")
-        _log_exception("Server error during batch processing", e)
-        return 1
-    except SembrTimeoutError as e:
-        print(f"\nError: Request timed out - {e}")
-        _log_exception("Timeout during batch processing", e)
-        return 1
-    except SembrContentError as e:
-        print(f"\nError: Content validation failed - {e}")
-        _log_exception("Content validation error", e)
-        return 1
-    except SembrError as e:
-        print(f"\nError: Sembr error - {e}")
-        _log_exception("Sembr error during batch processing", e)
-        return 1
-    except KeyboardInterrupt:
-        print(f"\n\nInterrupted after processing {processed_count} files")
-        logger.warning(f"Interrupted by user after {processed_count} files")
-        print(f"Progress saved - run again to resume from {processed_count + skipped_count} files")
-        return 130  # Standard exit code for SIGINT
-    except Exception as e:
-        print(f"\nUnexpected error: {type(e).__name__}: {e}")
-        _log_exception("Unexpected error during batch processing", e)
-        return 1
-
-
-async def _run_sembr_batch(
-    input_dir: Path,
-    output_dir: Path,
-    config: SembrConfig,
-    sample_count: int | None,
-    max_concurrent: int,
-    progress_callback: Callable[[int, int, str], None] | None,
-) -> list[SembrResult]:
-    """Run sembr batch processing with optional sampling.
-
-    Args:
-        input_dir: Input directory
-        output_dir: Output directory
-        config: Sembr configuration
-        sample_count: Optional limit on files to process
-        max_concurrent: Maximum concurrent processing
-        progress_callback: Optional progress callback
-
-    Returns:
-        List of processing results
-    """
-    from pw_mcp.ingest.linebreaker import process_batch
-
-    # If sampling, we need to limit the files ourselves
-    if sample_count is not None:
-        # Create a temporary directory with limited files
-        input_files = sorted(input_dir.rglob("*.txt"))[:sample_count]
-
-        # Process files individually with progress
-        results: list[SembrResult] = []
-        total = len(input_files)
-
-        # Import process_file for individual processing
-        from pw_mcp.ingest.linebreaker import process_file
-
-        for i, input_file in enumerate(input_files):
-            relative_path = input_file.relative_to(input_dir)
-            output_file = output_dir / relative_path
-
-            if progress_callback:
-                progress_callback(i + 1, total, str(relative_path))
-
-            result = await process_file(input_file, output_file, config)
-            results.append(result)
-
-        return results
-    else:
-        # Full batch processing - filter out failed files (None values)
-        batch_results = await process_batch(
-            input_dir=input_dir,
-            output_dir=output_dir,
-            config=config,
-            progress_callback=progress_callback,
-            max_concurrent=max_concurrent,
-        )
-        return [r for r in batch_results if r is not None]
-
-
-async def _run_sembr_batch_with_errors(
-    input_dir: Path,
-    output_dir: Path,
-    config: SembrConfig,
-    files_to_process: list[Path],
-    max_concurrent: int,
-    stagger_delay: float,
-    progress_callback: Callable[[int, int, str], None] | None,
-    error_callback: Callable[[str, Exception], None] | None,
-    health_interval: float = 60.0,
-    enable_failover: bool = True,
-) -> list[SembrResult]:
-    """Run sembr batch processing with per-file error handling.
-
-    This version processes files with controlled concurrency, catches errors
-    for individual files, monitors server health, and supports graceful shutdown.
-
-    Args:
-        input_dir: Input directory (for relative path calculation)
-        output_dir: Output directory
-        config: Sembr configuration
-        files_to_process: List of specific files to process
-        max_concurrent: Maximum concurrent processing (used for semaphore)
-        stagger_delay: Delay in seconds between requests (for GPU stability)
-        progress_callback: Optional callback for progress updates
-        error_callback: Optional callback for error reporting
-        health_interval: Seconds between health checks (default: 60.0)
-        enable_failover: Enable GPU failover on server errors (default: True)
-
-    Returns:
-        List of successful processing results
-    """
-    from pw_mcp.ingest.linebreaker import SembrSkipError, process_file
-    from pw_mcp.ingest.server_manager import (
-        HealthMonitor,
-        is_shutdown_requested,
-        restart_server,
-    )
-
-    results: list[SembrResult] = []
-    total = len(files_to_process)
-    semaphore = asyncio.Semaphore(max_concurrent)
-    processed_count = 0
-    skipped_count = 0
-
-    # Set up health monitor
-    def recovery_callback() -> bool:
-        """Attempt to recover the sembr server."""
-        logger.info("Attempting sembr server recovery")
-        try:
-            server = restart_server("sembr")
-            if server is not None:
-                logger.info(f"Server recovered on GPU {server.gpu_id}")
-                return True
-        except Exception as e:
-            logger.error(f"Server recovery failed: {e}")
-        return False
-
-    health_monitor = HealthMonitor(
-        server_type="sembr",
-        interval=health_interval,
-        max_recovery_attempts=3 if enable_failover else 1,
-        recovery_callback=recovery_callback if enable_failover else None,
-    )
-    health_monitor.start()
-
-    async def process_single(index: int, input_file: Path) -> SembrResult | None:
-        """Process a single file with error handling.
-
-        Handles:
-        - SembrSkipError: Logs as info and skips (stub files)
-        - CUDA crashes: Restarts server and retries once
-        - Other errors: Logs as error and continues
-        """
-        nonlocal processed_count, skipped_count
-
-        # Check for shutdown request before processing
-        if is_shutdown_requested():
-            logger.info(f"Shutdown requested, skipping {input_file.name}")
-            return None
-
-        async with semaphore:
-            # Check health periodically (outside semaphore would deadlock)
-            if health_monitor.should_check() and not health_monitor.check_and_recover():
-                logger.error("Server unrecoverable, aborting batch")
-                raise RuntimeError("Sembr server unrecoverable after recovery attempts")
-
-            relative_path = input_file.relative_to(input_dir)
-            output_file = output_dir / relative_path
-
-            if progress_callback:
-                progress_callback(index + 1, total, str(relative_path))
-
-            try:
-                result = await process_file(input_file, output_file, config)
-                processed_count += 1
-                logger.debug(f"Successfully processed: {relative_path}")
-                # Stagger delay between requests for GPU stability
-                if stagger_delay > 0:
-                    await asyncio.sleep(stagger_delay)
-                return result
-            except SembrSkipError as e:
-                # Stub files - log as info, not error
-                skipped_count += 1
-                logger.info(f"Skipped {relative_path}: {e}")
-                return None
-            except Exception as e:
-                # Check if this is a CUDA crash
-                if is_cuda_crash(e) and enable_failover:
-                    logger.warning(f"CUDA crash on {relative_path}, restarting server...")
-                    # Attempt server restart
-                    server = restart_server("sembr")
-                    if server is not None:
-                        logger.info(f"Server restarted (PID: {server.pid}), retrying file")
-                        # Retry once after restart
-                        try:
-                            result = await process_file(input_file, output_file, config)
-                            processed_count += 1
-                            logger.info(f"Retry succeeded: {relative_path}")
-                            return result
-                        except SembrSkipError as skip_err:
-                            # Stub detected on retry
-                            skipped_count += 1
-                            logger.info(f"Skipped on retry {relative_path}: {skip_err}")
-                            return None
-                        except Exception as retry_err:
-                            logger.error(
-                                f"Retry failed for {relative_path}: "
-                                f"{type(retry_err).__name__}: {retry_err}"
-                            )
-                            if error_callback:
-                                error_callback(str(relative_path), retry_err)
-                            return None
-                    else:
-                        logger.error("Server restart failed, cannot retry")
-
-                if error_callback:
-                    error_callback(str(relative_path), e)
-                return None
-
-    try:
-        # Process files with controlled concurrency
-        tasks = [process_single(i, f) for i, f in enumerate(files_to_process)]
-        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Filter out None results (failed/skipped files) and exceptions
-        for result in batch_results:
-            if isinstance(result, BaseException):
-                # Re-raise RuntimeError from server recovery failure
-                if isinstance(result, RuntimeError):
-                    raise result
-                logger.error(f"Task raised exception: {result}")
-            elif result is not None:
-                # Type narrowing: result is now SembrResult
-                results.append(result)
-
-    finally:
-        health_monitor.stop()
-        logger.info(
-            f"Batch processing complete: {len(results)}/{total} files succeeded, "
-            f"{skipped_count} skipped (stub content)"
-        )
-
-    return results
-
-
 def _load_metadata(metadata_path: Path) -> dict[str, Any]:
     """Load article metadata from JSON file.
 
@@ -1311,7 +557,10 @@ def _load_metadata(metadata_path: Path) -> dict[str, Any]:
 
 
 def _run_chunk_process(args: argparse.Namespace) -> int:
-    """Run chunking process on sembr'd text files.
+    """Run chunking process on extracted text files.
+
+    Uses tiktoken for accurate token counting and supports chunk overlap
+    for RAG context continuity.
 
     Args:
         args: Parsed command line arguments
@@ -1329,26 +578,29 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
     show_progress: bool = not args.no_progress
     target_tokens: int = args.target_tokens
     max_tokens: int = args.max_tokens
+    overlap_tokens: int = args.overlap_tokens
 
     # Validate input directory
     if not input_dir.exists():
         print(f"Error: Input directory does not exist: {input_dir}")
         return 1
 
-    # Create chunking config
+    # Create chunking config with tiktoken
     config = ChunkConfig(
         target_tokens=target_tokens,
         max_tokens=max_tokens,
+        overlap_tokens=overlap_tokens,
     )
 
     # Print header
-    print("Chunk Processing")
+    print("Chunk Processing (tiktoken)")
     print("=" * 40)
     print(f"Input:     {input_dir}")
     print(f"Output:    {output_dir}")
     print(f"Metadata:  {extracted_dir}")
     print(f"Target:    {target_tokens} tokens")
     print(f"Max:       {max_tokens} tokens")
+    print(f"Overlap:   {overlap_tokens} tokens")
 
     # Discover input files
     input_files = list(input_dir.rglob("*.txt"))
@@ -1759,15 +1011,7 @@ def main() -> None:
     parser = _create_parser()
     args = parser.parse_args()
 
-    if args.command == "sembr":
-        # Handle sembr subcommand
-        if args.check_only:
-            success = _run_sembr_check(args.server)
-            sys.exit(0 if success else 1)
-        else:
-            exit_code = _run_sembr_process(args)
-            sys.exit(exit_code)
-    elif args.command == "chunk":
+    if args.command == "chunk":
         # Handle chunk subcommand
         exit_code = _run_chunk_process(args)
         sys.exit(exit_code)

@@ -13,13 +13,11 @@ from pydantic import BaseModel
 class PWMCPConfig(BaseModel):
     """Configuration for pw-mcp project."""
 
-    # Semantic linebreaking
-    sembr_model: str = "admko/sembr2023-distilbert-base-multilingual-cased"
-
-    # Chunking parameters
+    # Chunking parameters (tiktoken-based)
     chunk_target_tokens: int = 350
     chunk_min_tokens: int = 100
     chunk_max_tokens: int = 500
+    chunk_overlap_tokens: int = 50
 
     # Embedding configuration
     embedding_provider: str = "ollama"  # "ollama" or "sentence-transformers"

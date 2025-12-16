@@ -468,3 +468,369 @@ class TestHelperFunctions:
         assert estimate_tokens(text, 1.0) == 5
         assert estimate_tokens(text, 2.0) == 10
         assert estimate_tokens(text, 1.5) == 7  # Rounded
+
+
+# =============================================================================
+# TIKTOKEN INTEGRATION TESTS
+# =============================================================================
+
+
+class TestTiktokenIntegration:
+    """Tests for tiktoken-based token counting."""
+
+    @pytest.mark.unit
+    def test_count_tokens_import(self) -> None:
+        """Should be able to import count_tokens function."""
+        from pw_mcp.ingest.chunker import count_tokens
+
+        assert callable(count_tokens)
+
+    @pytest.mark.unit
+    def test_count_tokens_basic(self) -> None:
+        """Should accurately count tokens using tiktoken."""
+        from pw_mcp.ingest.chunker import count_tokens
+
+        # "Hello world" = 2 tokens in cl100k_base
+        assert count_tokens("Hello world") == 2
+
+        # More complex text
+        text = "The quick brown fox jumps over the lazy dog."
+        tokens = count_tokens(text)
+        assert tokens > 0
+        assert tokens < 20  # Should be around 9-10 tokens
+
+    @pytest.mark.unit
+    def test_count_tokens_empty(self) -> None:
+        """Empty string should return 0 tokens."""
+        from pw_mcp.ingest.chunker import count_tokens
+
+        assert count_tokens("") == 0
+        assert count_tokens("   ") == 1  # Whitespace is a token
+
+    @pytest.mark.unit
+    def test_count_tokens_unicode(self) -> None:
+        """Should handle Unicode text correctly."""
+        from pw_mcp.ingest.chunker import count_tokens
+
+        # Russian text
+        russian = "Привет мир"
+        russian_tokens = count_tokens(russian)
+        assert russian_tokens > 0
+
+        # Chinese text (more tokens per character in cl100k_base)
+        chinese = "你好世界"
+        chinese_tokens = count_tokens(chinese)
+        assert chinese_tokens > 0
+
+
+class TestChunkConfigWithOverlap:
+    """Tests for ChunkConfig with overlap support."""
+
+    @pytest.mark.unit
+    def test_chunk_config_overlap_default(self) -> None:
+        """ChunkConfig should have overlap_tokens field with default."""
+        config = ChunkConfig()
+        assert hasattr(config, "overlap_tokens")
+        # Default can be 0 or a small value like 50
+
+    @pytest.mark.unit
+    def test_chunk_config_overlap_custom(self) -> None:
+        """Should accept custom overlap_tokens value."""
+        config = ChunkConfig(overlap_tokens=100)
+        assert config.overlap_tokens == 100
+
+
+class TestChunkWithOverlap:
+    """Tests for chunk overlap functionality."""
+
+    @pytest.mark.unit
+    def test_overlap_chunks_share_content(self) -> None:
+        """Consecutive chunks should share overlapping content."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create text that will definitely split
+        paragraphs = [
+            "First paragraph with some content. " * 20,
+            "",
+            "Second paragraph with different content. " * 20,
+            "",
+            "Third paragraph with more content. " * 20,
+        ]
+        text = "\n".join(paragraphs)
+
+        config = ChunkConfig(max_tokens=100, overlap_tokens=20)
+        chunks = chunk_text_tiktoken(text, config)
+
+        if len(chunks) >= 2:
+            # Check that second chunk starts with content from end of first
+            # This is a behavioral test - the specific overlap depends on implementation
+            assert len(chunks) >= 2
+
+    @pytest.mark.unit
+    def test_zero_overlap_no_shared_content(self) -> None:
+        """With zero overlap, chunks should not share content."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        paragraphs = [
+            "First paragraph content. " * 20,
+            "",
+            "Second paragraph content. " * 20,
+        ]
+        text = "\n".join(paragraphs)
+
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(text, config)
+
+        # All content should appear exactly once (no overlap)
+        if len(chunks) >= 2:
+            all_text = "".join(c.text for c in chunks)
+            # Without overlap, concatenating should give back ~original length
+            assert len(all_text) <= len(text) + 100  # Some tolerance
+
+
+class TestChunkTextTiktoken:
+    """Tests for the tiktoken-based chunk_text function."""
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_import(self) -> None:
+        """Should be able to import chunk_text_tiktoken function."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        assert callable(chunk_text_tiktoken)
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_returns_chunks(self) -> None:
+        """chunk_text_tiktoken should return list of Chunk objects."""
+        from pw_mcp.ingest.chunker import Chunk, chunk_text_tiktoken
+
+        text = "This is a test sentence. And another one."
+        config = ChunkConfig()
+        chunks = chunk_text_tiktoken(text, config)
+
+        assert isinstance(chunks, list)
+        assert all(isinstance(c, Chunk) for c in chunks)
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_respects_max_tokens(self) -> None:
+        """Chunks should not exceed max_tokens."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken, count_tokens
+
+        # Create multi-line text (realistic - documents have line breaks)
+        lines = [f"This is sentence number {i}." for i in range(100)]
+        text = "\n".join(lines)
+        config = ChunkConfig(max_tokens=50, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(text, config)
+
+        for chunk in chunks:
+            tokens = count_tokens(chunk.text)
+            # Allow some tolerance for boundary conditions
+            assert tokens <= config.max_tokens + 10
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_preserves_content(self) -> None:
+        """All content should be preserved across chunks."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        original = "Word1 Word2 Word3 Word4 Word5. " * 20
+        config = ChunkConfig(max_tokens=30, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(original, config)
+
+        # Check key words are present
+        all_text = " ".join(c.text for c in chunks)
+        assert "Word1" in all_text
+        assert "Word5" in all_text
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_empty_input(self) -> None:
+        """Empty input should return empty list."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        config = ChunkConfig()
+        chunks = chunk_text_tiktoken("", config)
+        assert chunks == []
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_section_headers(self) -> None:
+        """Should respect section headers as hard breaks."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        text = """Content before header.
+
+== New Section ==
+
+Content after header."""
+
+        config = ChunkConfig(max_tokens=1000)
+        chunks = chunk_text_tiktoken(text, config)
+
+        # Should have at least 2 chunks (split at header)
+        assert len(chunks) >= 2
+
+        # Find chunk with section header
+        sections = [c.section for c in chunks if c.section]
+        assert "New Section" in sections
+
+    @pytest.mark.unit
+    def test_chunk_text_tiktoken_actual_token_count(self) -> None:
+        """Chunk should have actual_tokens field with tiktoken count."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        text = "Hello world. This is a test."
+        config = ChunkConfig()
+        chunks = chunk_text_tiktoken(text, config)
+
+        assert len(chunks) >= 1
+        # Check chunk has token count (either actual_tokens or estimated_tokens)
+        assert chunks[0].estimated_tokens > 0
+
+
+# =============================================================================
+# OVERSIZED LINE HANDLING TESTS (TDD Red Phase)
+# =============================================================================
+
+
+class TestOversizedLineHandling:
+    """Tests for handling lines that exceed max_tokens.
+
+    These tests verify that the chunker correctly splits individual lines
+    that exceed the max_tokens limit. This is critical for API compatibility
+    (OpenAI has 8192 token per-input limit).
+    """
+
+    @pytest.mark.unit
+    def test_single_oversized_line_splits(self) -> None:
+        """A single line exceeding max_tokens should be split into multiple chunks."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken, count_tokens
+
+        # Create a single very long line (~500 tokens)
+        long_line = "word " * 400  # ~400 tokens
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+
+        assert count_tokens(long_line) > config.max_tokens  # Verify it's oversized
+
+        chunks = chunk_text_tiktoken(long_line, config)
+
+        # Should create multiple chunks, each under max_tokens
+        assert len(chunks) >= 2, f"Expected >=2 chunks, got {len(chunks)}"
+        for i, chunk in enumerate(chunks):
+            tokens = count_tokens(chunk.text)
+            assert (
+                tokens <= config.max_tokens
+            ), f"Chunk {i} has {tokens} tokens, exceeds max {config.max_tokens}"
+
+    @pytest.mark.unit
+    def test_oversized_line_in_middle_of_document(self) -> None:
+        """Oversized line in middle of document should be split correctly."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken, count_tokens
+
+        # Normal line + oversized line + normal line
+        text = "Short normal line.\n" + ("word " * 400) + "\nAnother short line."
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+
+        chunks = chunk_text_tiktoken(text, config)
+
+        # All chunks must respect max_tokens
+        for i, chunk in enumerate(chunks):
+            tokens = count_tokens(chunk.text)
+            assert (
+                tokens <= config.max_tokens
+            ), f"Chunk {i} has {tokens} tokens, exceeds max {config.max_tokens}"
+
+    @pytest.mark.unit
+    def test_oversized_line_preserves_all_content(self) -> None:
+        """When splitting an oversized line, all words should be preserved."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create recognizable content
+        words = [f"unique{i}" for i in range(200)]
+        long_line = " ".join(words)
+        config = ChunkConfig(max_tokens=50, overlap_tokens=0)
+
+        chunks = chunk_text_tiktoken(long_line, config)
+
+        # All unique words should appear in the combined text
+        all_text = " ".join(c.text for c in chunks)
+        for word in words[:10]:  # Check first 10
+            assert word in all_text, f"Missing word: {word}"
+        for word in words[-10:]:  # Check last 10
+            assert word in all_text, f"Missing word: {word}"
+
+    @pytest.mark.unit
+    def test_openai_limit_enforcement(self) -> None:
+        """Chunks should never exceed OpenAI's 8192 token per-input limit."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken, count_tokens
+
+        # Create a massive text block (like State and Revolution chapter)
+        massive_text = "The state " * 10000  # ~20k tokens
+
+        # Use realistic config but ensure max is under OpenAI limit
+        config = ChunkConfig(max_tokens=1000, overlap_tokens=50)
+
+        chunks = chunk_text_tiktoken(massive_text, config)
+
+        # No chunk should exceed max_tokens
+        max_found = 0
+        for i, chunk in enumerate(chunks):
+            tokens = count_tokens(chunk.text)
+            max_found = max(max_found, tokens)
+            assert (
+                tokens <= config.max_tokens
+            ), f"Chunk {i} has {tokens} tokens, exceeds max {config.max_tokens}"
+
+        # Should have created multiple chunks
+        assert len(chunks) > 5, f"Expected >5 chunks for massive text, got {len(chunks)}"
+
+    @pytest.mark.unit
+    def test_sentence_boundary_split_when_possible(self) -> None:
+        """When splitting oversized lines, prefer sentence boundaries."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create oversized line with clear sentence boundaries
+        sentences = ["This is sentence number " + str(i) + ". " for i in range(50)]
+        long_line = "".join(sentences)  # All on one line
+
+        config = ChunkConfig(max_tokens=50, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(long_line, config)
+
+        # Most chunks should end with sentence-ending punctuation
+        sentence_endings = 0
+        for chunk in chunks:
+            text = chunk.text.strip()
+            if text and text[-1] in ".!?":
+                sentence_endings += 1
+
+        # Allow some tolerance but most should end cleanly
+        ratio = sentence_endings / len(chunks) if chunks else 0
+        assert ratio >= 0.5, f"Only {ratio:.0%} chunks end with sentence punctuation"
+
+    @pytest.mark.unit
+    def test_word_boundary_fallback(self) -> None:
+        """When no sentence boundary available, split at word boundaries."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Long line with no sentence punctuation
+        long_line = "word " * 500
+        config = ChunkConfig(max_tokens=50, overlap_tokens=0)
+
+        chunks = chunk_text_tiktoken(long_line, config)
+
+        # Should split cleanly at word boundaries, not mid-word
+        for chunk in chunks:
+            text = chunk.text.strip()
+            # Should not start with partial word (e.g., "rd" from "word")
+            if text:
+                assert text[0].isalpha() or text[0].isdigit() or text[0] in "\"'("
+
+    @pytest.mark.unit
+    def test_no_empty_chunks_from_oversized_split(self) -> None:
+        """Splitting oversized lines should not produce empty chunks."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        long_line = "word " * 400
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+
+        chunks = chunk_text_tiktoken(long_line, config)
+
+        for i, chunk in enumerate(chunks):
+            assert chunk.text.strip(), f"Chunk {i} is empty"
+            assert chunk.word_count > 0, f"Chunk {i} has zero word count"

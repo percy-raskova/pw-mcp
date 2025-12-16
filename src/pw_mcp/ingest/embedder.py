@@ -216,6 +216,8 @@ def _embed_openai_batch(texts: list[str], config: EmbedConfig) -> list[list[floa
 def embed_texts(texts: list[str], config: EmbedConfig) -> NDArray[np.float32]:
     """Embed a batch of texts via configured provider.
 
+    Uses token-aware batching for OpenAI to stay within API limits.
+
     Args:
         texts: List of texts to embed
         config: Embedding configuration
@@ -236,14 +238,16 @@ def embed_texts(texts: list[str], config: EmbedConfig) -> NDArray[np.float32]:
 
     all_embeddings: list[list[float]] = []
 
-    # Process in batches
-    batch_count = (len(texts) + config.batch_size - 1) // config.batch_size
+    # Build batches based on provider
+    if config.provider == "openai":
+        # Token-aware batching for OpenAI (max 8192 tokens per input, 300k total)
+        # Use 7500 as safe limit to leave headroom
+        batches = _build_token_aware_batches(texts, max_tokens=7500, max_items=config.batch_size)
+    else:
+        # Fixed-size batching for Ollama
+        batches = _build_fixed_batches(texts, config.batch_size)
 
-    for batch_idx in range(batch_count):
-        start_idx = batch_idx * config.batch_size
-        end_idx = min(start_idx + config.batch_size, len(texts))
-        batch_texts = texts[start_idx:end_idx]
-
+    for batch_texts in batches:
         # Route to appropriate provider
         if config.provider == "openai":
             batch_embeddings = _embed_openai_batch(batch_texts, config)
@@ -253,6 +257,71 @@ def embed_texts(texts: list[str], config: EmbedConfig) -> NDArray[np.float32]:
         all_embeddings.extend(batch_embeddings)
 
     return np.array(all_embeddings, dtype=np.float32)
+
+
+def _build_token_aware_batches(
+    texts: list[str], max_tokens: int = 7500, max_items: int = 32
+) -> list[list[str]]:
+    """Build batches that respect token limits.
+
+    Args:
+        texts: List of texts to batch
+        max_tokens: Maximum tokens per batch (default: 7500, under OpenAI's 8192 limit)
+        max_items: Maximum items per batch (default: 32)
+
+    Returns:
+        List of batches, where each batch is a list of texts
+    """
+    from pw_mcp.ingest.chunker import count_tokens
+
+    batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_tokens = 0
+
+    for text in texts:
+        text_tokens = count_tokens(text)
+
+        # If single text exceeds limit, it goes in its own batch
+        # (OpenAI will handle the error for oversized inputs)
+        if text_tokens > max_tokens:
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_tokens = 0
+            batches.append([text])
+            continue
+
+        # Check if adding this text would exceed limits
+        if current_tokens + text_tokens > max_tokens or len(current_batch) >= max_items:
+            if current_batch:
+                batches.append(current_batch)
+            current_batch = [text]
+            current_tokens = text_tokens
+        else:
+            current_batch.append(text)
+            current_tokens += text_tokens
+
+    # Don't forget the last batch
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
+
+def _build_fixed_batches(texts: list[str], batch_size: int) -> list[list[str]]:
+    """Build fixed-size batches.
+
+    Args:
+        texts: List of texts to batch
+        batch_size: Number of items per batch
+
+    Returns:
+        List of batches, where each batch is a list of texts
+    """
+    batches: list[list[str]] = []
+    for i in range(0, len(texts), batch_size):
+        batches.append(texts[i : i + batch_size])
+    return batches
 
 
 def _embed_batch_with_retry(texts: list[str], config: EmbedConfig) -> list[list[float]]:

@@ -11,7 +11,7 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "mwparserfromhell>=0.6.6",
     "httpx>=0.28.0",
-    "sembr>=0.2.0",
+    "tiktoken>=0.7.0",
     "pydantic>=2.0.0",
     "ollama>=0.4.0",
     "openai>=1.0.0",
@@ -129,7 +129,7 @@ module = [
     "chromadb.*",
     "sentence_transformers.*",
     "mwparserfromhell.*",
-    "sembr.*",
+    "tiktoken.*",
     "ollama",
     "ollama.*",
     "openai",
@@ -154,23 +154,14 @@ exclude_lines = [
 ]
 
 # =============================================================================
-# UV SOURCE OVERRIDES (for local development)
-# =============================================================================
-[tool.uv.sources]
-# Use local sembr with graceful CUDA shutdown fixes
-sembr = { path = "/home/user/projects/sembr", editable = true }
-
-# =============================================================================
 # PW-MCP PROJECT CONFIGURATION
 # =============================================================================
 [tool.pw-mcp]
-# Semantic linebreaking model (multilingual for Chinese, Russian, etc.)
-sembr_model = "admko/sembr2023-distilbert-base-multilingual-cased"
-
-# Chunking parameters
+# Chunking parameters (tiktoken cl100k_base encoding for OpenAI compatibility)
 chunk_target_tokens = 350
 chunk_min_tokens = 100
 chunk_max_tokens = 500
+chunk_overlap_tokens = 50
 
 # Embedding configuration (Ollama)
 embedding_provider = "ollama"

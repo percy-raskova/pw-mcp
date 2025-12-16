@@ -11,7 +11,7 @@ An MCP (Model Context Protocol) server providing AI assistants with semantic vec
 - **Vector DB**: ChromaDB (persistent, local-first)
 - **Embeddings**: OpenAI `text-embedding-3-large` (1536-dim, via API) or Ollama (local fallback)
 - **MediaWiki Parsing**: mwparserfromhell
-- **Semantic Linebreaking**: sembr with `distilbert-base-multilingual-cased` (supports Chinese, Russian, etc.)
+- **Token Counting**: tiktoken (cl100k_base encoding for OpenAI compatibility)
 - **Server Protocol**: MCP via FastMCP
 - **Configuration**: Pydantic models loading from `[tool.pw-mcp]` in pyproject.toml
 
@@ -46,7 +46,7 @@ Format: MediaWiki markup with `[[links]]`, `{{templates}}`, `[[Category:tags]]`,
 
 ## Architecture Decisions
 
-### Why Semantic Linebreaking + Chunking (not 1 line = 1 vector)
+### Why Paragraph-Level Chunking (not 1 sentence = 1 vector)
 
 Individual sentences often lack context:
 ```
@@ -57,53 +57,33 @@ These transformed the Soviet Union from an agrarian society into an industrial p
 "These transformed..." loses its referent if embedded alone.
 
 **Solution**:
-1. Sembr source files for clean organization
-2. Chunk at paragraph/section level (~200-500 tokens) for embedding
+1. Chunk at paragraph/section level (~350-500 tokens) for embedding
+2. Use 50-token overlap between chunks for context continuity
 3. Store line offsets in metadata for precise citations
 
 ### Ingestion Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. MediaWiki Parser                                        │
+│  1. MediaWiki Parser (extract)                              │
 │     prolewiki-exports/*.txt → clean text + metadata         │
 │     Extract: categories, internal links, sections, refs     │
 │                                                             │
-│  2. Semantic Linebreaker (sembr)                            │
-│     clean text → sembr'd text                               │
-│     Creates semantic boundaries for chunking                │
-│                                                             │
-│  3. Chunker                                                 │
-│     sembr'd text → chunks (~200-500 tokens)                 │
+│  2. Tiktoken Chunker (chunk)                                │
+│     extracted text → chunks (~350-500 tokens)               │
 │     - Respects section boundaries (== headers ==)           │
-│     - Groups semantic lines into coherent paragraphs        │
+│     - Uses tiktoken for accurate token counting             │
+│     - 50-token overlap for RAG context continuity           │
 │     - Stores line offsets for precise citation              │
 │                                                             │
-│  4. Embedder                                                │
+│  3. Embedder (embed)                                        │
 │     chunks → vectors via OpenAI text-embedding-3-large      │
 │     (1536-dim, or Ollama 768-dim for local development)     │
 │                                                             │
-│  5. ChromaDB Loader                                         │
+│  4. ChromaDB Loader (load)                                  │
 │     vectors + metadata → persistent database                │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-### Sembr Performance Note
-
-**IMPORTANT**: Running sembr per-file is slow (~9s/file due to model loading).
-
-Use **server mode** for batch processing:
-```bash
-# Terminal 1: Start sembr server (loads 135M param model once)
-mise run sembr-server
-
-# Terminal 2: Send files via HTTP to localhost:8384
-# This avoids reloading the model for each file
-```
-
-Benchmark results (100 files sample):
-- Per-file mode: ~9 seconds/file → **13-16 hours** for full corpus
-- Server mode: Expected **10-50x faster** (model loaded once)
 
 ### Chunk Metadata Schema (MVP - 13 fields)
 
@@ -153,11 +133,8 @@ pw-mcp/
 │   │   ├── __init__.py
 │   │   ├── cli.py             # pw-ingest CLI
 │   │   ├── mediawiki.py       # MediaWiki parser
-│   │   ├── linebreaker.py     # sembr wrapper
-│   │   └── chunker.py         # Chunk creation
-│   ├── embeddings/
-│   │   ├── __init__.py
-│   │   └── embed.py           # sentence-transformers interface
+│   │   ├── chunker.py         # Tiktoken-based chunking
+│   │   └── embedder.py        # OpenAI/Ollama embeddings
 │   └── db/
 │       ├── __init__.py
 │       └── chroma.py          # ChromaDB interface
@@ -214,9 +191,16 @@ mise run check            # Run lint + typecheck
 mise run test             # Run all tests
 mise run pre-commit       # Run all pre-commit hooks
 
-mise run sembr-server     # Start sembr server for batch processing
 mise run serve            # Start MCP server
-mise run ingest           # Run corpus ingestion
+
+# Pipeline stages
+mise run extract          # Extract from MediaWiki
+mise run chunk            # Chunk extracted text (tiktoken)
+mise run embed            # Generate embeddings
+mise run load             # Load into ChromaDB
+
+mise run corpus-pipeline  # Run full pipeline
+mise run sample-pipeline  # Run on sample files
 ```
 
 ### Using uv directly
@@ -247,4 +231,3 @@ uv run pw-ingest                # Run ingestion
 - **Metadata normalization**: ProleWiki categories need cleaning/standardization
 - **Incremental updates**: Currently full reindex; could add delta ingestion
 - **Artifact distribution**: Package ChromaDB as downloadable release
-- **Sembr server integration**: Build HTTP client to use sembr server mode for faster batch processing

@@ -37,10 +37,10 @@ class TestChunkParserRegistration:
 
     @pytest.mark.unit
     def test_chunk_input_default(self) -> None:
-        """Input directory should default to Path('sembr')."""
+        """Input directory should default to Path('extracted')."""
         parser = _create_parser()
         args = parser.parse_args(["chunk"])
-        assert args.input == Path("sembr")
+        assert args.input == Path("extracted")
 
     @pytest.mark.unit
     def test_chunk_output_default(self) -> None:
