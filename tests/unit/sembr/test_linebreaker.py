@@ -1252,3 +1252,174 @@ class TestProcessFileStubDetection:
 
             assert result.line_count == 2
             mock_process.assert_called_once()
+
+
+# =============================================================================
+# LONG LINE SPLITTING TESTS
+# =============================================================================
+
+
+class TestSplitLongLineConstants:
+    """Tests for line splitting constants."""
+
+    @pytest.mark.unit
+    def test_max_line_chars_constant_exists(self) -> None:
+        """MAX_LINE_CHARS constant should be defined."""
+        from pw_mcp.ingest.linebreaker import MAX_LINE_CHARS
+
+        assert MAX_LINE_CHARS == 1500
+
+    @pytest.mark.unit
+    def test_target_chunk_chars_constant_exists(self) -> None:
+        """TARGET_CHUNK_CHARS constant should be defined for optimal split size."""
+        from pw_mcp.ingest.linebreaker import TARGET_CHUNK_CHARS
+
+        assert TARGET_CHUNK_CHARS == 1000
+
+
+class TestSplitLongLine:
+    """Tests for split_long_line() function."""
+
+    @pytest.mark.unit
+    def test_short_line_unchanged(self) -> None:
+        """Lines under MAX_LINE_CHARS return as single-element list."""
+        from pw_mcp.ingest.linebreaker import MAX_LINE_CHARS, split_long_line
+
+        short_line = "This is a short line."
+        result = split_long_line(short_line)
+        assert result == [short_line]
+
+        # Edge case: exactly at limit
+        at_limit = "A" * MAX_LINE_CHARS
+        result = split_long_line(at_limit)
+        assert result == [at_limit]
+
+    @pytest.mark.unit
+    def test_splits_at_sentence_boundary(self) -> None:
+        """Prefers splitting at '. ' over other boundaries."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Create a line with a sentence boundary in the middle
+        first_sentence = "First sentence ends here. "
+        second_sentence = "Second sentence continues " + "with more words " * 100
+
+        long_line = first_sentence + second_sentence
+        result = split_long_line(long_line, max_chars=50)
+
+        # Should split at the sentence boundary
+        assert len(result) >= 2
+        assert result[0].endswith(".")
+
+    @pytest.mark.unit
+    def test_splits_at_comma_if_no_sentence(self) -> None:
+        """Falls back to ', ' when no sentence boundary found."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Create a line with commas but no periods
+        long_line = "word, " * 300  # ~1800 chars with no sentence endings
+        result = split_long_line(long_line, max_chars=100)
+
+        # Should split at comma boundaries
+        assert len(result) > 1
+        # Each chunk should end at a natural break
+        for chunk in result[:-1]:
+            # Should end with comma (possibly with trailing space stripped)
+            assert chunk.endswith(",") or chunk.endswith(", ")
+
+    @pytest.mark.unit
+    def test_splits_at_space_if_no_punctuation(self) -> None:
+        """Falls back to space when no punctuation found."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Create a line with only spaces, no punctuation
+        long_line = "word " * 350  # ~1750 chars
+        result = split_long_line(long_line, max_chars=100)
+
+        # Should split at space boundaries
+        assert len(result) > 1
+        # No chunk should exceed max_chars
+        for chunk in result:
+            assert len(chunk) <= 100
+
+    @pytest.mark.unit
+    def test_very_long_line_multiple_chunks(self) -> None:
+        """A 10,000 char line splits into multiple chunks."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Simulate the Battleground Tibet footnotes problem
+        long_line = "Footnote text with some content. " * 300  # ~10,200 chars
+        result = split_long_line(long_line, max_chars=1500)
+
+        # Should create multiple chunks
+        assert len(result) >= 7  # 10200/1500 ~= 7
+        # No chunk should exceed max_chars
+        for chunk in result:
+            assert len(chunk) <= 1500
+
+    @pytest.mark.unit
+    def test_utf8_boundary_respected(self) -> None:
+        """Doesn't split in middle of multi-byte UTF-8 character."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Create a line with multi-byte UTF-8 characters
+        # German diacritics are 2 bytes each in UTF-8
+        german_text = "Gedächtnislücken " * 100  # ~1700 chars
+        result = split_long_line(german_text, max_chars=100)
+
+        # Should split cleanly
+        assert len(result) > 1
+        # Each chunk should be valid UTF-8 (no partial characters)
+        for chunk in result:
+            # This should not raise - valid UTF-8
+            chunk.encode("utf-8").decode("utf-8")
+
+    @pytest.mark.unit
+    def test_german_diacritics(self) -> None:
+        """Handles ä, ü, ö, ß correctly."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Real German text with diacritics
+        german = "Heinrich Harrer, Gedächtnislücken über die SS. " * 40
+        result = split_long_line(german, max_chars=100)
+
+        # Should preserve all characters
+        combined = "".join(result)
+        assert "ä" in combined
+        assert "ü" in combined
+
+    @pytest.mark.unit
+    def test_chinese_characters(self) -> None:
+        """Handles CJK characters correctly (3+ bytes in UTF-8)."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        # Chinese text - each char is 3 bytes
+        chinese = "中国共产党是中国工人阶级的先锋队" * 50  # ~800 chars
+        result = split_long_line(chinese, max_chars=100)
+
+        # Should split at character boundaries (CJK doesn't use spaces)
+        # So it should use hard break but still be valid UTF-8
+        for chunk in result:
+            chunk.encode("utf-8").decode("utf-8")
+
+    @pytest.mark.unit
+    def test_empty_line_unchanged(self) -> None:
+        """Empty line returns as single empty element."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        result = split_long_line("")
+        assert result == [""]
+
+    @pytest.mark.unit
+    def test_preserves_content(self) -> None:
+        """All content is preserved after splitting."""
+        from pw_mcp.ingest.linebreaker import split_long_line
+
+        original = "The quick brown fox jumps over the lazy dog. " * 50
+        result = split_long_line(original, max_chars=100)
+
+        # Joining chunks should give back all content
+        # (with possible whitespace normalization at boundaries)
+        combined = " ".join(result)
+        # Check that all words are present
+        for word in ["quick", "brown", "fox", "jumps", "lazy", "dog"]:
+            assert word in combined

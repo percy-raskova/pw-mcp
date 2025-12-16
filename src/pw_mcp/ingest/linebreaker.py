@@ -78,6 +78,10 @@ CONTENT_TOLERANCE_RATIO = 0.001  # 0.1% tolerance for content length mismatch
 MIN_CONTENT_BYTES = 100  # Files smaller than this are likely stubs
 URL_PREFIXES = ("http://", "https://", "ftp://")
 
+# Long line splitting constants - prevents CUDA crashes from ultra-long lines
+MAX_LINE_CHARS = 1500  # Lines longer than this get split before processing
+TARGET_CHUNK_CHARS = 1000  # Target size for split chunks
+
 # Global HTTP semaphore to serialize requests to single-threaded sembr server
 # This prevents "Already borrowed" errors when processing multiple files
 _SEMBR_HTTP_SEMAPHORE: asyncio.Semaphore | None = None
@@ -191,6 +195,105 @@ def is_stub_content(text: str) -> bool:
             return True
 
     return False
+
+
+def _find_break_point(text: str, max_pos: int) -> int:
+    """Find the best position to break a long line.
+
+    Searches for natural break points in priority order:
+    1. Sentence endings ('. ', '? ', '! ')
+    2. Clause boundaries (', ', '; ', ': ')
+    3. Any whitespace
+    4. Hard break at max_pos (with UTF-8 boundary awareness)
+
+    Args:
+        text: Text to find break point in
+        max_pos: Maximum position to search up to
+
+    Returns:
+        Position to break at (exclusive - break before this index)
+    """
+    search_region = text[:max_pos]
+
+    # Priority 1: Sentence endings (look for last one before max_pos)
+    for ending in (". ", "? ", "! "):
+        pos = search_region.rfind(ending)
+        if pos > 0:
+            # Include the period but not the space
+            return pos + 1
+
+    # Priority 2: Clause boundaries
+    for boundary in (", ", "; ", ": "):
+        pos = search_region.rfind(boundary)
+        if pos > 0:
+            # Include the punctuation but not the space
+            return pos + 1
+
+    # Priority 3: Any space
+    pos = search_region.rfind(" ")
+    if pos > 0:
+        return pos
+
+    # Priority 4: Hard break at max_pos
+    # For UTF-8 safety, we work with the string directly (Python handles it)
+    # Just return max_pos since we're working with str, not bytes
+    return max_pos
+
+
+def split_long_line(line: str, max_chars: int = MAX_LINE_CHARS) -> list[str]:
+    """Split ultra-long lines at natural break points.
+
+    Lines exceeding max_chars are split to prevent CUDA crashes in the sembr
+    server. The Battleground Tibet file had lines of 9,986 characters which
+    overwhelmed the GPU.
+
+    Args:
+        line: Input line to potentially split
+        max_chars: Maximum characters per chunk (default: MAX_LINE_CHARS)
+
+    Returns:
+        List of line chunks, each at most max_chars long.
+        Short lines return as single-element list.
+    """
+    # Short lines pass through unchanged
+    if len(line) <= max_chars:
+        return [line]
+
+    # Empty line edge case
+    if not line:
+        return [""]
+
+    chunks: list[str] = []
+    remaining = line
+
+    # Loop invariant: remaining always decreases in size
+    # Upper bound: len(line) / 1 iterations at minimum progress
+    max_iterations = len(line) + 1
+    iteration_count = 0
+
+    while len(remaining) > max_chars:
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            # Safety valve - should never happen but prevents infinite loop
+            logger.error(f"split_long_line exceeded max iterations ({max_iterations})")
+            chunks.append(remaining)
+            break
+
+        # Find best break point within max_chars
+        break_point = _find_break_point(remaining, max_chars)
+
+        # Extract chunk and strip trailing whitespace
+        chunk = remaining[:break_point].rstrip()
+        chunks.append(chunk)
+
+        # Remove processed portion and strip leading whitespace
+        remaining = remaining[break_point:].lstrip()
+
+    # Add the remaining text if non-empty
+    if remaining:
+        chunks.append(remaining)
+
+    return chunks
 
 
 def _count_words(text: str) -> int:
@@ -648,6 +751,29 @@ async def process_text(
     """
     if config is None:
         config = SembrConfig()
+
+    # Preprocess: split ultra-long lines to prevent CUDA crashes
+    # Lines exceeding MAX_LINE_CHARS can overwhelm the GPU
+    lines = text.split("\n")
+    processed_lines: list[str] = []
+    lines_split_count = 0
+
+    for line in lines:
+        if len(line) > MAX_LINE_CHARS:
+            split_chunks = split_long_line(line)
+            processed_lines.extend(split_chunks)
+            lines_split_count += 1
+            logger.debug(
+                "Split line from %d chars into %d chunks",
+                len(line),
+                len(split_chunks),
+            )
+        else:
+            processed_lines.append(line)
+
+    if lines_split_count > 0:
+        logger.info("Preprocessed text: split %d long lines", lines_split_count)
+        text = "\n".join(processed_lines)
 
     # Handle empty or whitespace-only input without calling server
     stripped = text.strip()
