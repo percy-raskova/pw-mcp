@@ -1,6 +1,14 @@
 # ProleWiki Ingestion Pipeline Architecture
-# Status: Stages 1 & 4 IMPLEMENTED, Stages 2-3 & 5-7 DRAFT
+# Status: Stages 1-4 IMPLEMENTED, Stage 5 NEXT
 # Last updated: 2025-12-15
+#
+# Pipeline Structure (simplified):
+#   Stage 1: Extraction  ✓  - Parse MediaWiki → extracted/articles/*.json
+#   Stage 2: Sembr       ✓  - Semantic linebreaking → sembr/*.txt
+#   Stage 3: Chunking    ✓  - Create chunks → chunks/*.jsonl
+#   Stage 4: Embedding   ✓  - Generate vectors → embeddings/*.npy
+#   Stage 5: Loading        - Load into ChromaDB → chroma_data/
+#   (Optional) Graph        - Compute backlinks → graph/*.jsonl
 
 # =============================================================================
 # DESIGN PRINCIPLES
@@ -34,78 +42,67 @@ data_flow: |
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 1: EXTRACTION                                        │
-  │  Parse MediaWiki, extract structured data                   │
+  │  Stage 1: EXTRACTION                                   [✓]  │
+  │  Parse MediaWiki, extract structured data + clean text      │
   │                                                             │
   │  Outputs:                                                   │
-  │    extracted/                                               │
-  │    ├── articles/           # Per-article extracted data     │
-  │    │   └── {namespace}/{title}.json                         │
-  │    ├── references.jsonl    # Normalized reference table     │
-  │    ├── links.jsonl         # Link graph (A→B edges)         │
-  │    └── categories.jsonl    # Category assignments           │
+  │    extracted/articles/{namespace}/{title}.json              │
+  │    - clean_text (templates removed, ready for sembr)        │
+  │    - categories, internal_links, infobox, library_work      │
+  │    - is_stub, citation_needed_count, has_blockquote         │
   └─────────────────────────────────────────────────────────────┘
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 2: GRAPH COMPUTATION                                 │
-  │  Compute backlinks, category hierarchies, link weights      │
-  │                                                             │
-  │  Outputs:                                                   │
-  │    graph/                                                   │
-  │    ├── backlinks.jsonl     # Inverted link index (B←A)      │
-  │    ├── link_counts.json    # In-degree/out-degree per article│
-  │    └── category_graph.json # Category relationships         │
-  └─────────────────────────────────────────────────────────────┘
-       │
-       ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 3: TEXT CLEANING                                     │
-  │  Strip markup, preserve quotes, output plain text           │
-  │                                                             │
-  │  Outputs:                                                   │
-  │    cleaned/                                                 │
-  │    └── {namespace}/{title}.txt   # Clean plain text         │
-  └─────────────────────────────────────────────────────────────┘
-       │
-       ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 4: SEMANTIC LINEBREAKING (sembr)                     │
+  │  Stage 2: SEMBR (Semantic Linebreaking)                [✓]  │
   │  Apply sembr model for 1-line-1-idea structure              │
   │                                                             │
   │  Outputs:                                                   │
-  │    sembr/                                                   │
-  │    └── {namespace}/{title}.txt   # Sembr'd text             │
+  │    sembr/{namespace}/{title}.txt                            │
   └─────────────────────────────────────────────────────────────┘
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 5: CHUNKING                                          │
-  │  Group semantic lines into chunks (~200-500 tokens)         │
-  │  Attach metadata from earlier stages                        │
+  │  Stage 3: CHUNKING                                     [✓]  │
+  │  Group semantic lines into chunks (200-1000 tokens)         │
+  │  Attach metadata from extraction                            │
   │                                                             │
   │  Outputs:                                                   │
-  │    chunks/                                                  │
-  │    └── {namespace}/{title}.jsonl  # Chunks with metadata    │
+  │    chunks/{namespace}/{title}.jsonl                         │
   └─────────────────────────────────────────────────────────────┘
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 6: EMBEDDING                                         │
-  │  Generate vectors via Ollama embeddinggemma                 │
+  │  Stage 4: EMBEDDING                                    [✓]  │
+  │  Generate vectors via Ollama embeddinggemma (768-dim)       │
   │                                                             │
   │  Outputs:                                                   │
-  │    embeddings/                                              │
-  │    └── {namespace}/{title}.npy   # Embedding arrays         │
+  │    embeddings/{namespace}/{title}.npy                       │
   └─────────────────────────────────────────────────────────────┘
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 7: CHROMADB LOADING                                  │
+  │  Stage 5: CHROMADB LOADING                                  │
   │  Load chunks + embeddings + metadata into ChromaDB          │
   │                                                             │
   │  Outputs:                                                   │
-  │    chroma_data/            # ChromaDB persistence directory │
+  │    chroma_data/                                             │
+  └─────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  (OPTIONAL) GRAPH COMPUTATION                               │
+  │  Compute backlinks, link counts from extracted data         │
+  │  Can be added anytime - not blocking core pipeline          │
+  │                                                             │
+  │  Outputs:                                                   │
+  │    graph/backlinks.jsonl      # Inverted link index (B←A)   │
+  │    graph/link_counts.json     # In-degree/out-degree        │
+  │    graph/category_graph.json  # Category co-occurrence      │
+  │                                                             │
+  │  Benefits:                                                  │
+  │    - Boost important articles in search ranking             │
+  │    - "Related articles" MCP tool                            │
+  │    - Context expansion for better answers                   │
   └─────────────────────────────────────────────────────────────┘
 
 # =============================================================================
@@ -693,109 +690,10 @@ stage_1_extraction:
         - "- Author, Title"
 
 # =============================================================================
-# STAGE 2: GRAPH COMPUTATION - Detailed
+# STAGE 2: SEMBR - Detailed
 # =============================================================================
 
-stage_2_graph:
-  purpose: |
-    Compute derived graph data from extracted links.
-    Backlinks are the inverse of forward links.
-
-  outputs:
-    backlinks_jsonl:
-      path: graph/backlinks.jsonl
-      purpose: "Which articles link TO this article?"
-      schema:
-        target_article: str  # The article being linked to
-        source_articles: list[BacklinkSource]
-
-      backlink_source_schema:
-        article: str
-        section: str | null
-        link_text: str
-        count: int
-
-    link_counts_json:
-      path: graph/link_counts.json
-      purpose: PageRank-style importance metrics
-      schema:
-        article: str
-        in_degree: int   # How many articles link here
-        out_degree: int  # How many articles this links to
-        # Future: pagerank score
-
-    category_graph_json:
-      path: graph/category_graph.json
-      purpose: Category co-occurrence and hierarchy
-      schema:
-        categories: list[CategoryInfo]
-
-      category_info_schema:
-        name: str
-        article_count: int
-        co_occurs_with: dict[str, int]  # Other categories and overlap count
-
-# =============================================================================
-# STAGE 3: TEXT CLEANING - Detailed
-# =============================================================================
-
-stage_3_cleaning:
-  purpose: |
-    Convert MediaWiki markup to clean plain text.
-    Preserve semantic content, remove syntax noise.
-
-  input:
-    article_json: extracted/articles/{namespace}/{title}.json
-    # Use clean_text field, or re-process from source
-
-  output:
-    path: cleaned/{namespace}/{title}.txt
-    format: Plain text with preserved structure
-
-  transformations:
-    remove:
-      - '"<ref>...</ref>" tags (content already extracted)'
-      - '"<ref name="..." />" self-closing tags'
-      - '"{{...}}" templates (except quotes already extracted)'
-      - '"[[Category:...]]" (already extracted)'
-      - '"<references />" and "==References==" section'
-      - 'HTML comments "<!-- ... -->"'
-      - '"<nowiki>...</nowiki>" tags (keep inner text)'
-      - 'Multiple consecutive blank lines -> single blank line'
-
-    transform:
-      internal_links: |
-        [[Target]] → Target
-        [[Target|Display]] → Display
-        [[Target#Section|Display]] → Display
-
-      formatting: |
-        '''bold''' → bold
-        ''italic'' → italic
-
-      lists: |
-        * item → • item (or just "item")
-        # item → 1. item (or just "item")
-
-      headers: |
-        == Title == → PRESERVED (for section detection in chunking)
-        === Subtitle === → PRESERVED
-
-    insert:
-      quotes: |
-        Where <ref> tag was, insert extracted quote:
-        "Fear made the gods..." — Lenin, 1909
-
-        Format TBD - could be:
-        - Inline with attribution
-        - Block quote on new line
-        - Just the quote text (attribution in metadata)
-
-# =============================================================================
-# STAGE 4: SEMBR - Detailed
-# =============================================================================
-
-stage_4_sembr:
+stage_2_sembr:
   status: IMPLEMENTED
   completed_date: 2025-12-15
   reference_doc: ai-docs/sembr.yaml
@@ -806,10 +704,9 @@ stage_4_sembr:
     Enables better chunking at semantic boundaries.
 
   input:
-    primary: extracted/articles/{namespace}/{title}.json  # clean_text field
-    alternative: cleaned/{namespace}/{title}.txt
+    source: extracted/articles/{namespace}/{title}.json  # clean_text field
     note: |
-      Phase 2 extraction produces clean_text with all templates removed.
+      Stage 1 extraction produces clean_text with all templates removed.
       This is the input for sembr processing.
 
   output: sembr/{namespace}/{title}.txt
@@ -913,13 +810,69 @@ stage_4_sembr:
     - See ai-docs/sembr.yaml for complete specification
 
 # =============================================================================
-# STAGE 5: CHUNKING - Detailed
+# STAGE 3: CHUNKING - Detailed
 # =============================================================================
 
-stage_5_chunking:
+stage_3_chunking:
+  status: IMPLEMENTED
+  completed_date: 2025-12-15
+  reference_doc: ai-docs/chunking.yaml
+  tests: 70 passing (52 chunker + 18 CLI)
+
   purpose: |
     Group semantic lines into coherent chunks.
     Attach all metadata from earlier stages.
+
+  implementation:
+    module: src/pw_mcp/ingest/chunker.py (443 lines)
+    cli: src/pw_mcp/ingest/cli.py (chunk subcommand)
+    classes:
+      ChunkConfig:
+        target_tokens: 600
+        min_tokens: 200
+        max_tokens: 1000
+        token_estimation_factor: 1.3
+        frozen: true
+      Chunk:
+        text: str
+        chunk_index: int
+        section: str | None
+        line_start: int
+        line_end: int
+        word_count: int
+        estimated_tokens: int
+      ChunkedArticle:
+        article_title: str
+        namespace: str
+        chunks: list[Chunk]
+        categories: list[str]
+        internal_links: list[str]
+        infobox: dict | None
+        library_work: dict | None
+        is_stub: bool
+        citation_needed_count: int
+        has_blockquote: bool
+    functions:
+      - is_section_header(line) -> bool
+      - extract_section_title(line) -> str
+      - estimate_tokens(text, factor) -> int
+      - generate_chunk_id(namespace, title, index) -> str
+      - chunk_text(lines, config) -> list[Chunk]
+      - chunk_article(sembr_path, metadata, config) -> ChunkedArticle
+      - write_chunks_jsonl(article, output_path) -> None
+
+  cli_usage: |
+    # Check chunk subcommand help
+    pw-ingest chunk --help
+
+    # Process with sample files
+    pw-ingest chunk --sample 10
+
+    # Process full corpus
+    pw-ingest chunk -i sembr/ -o chunks/
+
+    # Custom token configuration
+    pw-ingest chunk --target-tokens 400 --max-tokens 800
 
   input:
     sembr_text: sembr/{namespace}/{title}.txt
@@ -955,9 +908,11 @@ stage_5_chunking:
       has_quotes: bool
 
   chunking_algorithm:
-    target_tokens: 350
-    min_tokens: 100
-    max_tokens: 500
+    # REVISED: Larger chunks to leverage EmbeddingGemma's 2048 token limit
+    # while maintaining retrieval precision
+    target_tokens: 600  # was 350
+    min_tokens: 200     # was 100
+    max_tokens: 1000    # was 500
 
     boundaries:
       hard:
@@ -974,44 +929,87 @@ stage_5_chunking:
       4. If section header encountered, start new chunk
       5. Track line numbers for line_range metadata
 
+    token_estimation: |
+      word_count × 1.3 for English text approximation.
+      EmbeddingGemma supports 2048 tokens - larger chunks provide
+      more context while staying well under limit.
+
 # =============================================================================
-# STAGE 6: EMBEDDING - Detailed
+# STAGE 4: EMBEDDING - Detailed
 # =============================================================================
 
-stage_6_embedding:
+stage_4_embedding:
+  status: IMPLEMENTED
+  completed_date: 2025-12-15
+  reference_doc: ai-docs/embedding.yaml
+  implementation: src/pw_mcp/ingest/embedder.py
+  tests: 31 passing (21 embedder + 10 CLI)
   purpose: Generate vector embeddings for each chunk
 
   input: chunks/{namespace}/{title}.jsonl
   output: embeddings/{namespace}/{title}.npy
 
   model:
-    provider: ollama
-    model_name: embeddinggemma
+    provider: ollama (local)
+    name: embeddinggemma
     dimensions: 768
+    max_tokens: 2048
+    normalization: L2-normalized
+    params: 307M (Gemma3-based)
     base_url: "http://localhost:11434"
 
-  batching:
+  processing:
+    library: ollama Python package
     batch_size: 32  # Chunks per API call
-    # Balance memory vs API overhead
+    retry_count: 3  # On transient failures
+    resume_support: true  # Skip existing .npy files
 
-  output_format: |
-    NumPy array shape: (num_chunks, 768)
-    Chunk order matches JSONL line order
+    code_pattern: |
+      from ollama import embed
+      response = embed(model='embeddinggemma', input=texts)
+      embeddings = np.array(response.embeddings, dtype=np.float32)
 
-    Alternative: embed directly into chunks JSONL
-    (adds ~6KB per chunk for base64-encoded embedding)
+  output_format:
+    format: NumPy binary (.npy)
+    dtype: float32
+    shape: (num_chunks, 768)
+    alignment: |
+      CRITICAL: Embedding order matches JSONL line order!
+      embeddings[i] corresponds to chunk_index i
+      Stage 5 loading relies on this alignment.
+
+  cli:
+    command: pw-ingest embed
+    options: [-i, -o, --sample, --no-progress, --model, --batch-size, --host]
+
+  performance:
+    estimated_throughput: 50-100 chunks/second (batch of 32)
+    estimated_corpus_time: 3-10 minutes for ~26,000 chunks
+    note: Requires benchmarking during implementation
 
 # =============================================================================
-# STAGE 7: CHROMADB LOADING - Detailed
+# STAGE 5: CHROMADB LOADING - Detailed
 # =============================================================================
 
-stage_7_loading:
-  purpose: Load everything into ChromaDB
+stage_5_loading:
+  status: PLANNED
+  purpose: Load chunks + embeddings into ChromaDB
+
+  # Schema is phased - see chromadb-schema.yaml for full details
+  schema_reference:
+    file: chromadb-schema.yaml
+    mvp_phase: A
+    mvp_fields: 13
+    note: |
+      Phase A (MVP): 13 fields already output by chunker - no changes needed
+      Phase B: Rich metadata (infobox, library_work) - requires chunker extension
+      Phase C: Reference metadata - requires extraction enhancement
+      Phase D: Graph metadata - requires graph computation (DEFERRED)
 
   input:
     chunks: chunks/**/*.jsonl
     embeddings: embeddings/**/*.npy
-    references: extracted/references.jsonl  # Load as separate collection?
+    # references: extracted/references.jsonl  # Phase C - deferred
 
   output: chroma_data/
 
@@ -1022,25 +1020,30 @@ stage_7_loading:
         space: cosine
         ef_construction: 200
         ef_search: 100
-        # All chunk metadata from Stage 5 schema
+
+      mvp_fields:
+        description: Phase A schema - ready to implement
+        fields:
+          - chunk_id          # "{namespace}/{title}#{index}"
+          - text              # embedded content
+          - article_title
+          - namespace
+          - section
+          - chunk_index
+          - line_range
+          - word_count
+          - categories        # JSON array
+          - internal_links    # JSON array
+          - is_stub
+          - citation_needed_count
+          - has_blockquote
 
     prolewiki_references:
+      status: DEFERRED to Phase C
       purpose: Reference lookup table (optional separate collection)
       note: |
-        Alternative: store refs as JSON in chunks metadata
-        Separate collection allows ref-specific queries:
-        - "All works by Lenin"
-        - "All citations from 1917"
-
-      schema:
-        ref_id: str
-        ref_type: str
-        authors: str  # JSON
-        year: int
-        title: str
-        source_publication: str
-        citing_articles: str  # JSON
-        # No embedding needed - exact match queries only
+        Defer until citation-based queries are needed.
+        For MVP, references stay embedded in chunk text.
 
   loading_strategy:
     batch_size: 5000  # Below max_batch_size
@@ -1051,6 +1054,103 @@ stage_7_loading:
       Refs: "ref:{ref_id}"
 
       Deterministic IDs enable idempotent loading
+
+# =============================================================================
+# OPTIONAL: GRAPH COMPUTATION
+# =============================================================================
+
+optional_graph:
+  status: DEFERRED
+  blocking: false  # Not required for core RAG functionality
+  can_add_later: true  # Easy to compute from existing extracted data
+
+  purpose: |
+    Compute derived graph data from extracted forward links.
+    Provides backlinks, importance metrics, and category relationships.
+    NOT required for basic semantic search - can be added as enhancement.
+
+  when_to_implement: |
+    After MVP is working (Stages 1-5 + MCP Server):
+    - If search ranking needs improvement (boost important articles)
+    - If "related articles" feature is desired
+    - If context expansion improves answer quality
+
+  outputs:
+    backlinks_jsonl:
+      path: graph/backlinks.jsonl
+      purpose: "Which articles link TO this article? (inverse of forward links)"
+      schema:
+        target_article: str
+        source_articles: list[str]
+        total_count: int
+
+    link_counts_json:
+      path: graph/link_counts.json
+      purpose: "PageRank-style importance metrics"
+      schema:
+        article: str
+        in_degree: int   # How many articles link here (popularity)
+        out_degree: int  # How many articles this links to (connectedness)
+
+    category_graph_json:
+      path: graph/category_graph.json
+      purpose: "Category co-occurrence for related categories"
+      schema:
+        category: str
+        article_count: int
+        co_occurs_with: dict[str, int]
+
+  implementation:
+    pseudocode: |
+      def compute_backlinks(extracted_dir: Path) -> dict[str, list[str]]:
+          """Invert forward links to get backlinks."""
+          backlinks = defaultdict(list)
+
+          for article_path in extracted_dir.rglob("*.json"):
+              article = json.loads(article_path.read_text())
+              source_title = article["title"]
+
+              for link in article.get("internal_links", []):
+                  target = link["target"]
+                  backlinks[target].append(source_title)
+
+          return dict(backlinks)
+
+      def compute_degrees(extracted_dir: Path, backlinks: dict) -> dict:
+          """Compute in-degree and out-degree per article."""
+          degrees = {}
+          for article_path in extracted_dir.rglob("*.json"):
+              article = json.loads(article_path.read_text())
+              title = article["title"]
+              degrees[title] = {
+                  "out_degree": len(article.get("internal_links", [])),
+                  "in_degree": len(backlinks.get(title, []))
+              }
+          return degrees
+
+  mcp_tools_enabled:
+    search_with_boost: |
+      @mcp.tool()
+      async def search(query: str, boost_popular: bool = True) -> str:
+          results = chromadb.query(query, n=20)
+          if boost_popular:
+              results = sorted(results, key=lambda x: x['in_degree'], reverse=True)
+          return results[:10]
+
+    get_related: |
+      @mcp.tool()
+      async def get_related(title: str) -> str:
+          """What articles discuss this topic? (backlinks)"""
+          return backlinks[title]
+
+    explore_context: |
+      @mcp.tool()
+      async def explore_context(title: str) -> str:
+          """Get broader context: what links here + what this links to."""
+          return {
+              "links_to": forward_links[title],
+              "linked_from": backlinks[title]
+          }
 
 # =============================================================================
 # INTERMEDIATE FILE FORMATS
@@ -1080,52 +1180,43 @@ file_formats:
 
 directory_structure: |
   pw-mcp/
-  ├── prolewiki-exports/     # Source (gitignored)
+  ├── prolewiki-exports/     # Source corpus (gitignored)
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── extracted/             # Stage 1 output
-  │   ├── articles/
-  │   │   ├── Main/
-  │   │   ├── Library/
-  │   │   ├── Essays/
-  │   │   └── ProleWiki/
-  │   ├── references.jsonl
-  │   ├── links.jsonl
-  │   └── categories.jsonl
+  ├── extracted/             # Stage 1: Extraction output
+  │   └── articles/
+  │       ├── Main/
+  │       ├── Library/
+  │       ├── Essays/
+  │       └── ProleWiki/
   │
-  ├── graph/                 # Stage 2 output
-  │   ├── backlinks.jsonl
-  │   ├── link_counts.json
-  │   └── category_graph.json
-  │
-  ├── cleaned/               # Stage 3 output
+  ├── sembr/                 # Stage 2: Sembr output
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── sembr/                 # Stage 4 output
+  ├── chunks/                # Stage 3: Chunking output
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── chunks/                # Stage 5 output
+  ├── embeddings/            # Stage 4: Embedding output
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── embeddings/            # Stage 6 output
-  │   ├── Main/
-  │   ├── Library/
-  │   ├── Essays/
-  │   └── ProleWiki/
+  ├── chroma_data/           # Stage 5: ChromaDB (gitignored)
   │
-  └── chroma_data/           # Stage 7 output (gitignored)
+  └── graph/                 # (Optional) Graph computation output
+      ├── backlinks.jsonl
+      ├── link_counts.json
+      └── category_graph.json
 
 # =============================================================================
 # CLI INTERFACE (proposed)
@@ -1133,37 +1224,44 @@ directory_structure: |
 
 cli:
   commands:
+    # Core pipeline (Stages 1-5)
     extract:
       usage: "pw-ingest extract --source prolewiki-exports/ --output extracted/"
-      description: "Run Stage 1: MediaWiki extraction"
-
-    graph:
-      usage: "pw-ingest graph --input extracted/ --output graph/"
-      description: "Run Stage 2: Compute backlinks and graph metrics"
-
-    clean:
-      usage: "pw-ingest clean --input extracted/ --output cleaned/"
-      description: "Run Stage 3: Strip markup to plain text"
+      description: "Stage 1: Parse MediaWiki → extracted/articles/*.json"
+      status: "planned"
 
     sembr:
-      usage: "pw-ingest sembr --input cleaned/ --output sembr/ [--server URL]"
-      description: "Run Stage 4: Semantic linebreaking"
+      usage: "pw-ingest sembr -i extracted/ -o sembr/ [--server URL]"
+      description: "Stage 2: Semantic linebreaking → sembr/*.txt"
+      status: "implemented"
 
     chunk:
-      usage: "pw-ingest chunk --sembr sembr/ --extracted extracted/ --graph graph/ --output chunks/"
-      description: "Run Stage 5: Create chunks with metadata"
+      usage: "pw-ingest chunk -i sembr/ -o chunks/ -e extracted/articles/"
+      description: "Stage 3: Create chunks → chunks/*.jsonl"
+      status: "implemented"
 
     embed:
-      usage: "pw-ingest embed --input chunks/ --output embeddings/ [--model embeddinggemma]"
-      description: "Run Stage 6: Generate embeddings"
+      usage: "pw-ingest embed -i chunks/ -o embeddings/ [--model embeddinggemma]"
+      description: "Stage 4: Generate embeddings → embeddings/*.npy"
+      status: "planned"
 
     load:
-      usage: "pw-ingest load --chunks chunks/ --embeddings embeddings/ --output chroma_data/"
-      description: "Run Stage 7: Load into ChromaDB"
+      usage: "pw-ingest load -c chunks/ -e embeddings/ -o chroma_data/"
+      description: "Stage 5: Load into ChromaDB"
+      status: "planned"
 
+    # Full pipeline
     all:
       usage: "pw-ingest all --source prolewiki-exports/ --output chroma_data/"
-      description: "Run full pipeline"
+      description: "Run full pipeline (Stages 1-5)"
+      status: "planned"
+
+    # Optional enhancement
+    graph:
+      usage: "pw-ingest graph --input extracted/ --output graph/"
+      description: "(Optional) Compute backlinks and link counts"
+      status: "deferred"
+      note: "Not required for core RAG - add after MVP if needed"
 
     # Utility commands
     validate:

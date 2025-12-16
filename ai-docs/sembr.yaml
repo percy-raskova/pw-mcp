@@ -1,7 +1,7 @@
 # Phase 3: SEmBr (Semantic Linebreaking) Integration
-# Status: IMPLEMENTED - All tasks complete
+# Status: IMPLEMENTED - All tasks complete + GPU lifecycle management
 # Purpose: Complete specification for sembr integration in pw-mcp pipeline
-# Last updated: 2025-12-15
+# Last updated: 2025-12-16 (GPU manager, server manager, graceful degradation)
 
 # =============================================================================
 # OVERVIEW
@@ -185,22 +185,32 @@ module_design:
             config: SembrConfig | None = None,
             progress_callback: Callable[[int, int, str], None] | None = None,
             max_concurrent: int = 10
-        ) -> list[SembrResult]
-      description: "Process all files in directory through sembr"
+        ) -> list[SembrResult | None]
+      description: "Process all .txt and .json files in directory through sembr"
       implementation: |
-        1. Glob for all .txt files in input_dir (recursive)
+        1. Glob for all .txt and .json files in input_dir (recursive)
         2. Check server health, raise if unavailable
         3. For each file:
-           a. Compute output path (preserve namespace subdirs)
-           b. Call process_file()
+           a. Compute output path (preserve namespace subdirs, always .txt output)
+           b. Call process_file() wrapped in try/except
            c. Call progress_callback(current, total, filename)
+           d. On error: return None for failed file (graceful degradation)
         4. Use asyncio.Semaphore for concurrency control
-        5. Return list of results
+        5. Return list of results (None values indicate failures)
+      enhancements_added:
+        - "JSON file support: extracts clean_text from .json files"
+        - "Graceful errors: failed files return None, batch continues"
+        - "Output always .txt regardless of input format"
 
   helper_functions:
     _extract_clean_text_from_json:
       signature: "def _extract_clean_text_from_json(json_path: Path) -> str"
-      description: "Extract clean_text field from extracted article JSON"
+      description: |
+        Extract clean text from JSON file.
+        Supports both:
+        - "clean_text" field (Phase 2 extraction output)
+        - "text" field (sembr response output)
+        Raises ValueError if neither field found.
 
     _validate_content_preservation:
       signature: "def _validate_content_preservation(input_text: str, output_text: str) -> bool"
@@ -248,15 +258,147 @@ cli_integration:
       flag: true
       default: true
 
+    --restart-server:
+      description: "Restart sembr server before processing (default: true)"
+      flag: true
+      default: true
+      note: "Ensures clean CUDA state by killing existing server, clearing cache, starting fresh"
+
+    --no-restart:
+      description: "Don't restart server (use existing instance)"
+      flag: true
+      note: "Use when server is already running and healthy"
+
+    --gpu:
+      description: "Specific GPU device ID to use"
+      type: int
+      default: "auto-detect"
+      note: "If not specified, uses first available GPU with <90% memory usage"
+
+    --no-gpu-failover:
+      description: "Disable automatic GPU failover on errors"
+      flag: true
+      default: false
+      note: "When disabled, server errors are fatal instead of triggering failover"
+
+    --health-interval:
+      description: "Seconds between health checks during batch processing"
+      type: float
+      default: 60.0
+      note: "More frequent checks catch errors faster but add overhead"
+
+    --verbose:
+      short: -v
+      description: "Enable verbose logging output"
+      flag: true
+      note: "Shows DEBUG level logs on console (always logged to file)"
+
+  server_management:
+    description: |
+      The sembr server is single-threaded and can enter corrupted CUDA state.
+      Auto-restart feature ensures clean state before batch processing.
+      As of Phase 5.5, this is handled by dedicated modules:
+      - gpu_manager.py: GPU detection, health checking, CUDA state management
+      - server_manager.py: Server lifecycle management with graceful degradation
+
+    modules:
+      gpu_manager:
+        location: src/pw_mcp/ingest/gpu_manager.py
+        description: "GPU detection, health monitoring, and CUDA state management"
+        public_api:
+          - detect_gpus(): "Detect all NVIDIA GPUs via nvidia-smi"
+          - check_gpu_health(gpu_id): "Check health of specific GPU"
+          - get_available_gpu(exclude): "Get first healthy GPU, optionally excluding some"
+          - reset_cuda_cache(gpu_id): "Clear CUDA cache via PyTorch subprocess"
+          - is_cuda_corrupted(gpu_id): "Heuristic check for CUDA corruption"
+          - get_gpu_processes(gpu_id): "List processes using GPU"
+          - kill_gpu_processes(gpu_id): "Kill processes on GPU"
+          - get_cuda_env(gpu_id): "Get env vars for running on specific GPU"
+
+      server_manager:
+        location: src/pw_mcp/ingest/server_manager.py
+        description: "Server lifecycle management with graceful degradation"
+        configs:
+          - SEMBR_CONFIG: "Pre-configured for sembr server (port 8384, /check endpoint)"
+          - OLLAMA_CONFIG: "Pre-configured for Ollama server (port 11434, /api/tags endpoint)"
+        public_api:
+          - start_server(config, gpu_id): "Start server on specified GPU"
+          - stop_server(server_type, graceful): "Stop server (SIGTERM, then SIGKILL)"
+          - restart_server(server_type, new_gpu): "Restart with optional GPU failover"
+          - check_server_health(server_type): "HTTP health check"
+          - setup_signal_handlers(): "Register SIGINT/SIGTERM handlers"
+          - register_cleanup(): "Register atexit handler"
+          - HealthMonitor: "Class for periodic health checks during batch"
+
+    functions:
+      _restart_sembr_server:
+        description: "Kill existing server, clear CUDA cache, start fresh instance"
+        implementation: "Now delegates to server_manager.stop_server() and start_server()"
+        steps:
+          - "1. stop_server('sembr', graceful=True) (SIGTERM with CUDA cleanup)"
+          - "2. _reset_cuda_device() (additional CUDA cache clear)"
+          - "3. start_server(SEMBR_CONFIG, gpu_id) (with GPU environment)"
+          - "4. Poll /check until healthy or timeout"
+
+      _reset_cuda_device:
+        description: "Attempt to clear CUDA cache via PyTorch"
+        code: |
+          python3 -c "import torch; torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()"
+        note: "For persistent errors, suggest: sudo nvidia-smi --gpu-reset -i 0"
+
+    health_monitoring:
+      description: |
+        During batch processing, HealthMonitor periodically checks server health.
+        On failure, it attempts recovery via server restart with optional GPU failover.
+      parameters:
+        interval: "Seconds between health checks (--health-interval)"
+        max_recovery_attempts: "3 with failover enabled, 1 without"
+      recovery_flow:
+        - "1. Health check fails"
+        - "2. Call restart_server() with new GPU if failover enabled"
+        - "3. If recovery succeeds, continue batch"
+        - "4. If max attempts exceeded, raise RuntimeError"
+
+    errors_handled:
+      already_borrowed:
+        cause: "Server single-threaded, concurrent requests blocked"
+        fix: "Added retry jitter to spread out retries"
+        code: "jitter = random.uniform(0, base_delay) if is_busy else 0"
+
+      cuda_device_side_assert:
+        cause: "GPU state corruption from concurrent access or OOM"
+        fix: "Restart server + clear CUDA cache + failover to alternate GPU"
+        note: "May require nvidia-smi --gpu-reset for persistent errors"
+
+      orphaned_gpu_memory:
+        cause: "High GPU memory usage but no running processes"
+        detection: "is_cuda_corrupted() checks nvidia-smi for this pattern"
+        fix: "kill_gpu_processes() + reset_cuda_cache() + server restart"
+
   example_usage: |
     # Check server health
     pw-ingest sembr --check-only
 
-    # Process full corpus
-    pw-ingest sembr -i extracted/ -o sembr/ --progress
+    # Process full corpus (auto-restarts server, auto-selects GPU)
+    pw-ingest sembr -i extracted/ -o sembr/
 
-    # Test with 10 files
+    # Process on specific GPU (e.g., use secondary GPU)
+    pw-ingest sembr -i extracted/ -o sembr/ --gpu 1
+
+    # Verbose logging for troubleshooting
+    pw-ingest sembr -i extracted/ -o sembr/ --verbose
+
+    # Disable GPU failover (fail fast on errors)
+    pw-ingest sembr -i extracted/ -o sembr/ --no-gpu-failover
+
+    # Frequent health checks (every 30 seconds)
+    pw-ingest sembr -i extracted/ -o sembr/ --health-interval 30
+
+    # Test with 10 files (preserves progress on interrupt)
     pw-ingest sembr -i extracted/ -o sembr/ --sample 10
+
+    # Use existing server instance (no restart)
+    pw-ingest sembr -i extracted/ -o sembr/ --no-restart
 
 # =============================================================================
 # MISE TASKS
@@ -359,6 +501,60 @@ testing_strategy:
         - test_multilingual_content_chinese
         - test_large_library_document
         - test_full_corpus_sample_100
+
+    gpu_integration_tests:
+      location: tests/slow/test_gpu_integration.py
+      markers: [slow]
+      requires: "NVIDIA GPU with nvidia-smi, sembr dependencies"
+      tests:
+        # GPU detection
+        - test_detect_gpus_returns_valid_status
+        - test_check_gpu_health_returns_status
+        - test_check_gpu_health_invalid_index
+        - test_get_available_gpu_returns_valid
+        - test_get_available_gpu_excludes_specified
+        - test_get_gpu_summary_is_readable
+        - test_is_cuda_corrupted_healthy_gpu
+        # GPU processes
+        - test_get_gpu_processes_returns_list
+        # CUDA cache
+        - test_reset_cuda_cache_succeeds_or_reports
+        # Server lifecycle
+        - test_server_start_stop_cycle
+        - test_server_restart_same_gpu
+        - test_server_restart_different_gpu
+        # Signal handling
+        - test_setup_signal_handlers_runs
+        - test_shutdown_flag_persistence
+        # Health monitoring
+        - test_health_monitor_detects_server_down
+
+    gpu_manager_unit_tests:
+      location: tests/unit/ingest/test_gpu_manager.py
+      markers: [unit]
+      tests_count: 42
+      coverage:
+        - GPUStatus dataclass creation and properties
+        - GPU detection with mocked nvidia-smi
+        - Health checking and available GPU selection
+        - CUDA cache reset via subprocess
+        - CUDA corruption detection heuristics
+        - GPU process listing and killing
+        - Environment variable management
+
+    server_manager_unit_tests:
+      location: tests/unit/ingest/test_server_manager.py
+      markers: [unit]
+      tests_count: 47
+      coverage:
+        - ServerConfig and ServerProcess dataclasses
+        - Health checking via HTTP
+        - Server startup with GPU selection
+        - Graceful vs forceful shutdown
+        - Server restart with GPU failover
+        - Signal handling (SIGINT/SIGTERM)
+        - atexit cleanup registration
+        - HealthMonitor periodic checks and recovery
 
   fixtures:
     input:

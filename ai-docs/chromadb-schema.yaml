@@ -1,6 +1,211 @@
 # ProleWiki ChromaDB Schema Definition
-# Status: DRAFT - iterate before implementation
+# Status: Phase A (MVP) IMPLEMENTED, using OpenAI embeddings
 # Purpose: Contract for what gets loaded into ChromaDB
+# Updated: 2025-12 - switched from Ollama to OpenAI embeddings
+
+# =============================================================================
+# SCHEMA PHASES
+# =============================================================================
+# The schema is implemented incrementally to enable MVP delivery while
+# preserving the option to add richer metadata later.
+
+schema_phases:
+  overview: |
+    Phase A: MVP schema - IMPLEMENTED (13 fields from chunker)
+    Phase B: Rich metadata - FUTURE (propagate more extraction data)
+    Phase C: Reference metadata - FUTURE (enhance extraction for citations)
+    Phase D: Graph metadata - DEFERRED (optional graph computation)
+
+  phase_a:
+    name: MVP Schema
+    status: IMPLEMENTED
+    description: |
+      Minimum viable schema for semantic search.
+      All fields are output by the chunker (Stage 3).
+      Using OpenAI text-embedding-3-large (1536 dimensions).
+    fields:
+      core:
+        - chunk_id        # "{namespace}/{title}#{index}"
+        - text            # embedded content (ChromaDB "document")
+        - article_title
+        - namespace
+        - section
+        - chunk_index
+        - line_range
+        - word_count
+      article_metadata:
+        - categories      # native list
+        - internal_links  # native list
+        - is_stub
+        - citation_needed_count
+        - has_blockquote
+    total_fields: 13
+    source: chunker.py write_chunks_jsonl()
+    embedding:
+      provider: openai
+      model: text-embedding-3-large
+      dimensions: 1536
+
+  phase_b:
+    name: Rich Metadata
+    status: FUTURE ENHANCEMENT
+    description: |
+      Propagate already-extracted data from ArticleData.
+      Requires extending chunker to serialize more fields.
+      Enables filtering by infobox type, author, political orientation.
+      NOTE: Data already extracted in Stage 1, needs chunker extension.
+    fields:
+      infobox:
+        - infobox_type    # politician, country, party, etc.
+        - subject_name    # canonical name from infobox
+        - birth_year      # for date range queries
+        - death_year
+        - nationality
+        - political_orientation  # JSON array - HIGHLY valuable!
+        - political_party        # JSON array
+      library_work:
+        - library_work_title
+        - library_work_author
+        - library_work_type
+        - library_work_published_year
+      additional:
+        - has_foreword
+        - source_file
+    total_fields: 14 additional
+    source: ArticleData (already extracted, needs serialization)
+
+  phase_c:
+    name: Reference Metadata
+    status: FUTURE ENHANCEMENT
+    description: |
+      Citation-derived fields for scholarly content filtering.
+      Requires enhancing Stage 1 extraction to link refs to chunks.
+      Lower priority than Phase B.
+    fields:
+      - ref_ids          # references cited in this chunk
+      - has_refs         # quick filter for cited content
+      - ref_count        # citation density
+      - cited_authors    # JSON array of authors
+      - cited_years      # JSON array of publication years
+      - cited_sources    # JSON array of source names
+      - has_quotes       # contains direct quotations
+    total_fields: 7 additional
+    source: Citations extraction (needs chunk-level linking)
+
+  phase_d:
+    name: Graph Metadata
+    status: DEFERRED
+    description: |
+      Derived from optional graph computation.
+      Not needed for basic RAG - enhancement for importance ranking.
+    fields:
+      - backlinks        # JSON array of linking articles
+      - backlink_count   # importance metric (PageRank-style)
+    total_fields: 2 additional
+    source: Graph computation (Stage 6 optional)
+    blocking: false
+
+  implementation_order: |
+    1. Phase A: Ship with MVP (current chunker output)
+    2. Phase B: After MVP works, extend chunker for rich metadata
+    3. Phase C: When citation-based filtering is needed
+    4. Phase D: When importance ranking is needed (optional)
+
+# =============================================================================
+# MVP SCHEMA (Phase A) - QUICK REFERENCE
+# =============================================================================
+
+mvp_schema:
+  description: |
+    This is what gets loaded into ChromaDB for MVP.
+    Matches exactly what chunker.py write_chunks_jsonl() outputs.
+    Embeddings generated via OpenAI text-embedding-3-large (1536 dim).
+  collection: prolewiki_chunks
+  embedding:
+    provider: openai
+    model: text-embedding-3-large
+    dimensions: 1536
+
+  fields:
+    chunk_id:
+      type: str
+      format: "{namespace}/{title}#{index}"
+      example: "Main/Five-Year_Plans#0"
+      indexed: true  # ChromaDB ID
+
+    text:
+      type: str
+      purpose: Embedded content (ChromaDB "document" field)
+      max_tokens: ~1000
+
+    article_title:
+      type: str
+      indexed: true
+
+    namespace:
+      type: str
+      enum: ["Main", "Library", "Essays", "ProleWiki"]
+      indexed: true
+
+    section:
+      type: str | null
+      indexed: true
+
+    chunk_index:
+      type: int
+      indexed: true
+
+    line_range:
+      type: str
+      format: "start-end"
+      indexed: false
+
+    word_count:
+      type: int
+      indexed: true
+
+    categories:
+      type: str  # JSON array
+      indexed: false
+
+    internal_links:
+      type: str  # JSON array
+      indexed: false
+
+    is_stub:
+      type: bool
+      indexed: true
+
+    citation_needed_count:
+      type: int
+      indexed: true
+
+    has_blockquote:
+      type: bool
+      indexed: true
+
+  example_record: |
+    {
+      "chunk_id": "Main/Five-Year_Plans#0",
+      "text": "The Five-Year Plans for the National Economy...",
+      "article_title": "Five-Year Plans",
+      "namespace": "Main",
+      "section": null,
+      "chunk_index": 0,
+      "line_range": "1-45",
+      "word_count": 287,
+      "categories": ["Soviet economy", "Stalin era"],
+      "internal_links": ["Joseph Stalin", "USSR"],
+      "is_stub": false,
+      "citation_needed_count": 0,
+      "has_blockquote": false
+    }
+
+# =============================================================================
+# FULL SCHEMA REFERENCE (All Phases)
+# =============================================================================
+# Below is the complete field reference including Phase B/C/D fields.
+# Each field is tagged with its phase for clarity.
 
 # =============================================================================
 # COLLECTIONS
@@ -23,9 +228,13 @@ collections:
       # m: 16 (default)
 
     embedding:
-      provider: ollama
-      model: embeddinggemma
-      dimensions: 768
+      provider: openai
+      model: text-embedding-3-large
+      dimensions: 1536
+      notes: |
+        - Configurable dimensions (256-3072), using 1536 for balance
+        - API key via OPENAI_API_KEY env var or .env file
+        - Cost: ~$0.13 per million tokens
 
     id_format:
       pattern: "{namespace}/{article_title}#{chunk_index}"
@@ -41,33 +250,38 @@ collections:
 
     fields:
       # -------------------------
-      # DOCUMENT (embedded text)
+      # DOCUMENT (embedded text) - Phase A
       # -------------------------
       document:
+        phase: A
         type: str
         purpose: Clean text content of chunk (what gets embedded)
-        max_length: ~2000 tokens
+        max_length: ~1000 tokens per chunk
         notes: |
           - MediaWiki markup removed
           - Quotes from references preserved inline
           - Section headers preserved for context
+          - Embedded via OpenAI text-embedding-3-large (1536 dim)
 
       # -------------------------
-      # ARTICLE-LEVEL METADATA
+      # ARTICLE-LEVEL METADATA - Phase A
       # -------------------------
       article_title:
+        phase: A
         type: str
         example: "Five-Year Plans"
         indexed: true
         purpose: Group chunks by source article
 
       namespace:
+        phase: A
         type: str
         enum: ["Main", "Library", "Essays", "ProleWiki"]
         indexed: true
         purpose: Filter by content type
 
       categories:
+        phase: A
         type: str  # JSON array
         example: '["Soviet economy", "Stalin era", "Economic planning"]'
         indexed: false  # Use $contains on document or parse JSON
@@ -78,13 +292,18 @@ collections:
           # Or exact category match requires parsing
 
       internal_links:
+        phase: A
         type: str  # JSON array
         example: '["Joseph Stalin", "USSR", "Industrialization"]'
         indexed: false
         purpose: Articles this chunk's article links TO
         notes: Enables "related articles" recommendations
 
+      # -------------------------
+      # GRAPH METADATA - Phase D (DEFERRED)
+      # -------------------------
       backlinks:
+        phase: D
         type: str  # JSON array
         example: '["Marxism–Leninism", "Soviet history"]'
         indexed: false
@@ -92,6 +311,7 @@ collections:
         notes: Enables "what links here" queries
 
       backlink_count:
+        phase: D
         type: int
         example: 42
         indexed: true
@@ -101,13 +321,15 @@ collections:
           where={"backlink_count": {"$gte": 10}}
 
       # -------------------------
-      # INFOBOX METADATA (article-level)
+      # INFOBOX METADATA (article-level) - Phase B
       # -------------------------
       # Extracted from {{Infobox TYPE|...}} templates
       # All chunks from same article share these fields
       # Links within infobox fields are added to internal_links
+      # NOTE: Data already extracted in Stage 1, needs chunker extension to serialize
 
       infobox_type:
+        phase: B
         type: str | null
         enum: [politician, country, political_party, person, revolutionary,
                essay, philosopher, company, settlement, military_person,
@@ -303,12 +525,14 @@ collections:
         purpose: Outcome of conflict
 
       # -------------------------
-      # LIBRARY WORK METADATA (Library namespace)
+      # LIBRARY WORK METADATA (Library namespace) - Phase B
       # -------------------------
       # Extracted from {{Library work|...}} templates
       # Provides rich bibliographic metadata for Library documents
+      # NOTE: Data already extracted in Stage 1, needs chunker extension to serialize
 
       library_work_title:
+        phase: B
         type: str | null
         example: "The CIA's Shining Path: Political Warfare"
         indexed: true
@@ -408,9 +632,10 @@ collections:
         purpose: Full chapter list from Book_TOC (for multi-chapter works)
 
       # -------------------------
-      # ARTICLE STATUS FLAGS
+      # ARTICLE STATUS FLAGS - Phase A
       # -------------------------
       is_stub:
+        phase: A
         type: bool
         example: false
         indexed: true
@@ -423,6 +648,7 @@ collections:
         notes: May want to lower ranking for stub content in search
 
       citation_needed_count:
+        phase: A
         type: int
         example: 0
         indexed: true
@@ -433,9 +659,11 @@ collections:
         notes: Higher counts indicate lower editorial quality
 
       # -------------------------
-      # RELATED CONTENT LINKS
+      # RELATED CONTENT LINKS - Phase B
       # -------------------------
+      # NOTE: Needs extraction enhancement or chunker extension
       see_also:
+        phase: B
         type: str  # JSON array
         example: '["Daoism", "Legalism"]'
         indexed: false
@@ -460,9 +688,10 @@ collections:
         purpose: External URLs from "External links" section
 
       # -------------------------
-      # CONTENT FLAGS
+      # CONTENT FLAGS - Phase A/B
       # -------------------------
       has_blockquote:
+        phase: A
         type: bool
         example: true
         indexed: true
@@ -472,6 +701,7 @@ collections:
           May want to boost these in search.
 
       has_foreword:
+        phase: B
         type: bool
         example: false
         indexed: true
@@ -479,9 +709,10 @@ collections:
         notes: Common in Library works with editorial context
 
       # -------------------------
-      # CHUNK-LEVEL METADATA
+      # CHUNK-LEVEL METADATA - Phase A
       # -------------------------
       section:
+        phase: A
         type: str | null
         example: "Implementation"
         indexed: true
@@ -489,12 +720,14 @@ collections:
         notes: null if chunk is before first header
 
       chunk_index:
+        phase: A
         type: int
         example: 0
         indexed: true
         purpose: Order within article (0-indexed)
 
       line_range:
+        phase: A
         type: str
         example: "45-67"
         indexed: false
@@ -502,6 +735,7 @@ collections:
         notes: Format "start-end" (ChromaDB doesn't support tuples)
 
       word_count:
+        phase: A
         type: int
         example: 287
         indexed: true
@@ -511,9 +745,11 @@ collections:
           where={"word_count": {"$gte": 50}}
 
       # -------------------------
-      # REFERENCE-DERIVED METADATA
+      # REFERENCE-DERIVED METADATA - Phase C
       # -------------------------
+      # NOTE: Requires enhancing extraction to link citations to specific chunks
       ref_ids:
+        phase: C
         type: str  # JSON array
         example: '["ref:a1b2c3", "ref:d4e5f6"]'
         indexed: false
@@ -563,17 +799,19 @@ collections:
         notes: Quotes are often the most semantically rich content
 
       # -------------------------
-      # PROVENANCE
+      # PROVENANCE - Phase B
       # -------------------------
       source_file:
+        phase: B
         type: str
         example: "Main/Five-Year Plans.txt"
         indexed: false
         purpose: Path in prolewiki-exports/ for debugging
 
   # ---------------------------------------------------------------------------
-  # REFERENCE COLLECTION (Optional - for ref-specific queries)
+  # REFERENCE COLLECTION (Optional - Phase C)
   # ---------------------------------------------------------------------------
+  # NOTE: Defer until citation-based queries are needed
   prolewiki_references:
     purpose: |
       Normalized reference table.

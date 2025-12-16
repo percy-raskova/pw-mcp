@@ -1,6 +1,7 @@
 # ChromaDB Reference for pw-mcp
-# Source: Context7 research 2024-12
+# Source: Context7 research 2024-12, updated 2025-12
 # Purpose: Token-efficient AI reference for vector DB operations
+# Embedding: OpenAI text-embedding-3-large (1536 dimensions)
 
 # =============================================================================
 # CLIENT SETUP
@@ -83,7 +84,7 @@ add:
     code: |
       collection.add(
           ids=["chunk_001", "chunk_002"],
-          embeddings=[[0.1, 0.2, ...], [0.3, 0.4, ...]],  # 768-dim for embeddinggemma
+          embeddings=[[0.1, 0.2, ...], [0.3, 0.4, ...]],  # 1536-dim for text-embedding-3-large
           documents=["text content 1", "text content 2"],
           metadatas=[
               {"article": "Five-Year Plans", "namespace": "Main", "section": "Overview"},
@@ -247,10 +248,58 @@ combined_filtering:
     )
 
 # =============================================================================
-# OLLAMA EMBEDDING INTEGRATION
+# OPENAI EMBEDDING INTEGRATION
 # =============================================================================
 
-ollama:
+openai:
+  embedding_function:
+    code: |
+      from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+
+      openai_ef = OpenAIEmbeddingFunction(
+          api_key=os.getenv("OPENAI_API_KEY"),
+          model_name="text-embedding-3-large",  # 1536-dim (configurable 256-3072)
+      )
+
+      # Generate embeddings directly
+      embeddings = openai_ef(["text to embed", "another text"])
+
+  with_collection:
+    code: |
+      collection = client.create_collection(
+          name="prolewiki",
+          embedding_function=openai_ef,
+          metadata={"hnsw:space": "cosine"}
+      )
+      # Now add() can auto-embed documents
+      collection.add(ids=["id1"], documents=["auto-embedded text"])
+
+  custom_function:
+    code: |
+      from chromadb import Documents, EmbeddingFunction, Embeddings
+      from openai import OpenAI
+
+      class OpenAIEmbedder(EmbeddingFunction):
+          def __init__(self, model: str = "text-embedding-3-large", dimensions: int = 1536):
+              self.model = model
+              self.dimensions = dimensions
+              self.client = OpenAI()  # Uses OPENAI_API_KEY env var
+
+          def __call__(self, input: Documents) -> Embeddings:
+              response = self.client.embeddings.create(
+                  model=self.model,
+                  input=list(input),
+                  dimensions=self.dimensions,
+              )
+              return [item.embedding for item in response.data]
+
+# =============================================================================
+# LEGACY: OLLAMA EMBEDDING (for local development)
+# =============================================================================
+# NOTE: Production uses OpenAI. Ollama available for local testing.
+
+ollama_legacy:
+  status: DEPRECATED - use OpenAI for production
   embedding_function:
     code: |
       from chromadb.utils.embedding_functions.ollama_embedding_function import (
@@ -261,39 +310,6 @@ ollama:
           url="http://localhost:11434",
           model_name="embeddinggemma",  # 768-dim
       )
-
-      # Generate embeddings directly
-      embeddings = ollama_ef(["text to embed", "another text"])
-
-  with_collection:
-    code: |
-      collection = client.create_collection(
-          name="prolewiki",
-          embedding_function=ollama_ef,
-          metadata={"hnsw:space": "cosine"}
-      )
-      # Now add() can auto-embed documents
-      collection.add(ids=["id1"], documents=["auto-embedded text"])
-
-  custom_function:
-    code: |
-      from chromadb import Documents, EmbeddingFunction, Embeddings
-      import httpx
-
-      class OllamaEmbedder(EmbeddingFunction):
-          def __init__(self, model: str = "embeddinggemma", url: str = "http://localhost:11434"):
-              self.model = model
-              self.url = url
-
-          def __call__(self, input: Documents) -> Embeddings:
-              embeddings = []
-              for doc in input:
-                  resp = httpx.post(
-                      f"{self.url}/api/embeddings",
-                      json={"model": self.model, "prompt": doc}
-                  )
-                  embeddings.append(resp.json()["embedding"])
-              return embeddings
 
 # =============================================================================
 # BATCH OPERATIONS
@@ -338,7 +354,7 @@ batching:
 
       # Measure embedding time separately
       start = time.perf_counter()
-      embeddings = ollama_ef(documents)
+      embeddings = openai_ef(documents)
       embed_time = time.perf_counter() - start
 
       # Measure add time
@@ -349,11 +365,29 @@ batching:
       print(f"Embed: {embed_time:.2f}s, Add: {add_time:.2f}s")
 
 # =============================================================================
-# PROLEWIKI METADATA SCHEMA
+# PROLEWIKI METADATA SCHEMA (MVP - Phase A)
 # =============================================================================
+# These 13 fields are output by chunker.py and ready for ChromaDB loading.
 
 pw_schema:
+  embedding:
+    provider: openai
+    model: text-embedding-3-large
+    dimensions: 1536
+
   chunk_metadata:
+    # --- Core identification ---
+    chunk_id:
+      type: str
+      format: "{namespace}/{article_title}#{chunk_index}"
+      example: "Main/Five-Year_Plans#0"
+      purpose: ChromaDB document ID (unique, deterministic)
+
+    text:
+      type: str
+      purpose: chunk content (ChromaDB "document" field, gets embedded)
+      max_tokens: ~1000
+
     article_title:
       type: str
       example: "Five-Year Plans"
@@ -372,50 +406,61 @@ pw_schema:
       source: '"== Header ==" in MediaWiki'
       purpose: sub-article navigation
 
-    categories:
-      type: list[str]
-      storage: JSON string (ChromaDB limitation)
-      example: '["Soviet economy", "Stalin era"]'
-      purpose: topic classification
-      query_pattern: |
-        # Categories stored as JSON string
-        # Use $contains for partial match
-        where_document={"$contains": "Soviet economy"}
-
-    internal_links:
-      type: list[str]
-      storage: JSON string
-      example: '["Joseph Stalin", "USSR"]'
-      purpose: wiki-style interlinking
-      query_pattern: |
-        # Find chunks that link to specific article
-        collection.get(where_document={"$contains": '"Joseph Stalin"'})
-
-    source_file:
-      type: str
-      example: "Main/Five-Year Plans.txt"
-      purpose: provenance tracking
+    chunk_index:
+      type: int
+      example: 0
+      filterable: true
+      purpose: ordering chunks within article
 
     line_range:
       type: str  # stored as "start-end"
       example: "45-52"
-      purpose: precise citation back to source
+      purpose: precise citation back to sembr'd source
       notes: tuple not supported in metadata, use string
-
-    chunk_index:
-      type: int
-      example: 0
-      purpose: ordering chunks within article
-
-    has_refs:
-      type: bool
-      example: true
-      purpose: filter scholarly content with citations
 
     word_count:
       type: int
       example: 342
+      filterable: true
       purpose: filter by content density
+
+    # --- Article-level metadata (same for all chunks in article) ---
+    categories:
+      type: list[str]
+      storage: native list (ChromaDB supports)
+      example: '["Soviet economy", "Stalin era"]'
+      purpose: topic classification from [[Category:...]]
+
+    internal_links:
+      type: list[str]
+      storage: native list
+      example: '["Joseph Stalin", "USSR"]'
+      purpose: wiki-style interlinking
+
+    # --- Quality flags ---
+    is_stub:
+      type: bool
+      example: false
+      filterable: true
+      purpose: article marked as incomplete ({{Stub}} template)
+      query_pattern: |
+        # Exclude stubs from results
+        where={"is_stub": False}
+
+    citation_needed_count:
+      type: int
+      example: 0
+      filterable: true
+      purpose: number of {{Citation needed}} markers
+      query_pattern: |
+        # Find well-cited articles
+        where={"citation_needed_count": {"$eq": 0}}
+
+    has_blockquote:
+      type: bool
+      example: true
+      filterable: true
+      purpose: chunk contains <blockquote> (often primary source)
 
   id_format:
     pattern: "{namespace}/{article_title}#{chunk_index}"
@@ -423,7 +468,27 @@ pw_schema:
       - "Main/Five-Year_Plans#0"
       - "Library/Capital_Vol1#127"
       - "Essays/On_Imperialism#3"
-    notes: URL-safe, deterministic for upsert
+    notes: URL-safe (spaces → underscores), deterministic for upsert
+
+  # --- FUTURE ENHANCEMENTS (not in MVP) ---
+  future_fields:
+    source_file:
+      status: PLANNED
+      type: str
+      example: "Main/Five-Year Plans.txt"
+      purpose: provenance tracking back to source file
+
+    has_refs:
+      status: PLANNED
+      type: bool
+      purpose: filter scholarly content with citations
+      notes: requires linking refs to specific chunks
+
+    backlinks:
+      status: DEFERRED
+      type: list[str]
+      purpose: articles that link TO this article
+      notes: requires graph computation pass
 
 # =============================================================================
 # INTERLINKING PATTERNS (WIKI-STYLE)
@@ -446,18 +511,21 @@ interlinking:
           ids=["Main/Five-Year_Plans#0"],
           metadatas=[{
               "article_title": "Five-Year Plans",
-              "internal_links": json.dumps(links)  # store as JSON
+              "internal_links": links  # native list (ChromaDB supports)
           }]
       )
 
   find_related:
     code: |
       # Find all chunks that link TO a specific article
+      # Note: requires searching document text or post-filtering
       results = collection.get(
-          where_document={"$contains": '"Joseph Stalin"'}
+          where_document={"$contains": "Joseph Stalin"}
       )
 
+  # --- FUTURE ENHANCEMENT ---
   build_link_index:
+    status: DEFERRED
     strategy: |
       Maintain separate collection or external index:
       1. Parse all articles for [[links]]
@@ -475,8 +543,8 @@ interlinking:
               links_to[article.title].add(link)
               links_from[link].add(article.title)
 
-      # Add backlinks to metadata
-      metadata["backlinks"] = json.dumps(list(links_from[article.title]))
+      # Add backlinks to metadata (future enhancement)
+      metadata["backlinks"] = list(links_from[article.title])
 
   category_graph:
     concept: |
@@ -484,16 +552,15 @@ interlinking:
       Store category relationships for faceted search.
 
     code: |
-      # Category membership as filterable metadata
+      # Category membership stored as native list
       metadatas=[{
-          "categories": json.dumps(["Soviet history", "Economic policy"]),
-          "primary_category": "Soviet history"  # single value for exact match
+          "categories": ["Soviet history", "Economic policy"],
       }]
 
-      # Query by category
+      # Query by category requires document search
       collection.query(
           query_embeddings=[...],
-          where={"primary_category": "Soviet history"}
+          where_document={"$contains": "Soviet history"}
       )
 
 # =============================================================================

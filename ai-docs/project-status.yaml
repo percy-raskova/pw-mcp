@@ -1,6 +1,6 @@
 # Project Status - pw-mcp
 # Purpose: Track implementation progress and next steps
-# Updated: 2025-12-15
+# Updated: 2025-12-15 (Phase 5.5 - Test fixes + CLI server management)
 
 overview:
   project: ProleWiki MCP Server
@@ -172,7 +172,18 @@ phases:
     reference_doc: ai-docs/sembr.yaml
     test_counts:
       linebreaker_unit: 33
+      sembr_integration: 8
+      sembr_slow: 9
       total_with_sembr: 171
+    enhancements_added:
+      date: 2025-12-15
+      items:
+        - "CLI server management (--restart-server, --no-restart)"
+        - "CUDA cache reset on server restart"
+        - "JSON file support in process_batch (both .txt and .json)"
+        - "Graceful error handling (failed files return None)"
+        - "Retry jitter for 'Already borrowed' errors"
+        - "_extract_clean_text_from_json() supports both clean_text and text fields"
 
     tasks:
       - id: 3.1
@@ -255,31 +266,208 @@ phases:
       - Ready for Phase 4 (Chunking)
 
   phase_4_chunking:
-    status: future
+    status: COMPLETE
+    completed_date: 2025-12-15
     description: Text chunking for embeddings
+    reference_doc: ai-docs/chunking.yaml
+    dependencies: Phases 2-3 (ArticleData + sembr'd text)
+    test_counts:
+      chunker_unit: 25
+      chunk_metadata: 18
+      cli_chunk: 18
+      total: 61
+
+    overview:
+      input: sembr/{namespace}/{title}.txt + extracted article JSON
+      output: chunks/{namespace}/{title}.jsonl
+      token_targets:
+        target: 600  # Revised from 350 to leverage EmbeddingGemma's 2048 limit
+        min: 200
+        max: 1000
+
     tasks:
-      - Implement chunker.py
-      - Respect section boundaries
-      - Target 200-500 tokens per chunk
-      - Store line offsets for citations
-      - Add chunking tests
+      - id: 4.1
+        name: Test Infrastructure (Red Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 52 (25 chunker + 18 metadata + 9 fixtures)
+        details: |
+          Created test infrastructure:
+          - tests/unit/chunking/__init__.py
+          - tests/unit/chunking/test_chunker.py (25 tests)
+          - tests/unit/chunking/test_chunk_metadata.py (18 tests)
+          - tests/fixtures/chunking/input/ (8 files)
+          - tests/fixtures/chunking/metadata/ (3 JSON files)
+          - conftest.py updated with chunking fixtures
+
+      - id: 4.2
+        name: Core Chunker Module (Green Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 52 passing
+        details: |
+          Created src/pw_mcp/ingest/chunker.py (443 lines):
+          - ChunkConfig (frozen dataclass, 4 config fields)
+          - Chunk (dataclass, 7 fields for chunk metadata)
+          - ChunkedArticle (dataclass, 10 fields with metadata propagation)
+          - is_section_header() - regex-based section detection
+          - extract_section_title() - title extraction from headers
+          - estimate_tokens() - word_count × factor estimation
+          - generate_chunk_id() - URL-safe chunk ID generation
+          - chunk_text() - core algorithm with section/paragraph awareness
+          - chunk_article() - file wrapper with metadata propagation
+          - write_chunks_jsonl() - JSONL serialization
+          All 52 tests pass. Pre-commit hooks pass.
+
+      - id: 4.3
+        name: CLI Integration
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 18 passing
+        details: |
+          Updated src/pw_mcp/ingest/cli.py:
+          - Added "chunk" subcommand with 7 options
+          - -i/--input, -o/--output, -e/--extracted
+          - --sample, --no-progress
+          - --target-tokens, --max-tokens
+          - Progress display with file counts
+          - Random sampling support
+          - Proper error handling and exit codes
+
+          Created tests/unit/cli/__init__.py
+          Created tests/unit/cli/test_chunk_cli.py (18 tests):
+          - 8 parser tests (argument parsing, defaults)
+          - 6 processing tests (file discovery, output)
+          - 2 sample mode tests (limiting, random selection)
+          - 2 progress tests (display, suppression)
+
+      - id: 4.4
+        name: Documentation
+        status: COMPLETE
+        completed_date: 2025-12-15
+        details: |
+          Updated documentation files:
+          - ai-docs/chunking.yaml (implementation status)
+          - ai-docs/pipeline.yaml (Stage 5 status)
+          - ai-docs/project-status.yaml (this file)
+          - ai-docs/index.yaml (status update)
+
+    key_algorithm: |
+      1. Parse sembr output line by line
+      2. Detect section headers (== ... ==) as hard breaks
+      3. Track paragraph boundaries (blank lines) as soft breaks
+      4. Accumulate lines until approaching max_tokens
+      5. Prefer breaking at paragraph boundaries
+      6. Track line numbers for citation back to source
+      7. Propagate article-level metadata to all chunks
+
+    implementation_notes: |
+      Phase 4 COMPLETE - chunking module fully implemented:
+      - chunker.py handles text chunking with section/paragraph awareness
+      - CLI provides full batch processing with progress
+      - All 70 tests pass (52 chunker + 18 CLI), pre-commit hooks pass
+      - Ready for Phase 5 (Embedding)
 
   phase_5_embedding:
-    status: future
+    status: COMPLETE
     description: Vector embedding generation
+    reference_doc: ai-docs/embedding.yaml
+    model: embeddinggemma (768-dim, Ollama local)
+    output: embeddings/{namespace}/{title}.npy
+    completed_date: 2025-12-15
+    test_counts:
+      embedder_unit: 21
+      embed_cli: 10
+      embed_slow: 4
+      total: 35
+
     tasks:
-      - Integrate Ollama embeddinggemma
-      - Batch embedding with progress
-      - Add embedding quality tests
+      - id: 5.1
+        name: Test Infrastructure (Red Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 31 (21 embedder + 10 CLI, all skipped initially)
+        details: |
+          Created test infrastructure:
+          - tests/unit/embedding/__init__.py
+          - tests/unit/embedding/test_embedder.py (21 tests)
+          - tests/unit/embedding/test_embed_cli.py (10 tests)
+          - tests/fixtures/embedding/sample_chunks.jsonl (5 chunks)
+          - conftest.py updated with 6 embedding fixtures
+
+      - id: 5.2
+        name: Core Embedder Module (Green Phase)
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 21 passing
+        details: |
+          Created src/pw_mcp/ingest/embedder.py (complete):
+          - EmbedConfig (frozen dataclass, 6 config fields, validated)
+          - EmbeddedArticle (dataclass, 4 fields with numpy array)
+          - OllamaConnectionError, OllamaModelError exceptions
+          - embed_texts() with batching and exponential backoff retry
+          - embed_article_chunks() with JSONL parsing, order preservation
+          - write_embeddings_npy() with directory creation
+          - check_ollama_ready() pre-flight health check
+          Added ollama>=0.4.0 dependency to pyproject.toml
+          All 21 unit tests pass. Pre-commit hooks pass.
+
+      - id: 5.3
+        name: CLI Integration
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 10 passing
+        details: |
+          Updated src/pw_mcp/ingest/cli.py:
+          - Added "embed" subcommand with 7 options
+          - -i/--input, -o/--output, --model, --batch-size
+          - --sample, --no-progress, --host
+          - Pre-flight Ollama health check
+          - Progress display with [n/total] format
+          - Resume support (skip existing .npy files)
+          - Namespace directory structure preservation
+          All 10 CLI tests pass. Pre-commit hooks pass.
+
+      - id: 5.4
+        name: Integration Tests + Documentation
+        status: COMPLETE
+        completed_date: 2025-12-15
+        tests: 4 passing (slow)
+        details: |
+          - Created tests/slow/test_embedding_slow.py (4 tests)
+          - Added require_ollama_server fixture to conftest.py
+          - Tests: embed_real_chunk, dimensions, normalized, deterministic
+          - Updated ai-docs/ with final status
+
+    nice_to_have:
       - Investigate parallel embeddinggemmas by directory (3 instances if GPU permits)
+      - Async embedding for higher throughput
+
+    implementation_notes: |
+      Phase 5 COMPLETE - embedding module fully implemented:
+      - embedder.py handles Ollama API, batching, retries, JSONL parsing
+      - CLI provides full batch processing with progress and resume
+      - Slow tests validate real Ollama integration (L2 norm, determinism)
+      - All 35 tests pass (21 unit + 10 CLI + 4 slow), pre-commit hooks pass
+      - Ready for Phase 6 (ChromaDB loading)
 
   phase_6_loading:
     status: future
     description: ChromaDB ingestion
+    schema_reference: chromadb-schema.yaml#schema_phases
+    note: |
+      Schema is PHASED - MVP uses Phase A (13 fields from chunker).
+      No chunker changes needed for MVP. See chromadb-schema.yaml for phases:
+        Phase A (MVP): Core chunk + article metadata (13 fields) - ready now
+        Phase B: Rich infobox/library_work metadata (14 fields) - needs chunker extension
+        Phase C: Reference metadata (7 fields) - needs extraction enhancement
+        Phase D: Graph metadata (2 fields) - DEFERRED
     tasks:
+      - Finalize Phase A schema validation
       - Implement chroma.py loader
       - Batch upsert with metadata
       - Add loading tests
+      - (Later) Extend chunker for Phase B fields
 
   phase_7_mcp:
     status: future
@@ -363,24 +551,44 @@ phases:
 # =============================================================================
 
 current_focus:
-  phase: 4 (Chunking)
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4]
-  next_task: 4.1 Implement chunker.py
-  reference: ai-docs/pipeline.yaml
+  phase: 6 (ChromaDB Loading) - NEXT
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4]
+  next_task: 6.1 - Phase A Schema Implementation
+  reference: ai-docs/chromadb-schema.yaml
 
   next_action: |
-    Phase 3 COMPLETE - sembr integration fully implemented.
-    171 tests passing across 7 test files.
+    Phase 5 COMPLETE - embedding module fully implemented with integration tests.
 
-    Phase 4 NEXT - Text chunking for embeddings:
-    1. Implement chunker.py with section-aware splitting
-    2. Target 200-500 tokens per chunk
-    3. Store line offsets for citations
-    4. Add chunking unit tests
+    Phase 5 Summary:
+    5.1 Red Phase - COMPLETE (31 tests created)
+    5.2 Green Phase - COMPLETE (embedder.py implemented, 21 tests pass)
+    5.3 CLI Integration - COMPLETE (embed subcommand, 10 tests pass)
+    5.4 Integration Tests - COMPLETE (4 slow tests with live Ollama)
 
-    BEFORE processing corpus:
-    - Start sembr server: mise run sembr-server
-    - Process corpus: mise run sembr-process
+    Phase 6 Next Steps:
+    - Implement Phase A schema (13 fields from chunker output)
+    - Create ChromaDB loader module
+    - Batch upsert with metadata
+    - Add loading tests
+
+    Key Implementations from Phase 5:
+    - src/pw_mcp/ingest/embedder.py: EmbedConfig, EmbeddedArticle, embed_texts(), etc.
+    - CLI: pw-ingest embed -i chunks/ -o embeddings/ (7 options)
+    - Resume support, pre-flight check, batching, retry logic
+
+  # How Implementation Phases map to Pipeline Stages
+  phase_to_stage_mapping: |
+    Implementation Phases (work order)     Pipeline Stages (data flow)
+    ─────────────────────────────────      ─────────────────────────────
+    Phase 1: Foundation (infrastructure)   (no stage - test setup)
+    Phase 2: Extraction (parsers)    ────► Stage 1: Extraction
+    Phase 3: Sembr                   ────► Stage 2: Sembr
+    Phase 4: Chunking                ────► Stage 3: Chunking
+    Phase 5: Embedding               ────► Stage 4: Embedding
+    Phase 6: Loading                 ────► Stage 5: ChromaDB Loading
+    Phase 7: MCP Server                    (consumer of database)
+    Phase 8: Fine-tuning                   (separate goal)
+    (Optional) Graph                       (deferred enhancement)
 
   test_status:
     link_parser: 28 passing
@@ -390,7 +598,15 @@ current_focus:
     quote_parser: 12 passing
     extraction_pipeline: 22 passing
     linebreaker: 33 passing
-    total: 171 passing
+    sembr_integration: 8 passing
+    sembr_slow: 9 passing
+    chunker: 25 passing
+    chunk_metadata: 18 passing
+    cli_chunk: 18 passing
+    embedder: 21 passing
+    embed_cli: 10 passing
+    embed_slow: 4 passing
+    total: 312 passing
 
 # =============================================================================
 # KEY DECISIONS
@@ -441,6 +657,42 @@ decisions:
     rationale: Lock files are auto-generated, necessary for reproducibility
     date: 2025-12-14
 
+  schema_phasing:
+    decision: Phase ChromaDB schema into A (MVP) / B / C / D increments
+    rationale: |
+      Schema has 60+ fields but chunker only outputs 13.
+      Phase A (13 fields): Already output by chunker - ship MVP now.
+      Phase B (14 fields): Infobox/library_work - data extracted, needs serialization.
+      Phase C (7 fields): Reference metadata - needs extraction enhancement.
+      Phase D (2 fields): Graph metadata - requires optional graph computation.
+      This enables MVP delivery without blocking on full schema implementation.
+    date: 2025-12-15
+    reference: chromadb-schema.yaml#schema_phases
+
+  sembr_server_management:
+    decision: Auto-restart sembr server by default with CUDA cleanup
+    rationale: |
+      The sembr server is single-threaded and can enter corrupted CUDA state.
+      Problems encountered:
+      - "Already borrowed" errors on concurrent requests (server mutex)
+      - CUDA device-side assert errors persisting after server restart
+      Fix: --restart-server flag (default True) kills existing server,
+      clears CUDA cache, and starts fresh instance before batch processing.
+      --no-restart available for using existing server instance.
+    date: 2025-12-15
+    implementation: src/pw_mcp/ingest/cli.py
+
+  graceful_batch_error_handling:
+    decision: Return None for failed files instead of failing entire batch
+    rationale: |
+      process_batch() was using asyncio.gather() which propagates exceptions.
+      When one file fails, the entire batch would crash.
+      Fix: Wrap individual file processing in try/except, return None for
+      failures. Callers can filter [r for r in results if r is not None].
+      This enables processing large batches with partial failures.
+    date: 2025-12-15
+    implementation: src/pw_mcp/ingest/linebreaker.py
+
 # =============================================================================
 # FILE LOCATIONS
 # =============================================================================
@@ -459,10 +711,14 @@ key_files:
       - src/pw_mcp/ingest/extraction.py         # extract_article() - 22 tests
     sembr:
       - src/pw_mcp/ingest/linebreaker.py        # sembr HTTP client - 33 tests
+    chunking:
+      - src/pw_mcp/ingest/chunker.py            # chunk_text(), chunk_article() - 43 tests
+    embedding:
+      - src/pw_mcp/ingest/embedder.py           # embed_texts(), embed_article_chunks() - 31 tests
     server:
       - src/pw_mcp/server.py
       - src/pw_mcp/config.py
-      - src/pw_mcp/ingest/cli.py                # pw-ingest CLI with sembr subcommand
+      - src/pw_mcp/ingest/cli.py                # pw-ingest CLI with sembr, chunk, embed subcommands
 
   type_stubs:
     - stubs/mcp/__init__.pyi
@@ -477,6 +733,14 @@ key_files:
       - tests/unit/extraction/test_library_work_parser.py  # 25 tests
       - tests/unit/extraction/test_quote_parser.py         # 12 tests
       - tests/unit/sembr/test_linebreaker.py               # 33 tests
+      - tests/unit/chunking/test_chunker.py                # 25 tests
+      - tests/unit/chunking/test_chunk_metadata.py         # 18 tests
+      - tests/unit/cli/test_chunk_cli.py                   # 18 tests
+      - tests/unit/embedding/test_embedder.py              # 21 tests
+      - tests/unit/embedding/test_embed_cli.py             # 10 tests
+    slow:
+      - tests/slow/test_sembr_slow.py                      # 9 tests (sembr server)
+      - tests/slow/test_embedding_slow.py                  # 4 tests (Ollama)
     integration:
       - tests/integration/test_extraction_pipeline.py      # 22 tests
     config:
@@ -492,6 +756,9 @@ key_files:
     - tests/fixtures/sembr/input/             # 7 sembr input samples
     - tests/fixtures/sembr/expected/          # 5 sembr expected outputs
     - tests/fixtures/sembr/mock_responses/    # 3 HTTP mock responses
+    - tests/fixtures/chunking/input/          # 8 chunking input samples
+    - tests/fixtures/chunking/metadata/       # 3 article metadata JSONs
+    - tests/fixtures/embedding/               # 5-chunk sample JSONL fixture
 
   corpus:
     - prolewiki-exports/Main/       # ~4000+ encyclopedia articles
@@ -559,6 +826,36 @@ dataclasses:
       text, line_count, processing_time_ms,
       input_word_count, output_word_count
 
+  ChunkConfig:
+    fields: |
+      target_tokens, min_tokens, max_tokens,
+      token_estimation_factor
+    frozen: true
+
+  Chunk:
+    fields: |
+      text, chunk_index, section, line_start,
+      line_end, word_count, estimated_tokens
+
+  ChunkedArticle:
+    fields: |
+      article_title, namespace, chunks, categories,
+      internal_links, infobox, library_work, is_stub,
+      citation_needed_count, has_blockquote
+
+  EmbedConfig:
+    fields: |
+      model, dimensions, batch_size, ollama_host,
+      max_retries, retry_delay
+    frozen: true
+    validated: true
+
+  EmbeddedArticle:
+    fields: |
+      article_title, namespace, num_chunks, embeddings
+    embeddings_shape: (num_chunks, 768)
+    embeddings_dtype: float32
+
 # =============================================================================
 # COMMANDS
 # =============================================================================
@@ -584,3 +881,9 @@ useful_commands:
     sembr_check: mise run sembr-check
     sembr_process: mise run sembr-process
     sembr_sample: mise run sembr-sample
+    chunk_help: uv run pw-ingest chunk --help
+    chunk_sample: uv run pw-ingest chunk --sample 10
+    chunk_process: uv run pw-ingest chunk -i sembr/ -o chunks/
+    embed_help: uv run pw-ingest embed --help
+    embed_sample: uv run pw-ingest embed --sample 10
+    embed_process: uv run pw-ingest embed -i chunks/ -o embeddings/

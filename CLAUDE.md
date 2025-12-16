@@ -9,7 +9,7 @@ An MCP (Model Context Protocol) server providing AI assistants with semantic vec
 - **Language**: Python 3.12 (chosen for AI coding proficiency + ecosystem support)
 - **Package Manager**: uv
 - **Vector DB**: ChromaDB (persistent, local-first)
-- **Embeddings**: Ollama `embeddinggemma` (768-dim, local, Gemma3-based 307M params)
+- **Embeddings**: OpenAI `text-embedding-3-large` (1536-dim, via API) or Ollama (local fallback)
 - **MediaWiki Parsing**: mwparserfromhell
 - **Semantic Linebreaking**: sembr with `distilbert-base-multilingual-cased` (supports Chinese, Russian, etc.)
 - **Server Protocol**: MCP via FastMCP
@@ -80,7 +80,8 @@ These transformed the Soviet Union from an agrarian society into an industrial p
 │     - Stores line offsets for precise citation              │
 │                                                             │
 │  4. Embedder                                                │
-│     chunks → vectors via Ollama embeddinggemma (768-dim)    │
+│     chunks → vectors via OpenAI text-embedding-3-large      │
+│     (1536-dim, or Ollama 768-dim for local development)     │
 │                                                             │
 │  5. ChromaDB Loader                                         │
 │     vectors + metadata → persistent database                │
@@ -104,18 +105,23 @@ Benchmark results (100 files sample):
 - Per-file mode: ~9 seconds/file → **13-16 hours** for full corpus
 - Server mode: Expected **10-50x faster** (model loaded once)
 
-### Chunk Metadata Schema
+### Chunk Metadata Schema (MVP - 13 fields)
 
 ```python
 {
+    "chunk_id": str,           # "Main/Five-Year_Plans#0"
+    "text": str,               # Chunk content (embedded)
     "article_title": str,      # "Five-Year Plans"
     "namespace": str,          # "Main", "Library", "Essays", "ProleWiki"
     "section": str | None,     # "Implementation" (from == headers ==)
+    "chunk_index": int,        # Position within article
+    "line_range": str,         # "45-52" for citation
+    "word_count": int,         # 287
     "categories": list[str],   # ["Soviet economy", "Stalin era"]
     "internal_links": list[str],  # Referenced articles
-    "source_file": str,        # "Main/Five-Year Plans.txt"
-    "line_range": tuple[int, int],  # (45, 52) for citation
-    "chunk_index": int,        # Position within article
+    "is_stub": bool,           # Article marked as incomplete
+    "citation_needed_count": int,  # Number of {{Citation needed}} markers
+    "has_blockquote": bool,    # Contains <blockquote> content
 }
 ```
 

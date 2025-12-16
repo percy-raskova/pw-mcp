@@ -18,53 +18,58 @@ files:
       - optimizing performance
 
   chromadb-schema.yaml:
-    status: DRAFT - iterate before implementation
-    purpose: Concrete ChromaDB schema definition for ProleWiki
+    status: Phase A (MVP) IMPLEMENTED - using OpenAI embeddings
+    purpose: Concrete ChromaDB schema definition for ProleWiki (phased rollout)
     topics:
+      - SCHEMA PHASES (A/B/C/D incremental implementation)
+      - MVP SCHEMA (Phase A - 13 fields, ready now)
       - collection definitions (prolewiki_chunks, prolewiki_references)
       - field schemas with types and examples
       - HNSW and embedding configuration
       - ID format patterns
       - metadata constraints (JSON arrays, indexing)
       - query patterns with code examples
-      - INFOBOX METADATA (biographical, political, organizational fields)
-      - LIBRARY WORK METADATA (bibliographic fields for Library namespace)
-      - CHAPTER NAVIGATION (book structure metadata)
-      - ARTICLE STATUS FLAGS (is_stub, citation_needed_count)
-      - CONTENT FLAGS (has_blockquote, has_foreword)
+      - INFOBOX METADATA (Phase B - biographical, political, organizational fields)
+      - LIBRARY WORK METADATA (Phase B - bibliographic fields for Library namespace)
+      - REFERENCE METADATA (Phase C - citation-derived fields)
+      - GRAPH METADATA (Phase D - backlinks, importance metrics)
+      - ARTICLE STATUS FLAGS (Phase A - is_stub, citation_needed_count)
+      - CONTENT FLAGS (Phase A/B - has_blockquote, has_foreword)
     sections:
-      collections: Collection definitions and field schemas
-      collections.infobox_metadata: 25+ fields from infobox extraction
-      collections.library_work_metadata: 11 fields for Library namespace bibliographic data
-      collections.chapter_navigation: Chapter navigation for multi-chapter works
-      collections.article_status: Quality/completeness indicators
-      collections.content_flags: Content type markers (blockquotes, forewords)
+      schema_phases: Phase A/B/C/D definitions with field lists
+      mvp_schema: Quick reference for Phase A (13 fields)
+      collections: Full field reference tagged by phase
       constraints: ChromaDB metadata limitations
       query_patterns: Common query code examples
       migration: Schema change strategies
       open_questions: Design decisions to resolve
+    schema_phases:
+      phase_a: MVP - 13 fields already output by chunker
+      phase_b: Rich metadata - infobox + library_work (14 fields)
+      phase_c: Reference metadata - citations (7 fields)
+      phase_d: Graph metadata - backlinks (2 fields) - DEFERRED
     use_when:
-      - implementing ChromaDB loading
+      - implementing ChromaDB loading (start with Phase A)
       - writing search/query code
-      - reviewing what metadata is available
+      - reviewing what metadata is available by phase
+      - planning schema extensions beyond MVP
       - debugging query results
       - understanding infobox field mappings
       - understanding Library namespace metadata
       - filtering by article quality
 
   pipeline.yaml:
-    status: DRAFT - brainstorming phase
+    status: Stages 1-4 IMPLEMENTED, Stage 5 NEXT
     purpose: Full ingestion pipeline architecture from MediaWiki to ChromaDB
     topics:
-      - 7-stage pipeline (extract → graph → clean → sembr → chunk → embed → load)
-      - normalized reference table (single source of truth)
-      - backlink computation (wiki-style bidirectional links)
+      - 5-stage core pipeline (extract → sembr → chunk → embed → load)
+      - optional graph computation (backlinks, link counts)
       - intermediate file formats for debuggability
       - CLI interface design
       - INFOBOX EXTRACTION (21 types, field mapping, date parsing, link extraction)
       - ADDITIONAL TEMPLATES (Library work, Book_Navigation, citations, status markers)
     sections:
-      stage_1_extraction: MediaWiki parsing, ref/link/category extraction
+      stage_1_extraction: MediaWiki parsing + clean_text generation ✓
       stage_1_extraction.infoboxes: |
         Infobox type detection and field extraction
         - 21 infobox types (politician, country, party, etc.)
@@ -83,29 +88,18 @@ files:
         - Display control (DEFAULTSORT, DISPLAYTITLE, TOC limit)
         - Sidebars and navboxes (remove, no extraction)
         - Transclusion markers (noinclude, onlyinclude)
-      stage_1_extraction.structural_sections: |
-        Section-based extraction:
-        - == See also == - related article links
-        - == External links == - external URLs
-        - == References ==, == Footnotes == - reference sections (remove)
-      stage_1_extraction.blockquotes: |
-        <blockquote> handling:
-        - Keep in clean_text (semantically valuable)
-        - Extract attribution patterns
-        - Tag has_blockquote flag
-      stage_2_graph: Backlinks, link counts, category graph
-      stage_3_cleaning: Markup removal, quote preservation
-      stage_4_sembr: Semantic linebreaking
-      stage_5_chunking: Chunk creation with metadata attachment
-      stage_6_embedding: Ollama embeddinggemma vector generation
-      stage_7_loading: ChromaDB ingestion
+      stage_2_sembr: Semantic linebreaking ✓
+      stage_3_chunking: Chunk creation with metadata ✓
+      stage_4_embedding: OpenAI text-embedding-3-large (1536-dim) ✓
+      stage_5_loading: ChromaDB ingestion
+      optional_graph: Backlinks, link counts, category graph (deferred)
       open_questions: Unresolved design decisions
     use_when:
       - planning pipeline implementation
       - understanding data flow
       - debugging intermediate outputs
       - understanding infobox extraction rules
-      - understanding additional template handling
+      - understanding graph computation (optional)
 
   testing-plan.yaml:
     status: DRAFT - ready for implementation
@@ -124,7 +118,7 @@ files:
       stage_3_cleaning_tests: markup removal, transforms
       stage_4_sembr_tests: server mode, output validation
       stage_5_chunking_tests: token boundaries, metadata attachment
-      stage_6_embedding_tests: Ollama integration, quality checks
+      stage_6_embedding_tests: OpenAI/Ollama provider tests, quality checks
       stage_7_loading_tests: ChromaDB operations, integrity
       integration_tests: cross-stage data flow validation
       retrieval_tests: semantic search quality, filter tests, golden test set
@@ -170,10 +164,19 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-16: OpenAI text-embedding-3-large (1536-dim) now primary embedding provider"
+      - "2025-12-15: PHASE 5.5 - Test fixes + CLI server management (312 tests total)"
+      - "2025-12-15: Fixed 4 failing tests (JSON support, graceful errors, concurrency)"
+      - "2025-12-15: Added --restart-server/--no-restart CLI flags for CUDA cleanup"
+      - "2025-12-15: PHASE 5 COMPLETE - embedding module fully implemented (35 tests)"
+      - "2025-12-15: PHASE 5.4 COMPLETE - slow integration tests with live Ollama (4 tests)"
+      - "2025-12-15: PHASE 5.1-5.3 COMPLETE - embedder module + CLI implemented (31 tests)"
+      - "2025-12-15: Schema PHASED - Phase A (MVP, 13 fields) ready for implementation"
+      - "2025-12-15: Pipeline SIMPLIFIED - 5 core stages + optional graph"
+      - "2025-12-15: PHASE 4 COMPLETE - chunking module + CLI implemented (70 tests)"
+      - "2025-12-15: Graph computation marked as DEFERRED (not blocking RAG)"
       - "2025-12-15: Phase 8 PLANNED - finetune.yaml for Marxist LLM fine-tuning"
-      - "2025-12-15: DeepSeek 7B + Unsloth QLoRA + Q&A from ProleWiki corpus"
       - "2025-12-15: PHASE 3 COMPLETE - sembr integration implemented"
-      - "2025-12-15: 171 tests passing (33 new sembr tests)"
       - "2025-12-14: PHASE 2 COMPLETE - all parsers implemented"
 
   sembr.yaml:
@@ -210,6 +213,43 @@ files:
       languages: [English, Russian, Chinese, Spanish, German, French]
       performance: "~0.2-0.5s/file in server mode vs ~9s/file in CLI mode"
 
+  embedding.yaml:
+    status: IMPLEMENTED - Phase 5 COMPLETE (OpenAI provider added)
+    purpose: Vector embedding generation for semantic search
+    topics:
+      - OpenAI text-embedding-3-large (1536-dim, primary)
+      - Ollama embeddinggemma (768-dim, local fallback)
+      - EmbedConfig with provider selection
+      - NPY output format (aligned with JSONL chunk order)
+      - CLI integration (pw-ingest embed --provider openai)
+      - Testing strategy (~35 tests: unit, CLI, integration)
+    sections:
+      overview: Goal, input/output, model selection rationale
+      model: OpenAI (primary) and Ollama (fallback) specs
+      config: EmbedConfig dataclass with provider field
+      dataclasses: EmbeddedArticle structure
+      public_api: embed_texts, embed_article_chunks, write_embeddings_npy
+      openai_integration: API key from .env, retry logic
+      ollama_integration: Python library patterns (local fallback)
+      output_format: NPY file structure, alignment with chunks
+      cli: pw-ingest embed --provider [ollama|openai]
+      testing: Test categories, mock strategy, fixtures
+    use_when:
+      - running embeddings with OpenAI API
+      - understanding provider selection
+      - writing embedding tests
+      - debugging embedding issues
+    model_info:
+      primary:
+        name: text-embedding-3-large
+        provider: OpenAI (API)
+        dimensions: 1536 (configurable 256-3072)
+        cost: ~$0.13 per million tokens
+      fallback:
+        name: embeddinggemma
+        provider: Ollama (local)
+        dimensions: 768
+
   finetune.yaml:
     status: PLANNED - Phase 8 specification
     purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
@@ -242,6 +282,32 @@ files:
       - setting up training infrastructure
       - evaluating fine-tuned model
       - deploying to Ollama
+
+  chunking.yaml:
+    status: IMPLEMENTED - Phase 4 complete
+    purpose: Text chunking for embedding and retrieval
+    topics:
+      - Chunking algorithm with section/paragraph awareness
+      - Token estimation and boundaries (600/200/1000 target/min/max)
+      - Metadata propagation from ArticleData
+      - JSONL output format for ChromaDB loading
+      - CLI integration (pw-ingest chunk subcommand)
+      - TDD implementation phases (4.1-4.4) - all complete
+    sections:
+      design_rationale: Why chunk even with 2048 token limit
+      config: ChunkConfig dataclass fields
+      dataclasses: Chunk, ChunkedArticle structures
+      algorithm: Pseudocode and boundary handling
+      output_format: JSONL schema matching chromadb-schema.yaml
+      cli: Subcommand options (7 arguments)
+      testing: Test structure and categories (70 tests)
+      implementation: TDD phases 4.1-4.4 (all COMPLETE)
+      success_criteria: Functionality, quality, performance (all met)
+    use_when:
+      - understanding chunk algorithm
+      - writing chunking tests
+      - configuring chunk sizes
+      - using pw-ingest chunk CLI
 
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
