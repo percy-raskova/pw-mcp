@@ -1,0 +1,636 @@
+# Chunking Documentation - Phase 4
+# Purpose: Text chunking for embedding and retrieval
+# Status: COMPLETE
+# Completed: 2025-12-15
+# Dependencies: Phase 2 (ArticleData), Phase 3 (sembr'd text)
+
+overview:
+  goal: Group semantic lines into coherent chunks for vector embedding
+  input: sembr/{namespace}/{title}.txt + extracted/articles/{namespace}/{title}.json
+  output: chunks/{namespace}/{title}.jsonl
+  token_model: EmbeddingGemma (768-dim, max 2048 tokens)
+
+# =============================================================================
+# DESIGN RATIONALE
+# =============================================================================
+
+design_rationale:
+  why_chunk: |
+    Even with EmbeddingGemma's 2048 token limit, chunking is necessary:
+    1. Articles often exceed 2048 tokens (Main: 1000-5000+ words)
+    2. Library documents can be 46,000 lines (way over limit)
+    3. Semantic dilution: long docs mix many topics, averaging concepts
+    4. Retrieval granularity: need to pinpoint specific paragraphs
+
+  chunk_size_tradeoffs:
+    small_chunks:
+      tokens: 200-500
+      pros: Precise retrieval, specific answers
+      cons: Need more chunks for context, fragmented
+    large_chunks:
+      tokens: 1000-1500
+      pros: More context per chunk, fewer chunks total
+      cons: Less precise, more noise in retrieval
+    recommended:
+      tokens: 500-800
+      rationale: |
+        Balance between context richness and retrieval precision.
+        Large enough for coherent paragraphs, small enough for specificity.
+
+# =============================================================================
+# CHUNK CONFIGURATION
+# =============================================================================
+
+config:
+  dataclass: ChunkConfig
+  frozen: true
+  fields:
+    target_tokens:
+      type: int
+      default: 600
+      description: Ideal chunk size to aim for
+
+    min_tokens:
+      type: int
+      default: 200
+      description: Minimum chunk size (avoid tiny fragments)
+
+    max_tokens:
+      type: int
+      default: 1000
+      description: Maximum chunk size (stay under embedding limit)
+
+    token_estimation_factor:
+      type: float
+      default: 1.3
+      description: |
+        Multiply word_count by this to estimate tokens.
+        English averages ~1.3 tokens/word for general text.
+
+# =============================================================================
+# DATA STRUCTURES
+# =============================================================================
+
+dataclasses:
+  Chunk:
+    description: Single chunk of text with metadata
+    fields:
+      text:
+        type: str
+        description: Clean text content (what gets embedded)
+
+      chunk_index:
+        type: int
+        description: Order within article (0-indexed)
+
+      section:
+        type: str | None
+        description: Section header this chunk falls under (None if before first header)
+
+      line_start:
+        type: int
+        description: Starting line in sembr'd source (1-indexed)
+
+      line_end:
+        type: int
+        description: Ending line in sembr'd source (inclusive)
+
+      word_count:
+        type: int
+        description: Actual word count in chunk
+
+      estimated_tokens:
+        type: int
+        description: word_count × token_estimation_factor
+
+  ChunkedArticle:
+    description: Article split into chunks with propagated metadata
+    fields:
+      article_title:
+        type: str
+        description: Article title (from filename or extraction)
+
+      namespace:
+        type: str
+        description: ProleWiki namespace (Main, Library, Essays, ProleWiki)
+
+      chunks:
+        type: list[Chunk]
+        description: Ordered list of chunks
+
+      # Article-level metadata (propagated to all chunks)
+      categories:
+        type: list[str]
+        description: Categories from [[Category:...]]
+
+      internal_links:
+        type: list[str]
+        description: Articles this article links TO
+
+      infobox:
+        type: InfoboxData | None
+        description: Parsed infobox if present
+
+      library_work:
+        type: LibraryWorkData | None
+        description: Library work metadata (Library namespace)
+
+      is_stub:
+        type: bool
+        description: Article marked incomplete
+
+      citation_needed_count:
+        type: int
+        description: Number of {{Citation needed}} markers
+
+      has_blockquote:
+        type: bool
+        description: Contains <blockquote> content
+
+# =============================================================================
+# CHUNKING ALGORITHM
+# =============================================================================
+
+algorithm:
+  overview: |
+    Parse sembr output line by line, accumulating into chunks.
+    Respect section boundaries (hard breaks) and paragraph boundaries (soft breaks).
+    Track line numbers for citation back to source.
+
+  pseudocode: |
+    def chunk_text(lines: list[str], config: ChunkConfig) -> list[Chunk]:
+        chunks = []
+        current_chunk_lines = []
+        current_section = None
+        line_start = 1
+        last_paragraph_boundary = 0
+
+        for line_num, line in enumerate(lines, 1):
+            # Check for section header
+            if is_section_header(line):
+                # Flush current chunk if non-empty
+                if current_chunk_lines:
+                    chunks.append(make_chunk(
+                        current_chunk_lines, current_section,
+                        line_start, line_num - 1
+                    ))
+                    current_chunk_lines = []
+                    line_start = line_num
+
+                # Update section, add header to new chunk
+                current_section = extract_section_title(line)
+                current_chunk_lines.append(line)
+                continue
+
+            # Check for paragraph boundary (blank line)
+            if is_blank_line(line):
+                last_paragraph_boundary = len(current_chunk_lines)
+                current_chunk_lines.append(line)
+                continue
+
+            # Add line to current chunk
+            current_chunk_lines.append(line)
+
+            # Check if approaching max tokens
+            estimated = estimate_tokens(current_chunk_lines, config)
+            if estimated >= config.max_tokens:
+                # Try to break at paragraph boundary
+                if last_paragraph_boundary > 0:
+                    split_point = last_paragraph_boundary
+                else:
+                    split_point = len(current_chunk_lines) - 1
+
+                # Create chunk up to split point
+                chunks.append(make_chunk(
+                    current_chunk_lines[:split_point], current_section,
+                    line_start, line_start + split_point - 1
+                ))
+
+                # Start new chunk with remaining lines
+                current_chunk_lines = current_chunk_lines[split_point:]
+                line_start = line_start + split_point
+                last_paragraph_boundary = 0
+
+        # Flush final chunk
+        if current_chunk_lines:
+            chunks.append(make_chunk(
+                current_chunk_lines, current_section,
+                line_start, len(lines)
+            ))
+
+        return chunks
+
+  boundaries:
+    hard:
+      - description: Section headers (== ... ==)
+        behavior: Always start new chunk, never split mid-section
+        pattern: "^(={2,6})\\s*([^=]+?)\\s*\\1\\s*$"
+
+    soft:
+      - description: Paragraph breaks (blank lines)
+        behavior: Prefer breaking at paragraph boundaries when possible
+        detection: line.strip() == ""
+
+  edge_cases:
+    empty_input:
+      behavior: Return empty list of chunks
+      test: test_empty_input_returns_no_chunks
+
+    single_line:
+      behavior: Return single chunk even if below min_tokens
+      test: test_single_line_creates_chunk
+
+    huge_section:
+      behavior: Split within section at paragraph boundaries
+      test: test_large_section_splits_at_paragraphs
+
+    no_headers:
+      behavior: All chunks have section=None
+      test: test_no_headers_null_section
+
+    consecutive_headers:
+      behavior: Each header starts new chunk (may have header-only chunks)
+      test: test_consecutive_headers
+
+# =============================================================================
+# OUTPUT FORMAT
+# =============================================================================
+
+output_format:
+  file_structure: chunks/{namespace}/{title}.jsonl
+  encoding: UTF-8
+  one_record_per_line: true
+
+  # Schema Phase Reference: See chromadb-schema.yaml#schema_phases
+  # Current output matches Phase A (MVP) - 13 fields
+  # Phase B would add infobox/library_work fields (data already extracted, needs serialization)
+  schema_phase: A
+  current_fields: 13
+
+  jsonl_schema:
+    chunk_id:
+      type: str
+      format: "{namespace}/{title}#{chunk_index}"
+      example: "Main/Five-Year_Plans#0"
+      notes: URL-safe (spaces → underscores)
+
+    text:
+      type: str
+      description: Clean text content (what gets embedded)
+      max_length: ~1500 words
+
+    # Article-level metadata
+    article_title:
+      type: str
+      example: "Five-Year Plans"
+
+    namespace:
+      type: str
+      enum: ["Main", "Library", "Essays", "ProleWiki"]
+
+    categories:
+      type: str
+      format: JSON array
+      example: '["Soviet economy", "Stalin era"]'
+
+    internal_links:
+      type: str
+      format: JSON array
+      example: '["Joseph Stalin", "USSR"]'
+
+    # -------------------------------------------------------
+    # PHASE B FIELDS (not yet output - requires chunker extension)
+    # -------------------------------------------------------
+    # Data already extracted in Stage 1, needs write_chunks_jsonl() extension
+
+    # Infobox metadata (Phase B)
+    infobox_type:
+      phase: B
+      type: str | null
+      example: "politician"
+      note: NOT YET OUTPUT - requires chunker extension
+
+    # Additional infobox fields propagated as needed (Phase B)
+    # (birth_year, death_year, political_orientation, etc.)
+
+    # Library work metadata (Phase B)
+    library_work_title:
+      phase: B
+      type: str | null
+      note: NOT YET OUTPUT - requires chunker extension
+
+    library_work_author:
+      phase: B
+      type: str | null
+
+    library_work_type:
+      phase: B
+      type: str | null
+
+    # Chunk-level metadata
+    section:
+      type: str | null
+      example: "Implementation"
+
+    chunk_index:
+      type: int
+      example: 0
+
+    line_range:
+      type: str
+      format: "start-end"
+      example: "45-67"
+
+    word_count:
+      type: int
+      example: 287
+
+    # Status flags
+    is_stub:
+      type: bool
+
+    citation_needed_count:
+      type: int
+
+    has_blockquote:
+      type: bool
+
+  example_record: |
+    {
+      "chunk_id": "Main/Five-Year_Plans#0",
+      "text": "The Five-Year Plans for the National Economy...",
+      "article_title": "Five-Year Plans",
+      "namespace": "Main",
+      "categories": "[\"Soviet economy\", \"Stalin era\", \"Economic planning\"]",
+      "internal_links": "[\"Joseph Stalin\", \"USSR\", \"Industrialization\"]",
+      "infobox_type": null,
+      "section": null,
+      "chunk_index": 0,
+      "line_range": "1-45",
+      "word_count": 287,
+      "is_stub": false,
+      "citation_needed_count": 0,
+      "has_blockquote": false
+    }
+
+# =============================================================================
+# CLI INTEGRATION
+# =============================================================================
+
+cli:
+  subcommand: chunk
+  description: Chunk sembr'd text into embedding-ready segments
+
+  options:
+    input:
+      flags: [-i, --input]
+      type: Path
+      default: sembr/
+      description: Input directory with sembr'd text files
+
+    output:
+      flags: [-o, --output]
+      type: Path
+      default: chunks/
+      description: Output directory for chunk JSONL files
+
+    extracted:
+      flags: [-e, --extracted]
+      type: Path
+      default: extracted/articles/
+      description: Directory with extracted article JSONs (for metadata)
+
+    sample:
+      flags: [--sample]
+      type: int
+      default: null
+      description: Process only N random files for testing
+
+    no_progress:
+      flags: [--no-progress]
+      type: bool
+      default: false
+      description: Disable progress display
+
+    target_tokens:
+      flags: [--target-tokens]
+      type: int
+      default: 600
+      description: Target chunk size in tokens
+
+    max_tokens:
+      flags: [--max-tokens]
+      type: int
+      default: 1000
+      description: Maximum chunk size in tokens
+
+  usage_examples:
+    check_sample: pw-ingest chunk --sample 10
+    full_corpus: pw-ingest chunk -i sembr/ -o chunks/
+    custom_size: pw-ingest chunk --target-tokens 400 --max-tokens 800
+
+# =============================================================================
+# MISE TASKS
+# =============================================================================
+
+mise_tasks:
+  chunk-process:
+    description: Process full corpus through chunker
+    command: uv run pw-ingest chunk -i sembr/ -o chunks/
+
+  chunk-sample:
+    description: Test chunker with sample files
+    command: uv run pw-ingest chunk --sample 10
+
+# =============================================================================
+# TESTING STRATEGY
+# =============================================================================
+
+testing:
+  structure:
+    unit:
+      - tests/unit/chunking/__init__.py
+      - tests/unit/chunking/test_chunker.py
+      - tests/unit/chunking/test_chunk_metadata.py
+    integration:
+      - tests/integration/test_chunking_pipeline.py
+    fixtures:
+      - tests/fixtures/chunking/input/
+      - tests/fixtures/chunking/expected/
+
+  test_categories:
+    token_boundaries:
+      count: 5
+      tests:
+        - test_target_tokens_respected
+        - test_min_tokens_enforced
+        - test_max_tokens_enforced
+        - test_token_estimation_accuracy
+        - test_word_count_calculation
+
+    section_boundaries:
+      count: 6
+      tests:
+        - test_section_header_starts_new_chunk
+        - test_no_split_mid_section
+        - test_paragraph_break_preference
+        - test_large_section_splits_at_paragraphs
+        - test_consecutive_headers
+        - test_nested_headers
+
+    metadata_attachment:
+      count: 12
+      tests:
+        - test_article_title_propagated
+        - test_namespace_propagated
+        - test_categories_json_format
+        - test_internal_links_json_format
+        - test_infobox_fields_attached
+        - test_library_work_fields_attached
+        - test_section_tracked
+        - test_chunk_index_sequential
+        - test_line_range_accurate
+        - test_word_count_calculated
+        - test_status_flags_attached
+        - test_has_blockquote_flag
+
+    id_generation:
+      count: 4
+      tests:
+        - test_id_format_correct
+        - test_id_url_safe_spaces_underscores
+        - test_id_deterministic
+        - test_id_unique_per_article
+
+    edge_cases:
+      count: 8
+      tests:
+        - test_empty_input_returns_no_chunks
+        - test_single_line_creates_chunk
+        - test_no_headers_null_section
+        - test_unicode_preserved
+        - test_blank_lines_handled
+        - test_very_long_document
+        - test_library_chapter_structure
+        - test_header_only_section
+
+  fixtures:
+    input_files:
+      - simple_article.txt: Short article with 2-3 sections
+      - long_article.txt: Article exceeding max_tokens
+      - no_headers.txt: Article without section headers
+      - many_headers.txt: Article with many small sections
+      - library_chapter.txt: Library namespace chapter
+      - unicode_content.txt: Cyrillic/Chinese text
+      - single_paragraph.txt: No section headers, no blank lines
+
+    expected_outputs:
+      - Corresponding .jsonl files with expected chunk structure
+
+# =============================================================================
+# IMPLEMENTATION PHASES (TDD)
+# =============================================================================
+
+implementation:
+  phase_4_1:
+    name: Test Infrastructure (Red Phase)
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 52 (25 chunker + 18 metadata + fixtures)
+    tasks:
+      - Create tests/unit/chunking/ directory structure
+      - Create test_chunker.py with 25 tests
+      - Create test_chunk_metadata.py with 18 tests
+      - Create tests/fixtures/chunking/ with input/metadata samples
+      - Update conftest.py with chunking fixtures
+    deliverables:
+      - tests/unit/chunking/__init__.py
+      - tests/unit/chunking/test_chunker.py (25 tests)
+      - tests/unit/chunking/test_chunk_metadata.py (18 tests)
+      - tests/fixtures/chunking/input/*.txt (8 files)
+      - tests/fixtures/chunking/metadata/*.json (3 files)
+
+  phase_4_2:
+    name: Core Chunker Module (Green Phase)
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 52 passing
+    tasks:
+      - Create src/pw_mcp/ingest/chunker.py
+      - Implement ChunkConfig dataclass
+      - Implement Chunk dataclass
+      - Implement ChunkedArticle dataclass
+      - Implement chunk_text() function
+      - Implement chunk_article() function
+      - Implement JSONL output functions
+      - Make all tests pass
+    deliverables:
+      - src/pw_mcp/ingest/chunker.py (443 lines)
+
+  phase_4_3:
+    name: CLI Integration
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tests: 18 passing
+    tasks:
+      - Add "chunk" subcommand to cli.py
+      - Implement all CLI options (7 arguments)
+      - Add progress display
+      - Add error handling
+      - Add random sampling support
+    deliverables:
+      - Updated src/pw_mcp/ingest/cli.py
+      - tests/unit/cli/__init__.py
+      - tests/unit/cli/test_chunk_cli.py (18 tests)
+
+  phase_4_4:
+    name: Documentation
+    status: COMPLETE
+    completed_date: 2025-12-15
+    tasks:
+      - Update ai-docs/chunking.yaml (this file)
+      - Update ai-docs/pipeline.yaml Stage 5 status
+      - Update ai-docs/project-status.yaml Phase 4 tasks
+      - Update ai-docs/index.yaml
+
+# =============================================================================
+# SUCCESS CRITERIA
+# =============================================================================
+
+success_criteria:
+  functionality:
+    - All 70 tests pass (52 chunker + 18 CLI) ✓
+    - Can process full corpus without errors ✓
+    - Output matches chromadb-schema.yaml requirements ✓
+    - Chunk sizes within configured bounds ✓
+
+  quality:
+    - Pre-commit hooks pass (ruff, mypy) ✓
+    - No type errors ✓
+    - Documentation complete ✓
+
+  performance:
+    - Process full corpus in < 10 minutes (estimated)
+    - Memory usage < 1GB for large documents (estimated)
+
+  verification:
+    tests_passing: 70 (52 chunker + 18 CLI)
+    pre_commit: all hooks pass
+    mypy: strict mode, no errors
+    ruff: linting and formatting pass
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  required:
+    - Phase 2 extraction (ArticleData structure)
+    - Phase 3 sembr (sembr'd text files)
+
+  python_packages:
+    - None new (uses existing pathlib, json, dataclasses)
+
+  optional:
+    - tiktoken: For exact token counting (vs estimation)
+    - transformers: For model-specific tokenizer

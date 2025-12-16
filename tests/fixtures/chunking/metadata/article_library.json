@@ -1,0 +1,26 @@
+{
+  "clean_text": "Library document content for testing book chapters.",
+  "infobox": null,
+  "library_work": {
+    "title": "Economic Analysis: A Comprehensive Study",
+    "author": "Jane Smith",
+    "written_date": "1965",
+    "published_date": "1967",
+    "type": "Book",
+    "source_url": "https://example.org/books/economic-analysis",
+    "translator": null,
+    "original_language": null,
+    "publisher": "Academic Press"
+  },
+  "citations": [],
+  "internal_links": [
+    {"target": "Economics", "display_text": "Economics", "section": null}
+  ],
+  "categories": ["Books", "Economics literature"],
+  "sections": ["Chapter 3: Economic Analysis"],
+  "namespace": "Library",
+  "reference_count": 0,
+  "is_stub": false,
+  "citation_needed_count": 0,
+  "has_blockquote": false
+}

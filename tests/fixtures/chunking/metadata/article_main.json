@@ -1,0 +1,29 @@
+{
+  "clean_text": "Sample article content for testing.",
+  "infobox": {
+    "type": "person",
+    "raw_fields": {
+      "name": "John Doe",
+      "birth_date": "1950-01-15",
+      "occupation": "Scientist"
+    },
+    "subject_name": "John Doe",
+    "birth_date": "1950-01-15",
+    "birth_year": 1950,
+    "death_date": null,
+    "death_year": null,
+    "extracted_links": []
+  },
+  "citations": [],
+  "internal_links": [
+    {"target": "Science", "display_text": "Science", "section": null},
+    {"target": "Research", "display_text": "Research", "section": null}
+  ],
+  "categories": ["Scientists", "20th century people"],
+  "sections": ["Introduction", "Career", "Legacy"],
+  "namespace": "Main",
+  "reference_count": 5,
+  "is_stub": false,
+  "citation_needed_count": 1,
+  "has_blockquote": true
+}
