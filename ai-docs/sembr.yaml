@@ -375,6 +375,29 @@ cli_integration:
         detection: "is_cuda_corrupted() checks nvidia-smi for this pattern"
         fix: "kill_gpu_processes() + reset_cuda_cache() + server restart"
 
+      empty_response_body:
+        cause: "Server returns HTTP 200 but empty body (common with large Library files)"
+        symptoms:
+          - "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+          - "Occurs primarily with files >400KB"
+        fix: "Check for empty response before JSON parsing, retry with exponential backoff"
+        implementation: |
+          1. Check response.text is non-empty before calling response.json()
+          2. If empty, set last_error and retry (up to max_retries)
+          3. Log diagnostic info at debug level for troubleshooting
+        constants_added:
+          - "LARGE_FILE_THRESHOLD_BYTES = 400_000"
+          - "HEALTH_CHECK_TIMEOUT_SECONDS = 5.0"
+          - "MIN_CONTENT_TOLERANCE_CHARS = 10"
+          - "CONTENT_TOLERANCE_RATIO = 0.001"
+        tests_added:
+          - "test_process_text_empty_response_body"
+          - "test_process_text_invalid_json_response"
+          - "test_process_text_empty_response_max_retries_exceeded"
+          - "test_process_text_large_file_warning"
+          - "test_check_server_health_empty_response"
+          - "test_check_server_health_invalid_json"
+
   example_usage: |
     # Check server health
     pw-ingest sembr --check-only
