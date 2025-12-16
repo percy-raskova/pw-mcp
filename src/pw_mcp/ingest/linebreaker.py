@@ -12,8 +12,11 @@ HTTP endpoints:
 from __future__ import annotations
 
 import asyncio
+import logging
+import random
 import time
 from dataclasses import dataclass
+from json import JSONDecodeError
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +24,8 @@ import httpx
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -50,6 +55,16 @@ class SembrContentError(SembrError):
     """Raised when content validation fails (e.g., word count mismatch)."""
 
     pass
+
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+LARGE_FILE_THRESHOLD_BYTES = 400_000  # 400KB - warn when input exceeds this
+HEALTH_CHECK_TIMEOUT_SECONDS = 5.0  # Shorter timeout for health checks
+MIN_CONTENT_TOLERANCE_CHARS = 10  # Minimum tolerance for content validation
+CONTENT_TOLERANCE_RATIO = 0.001  # 0.1% tolerance for content length mismatch
 
 
 # =============================================================================
@@ -197,15 +212,26 @@ def check_server_health(config: SembrConfig | None = None) -> bool:
     url = f"{config.server_url}/check"
 
     try:
-        response = httpx.get(url, timeout=5.0)
+        response = httpx.get(url, timeout=HEALTH_CHECK_TIMEOUT_SECONDS)
         if response.status_code != 200:
             return False
-        data: dict[str, str] = response.json()
+
+        # Check for empty response body before attempting JSON parse
+        if not response.text or not response.text.strip():
+            logger.warning("Health check returned empty response")
+            return False
+
+        try:
+            data: dict[str, str] = response.json()
+        except JSONDecodeError as e:
+            logger.warning("Health check returned invalid JSON: %s", e)
+            return False
+
         return bool(data.get("status") == "success")
     except (httpx.ConnectError, httpx.TimeoutException):
         return False
     except Exception:
-        # Catch any other unexpected errors (e.g., JSON decode errors)
+        # Catch any other unexpected errors
         return False
 
 
@@ -250,6 +276,15 @@ async def process_text(
     url = f"{config.server_url}/rewrap"
     payload = {"text": text, "predict_func": config.predict_func}
 
+    # Warn about large input files that may cause server issues
+    input_size = len(text.encode("utf-8"))
+    if input_size > LARGE_FILE_THRESHOLD_BYTES:
+        logger.warning(
+            "Large input detected (%d bytes > %d threshold)",
+            input_size,
+            LARGE_FILE_THRESHOLD_BYTES,
+        )
+
     start_time = time.perf_counter()
     last_error: Exception | None = None
 
@@ -275,7 +310,36 @@ async def process_text(
                         continue
                     raise last_error
 
-                data = response.json()
+                # Log diagnostic info for debugging empty responses
+                logger.debug(
+                    "Response received: status=%d, content_length=%d",
+                    response.status_code,
+                    len(response.text) if response.text else 0,
+                )
+
+                # Check for empty response body before attempting JSON parse
+                if not response.text or not response.text.strip():
+                    last_error = SembrServerError(
+                        f"Server returned empty response body (attempt {attempt + 1}/{max_attempts})"
+                    )
+                    if attempt < max_attempts - 1:
+                        delay = config.retry_delay_seconds * (2**attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                    raise last_error
+
+                # Parse JSON with explicit error handling
+                try:
+                    data = response.json()
+                except JSONDecodeError as e:
+                    last_error = SembrServerError(
+                        f"Server returned invalid JSON: {e} (attempt {attempt + 1}/{max_attempts})"
+                    )
+                    if attempt < max_attempts - 1:
+                        delay = config.retry_delay_seconds * (2**attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                    raise last_error from e
 
                 # Check response status
                 if data.get("status") != "success":
@@ -285,8 +349,6 @@ async def process_text(
                     # Add jitter to avoid thundering herd on retry
                     is_busy = "already borrowed" in error_msg.lower()
                     if attempt < max_attempts - 1:
-                        import random
-
                         base_delay = config.retry_delay_seconds * (2**attempt)
                         jitter = random.uniform(0, base_delay) if is_busy else 0
                         await asyncio.sleep(base_delay + jitter)
@@ -304,7 +366,10 @@ async def process_text(
                     input_content = _get_non_whitespace(text)
                     output_content = _get_non_whitespace(output_text)
                     len_diff = abs(len(input_content) - len(output_content))
-                    tolerance = max(10, int(len(input_content) * 0.001))  # 0.1% or 10 chars
+                    tolerance = max(
+                        MIN_CONTENT_TOLERANCE_CHARS,
+                        int(len(input_content) * CONTENT_TOLERANCE_RATIO),
+                    )
                     if len_diff > tolerance:
                         raise SembrContentError(
                             f"Content mismatch: input has {input_word_count} words, "

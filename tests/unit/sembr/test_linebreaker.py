@@ -646,3 +646,178 @@ class TestProcessBatch:
 
         assert len(results) == 3
         assert all(isinstance(r, SembrResult) for r in results)
+
+
+# =============================================================================
+# EMPTY RESPONSE HANDLING TESTS
+# =============================================================================
+
+
+class TestEmptyResponseHandling:
+    """Tests for handling empty and invalid JSON responses from sembr server.
+
+    These tests address the JSONDecodeError vulnerability when the sembr server
+    returns empty responses, particularly for large Library files.
+    """
+
+    @pytest.mark.unit
+    async def test_process_text_empty_response_body(self) -> None:
+        """Should retry when server returns empty response body."""
+        config = SembrConfig(max_retries=3, retry_delay_seconds=0.01)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            # First two attempts return empty response, third succeeds
+            empty_response = MagicMock(
+                status_code=200,
+                text="",
+                json=lambda: {},  # This would fail if called on empty text
+            )
+            # Override json to raise JSONDecodeError for empty response
+            empty_response.json = MagicMock(
+                side_effect=ValueError("Expecting value: line 1 column 1 (char 0)")
+            )
+
+            success_response = MagicMock(
+                status_code=200,
+                text='{"status": "success", "text": "Result."}',
+                json=lambda: {"status": "success", "text": "Result."},
+            )
+
+            mock_client.post.side_effect = [
+                empty_response,
+                empty_response,
+                success_response,
+            ]
+
+            result = await process_text("Input text.", config)
+
+            assert result.text == "Result."
+            assert mock_client.post.call_count == 3
+
+    @pytest.mark.unit
+    async def test_process_text_invalid_json_response(self) -> None:
+        """Should retry when server returns invalid JSON."""
+        config = SembrConfig(max_retries=2, retry_delay_seconds=0.01)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            # First attempt returns invalid JSON, second succeeds
+            invalid_response = MagicMock(
+                status_code=200,
+                text="not valid json",
+            )
+            # json() raises JSONDecodeError for invalid JSON
+            from json import JSONDecodeError
+
+            invalid_response.json = MagicMock(
+                side_effect=JSONDecodeError("Expecting value", "not valid json", 0)
+            )
+
+            success_response = MagicMock(
+                status_code=200,
+                text='{"status": "success", "text": "Result."}',
+                json=lambda: {"status": "success", "text": "Result."},
+            )
+
+            mock_client.post.side_effect = [
+                invalid_response,
+                success_response,
+            ]
+
+            result = await process_text("Input text.", config)
+
+            assert result.text == "Result."
+            assert mock_client.post.call_count == 2
+
+    @pytest.mark.unit
+    async def test_process_text_empty_response_max_retries_exceeded(self) -> None:
+        """Should raise SembrServerError after max retries with empty responses."""
+        config = SembrConfig(max_retries=2, retry_delay_seconds=0.01)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            # All attempts return empty response
+            empty_response = MagicMock(
+                status_code=200,
+                text="",
+            )
+            from json import JSONDecodeError
+
+            empty_response.json = MagicMock(side_effect=JSONDecodeError("Expecting value", "", 0))
+
+            mock_client.post.return_value = empty_response
+
+            with pytest.raises(SembrServerError) as exc_info:
+                await process_text("Input text.", config)
+
+            # Error message should indicate empty response issue
+            assert "empty" in str(exc_info.value).lower() or "json" in str(exc_info.value).lower()
+
+    @pytest.mark.unit
+    async def test_process_text_large_file_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Should log warning when processing large input files."""
+        import logging
+
+        config = SembrConfig(max_retries=1, retry_delay_seconds=0.01)
+
+        # Create a large text input (> 400KB)
+        large_text = "x" * 500_000  # 500KB of text
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+            mock_client.post.return_value = MagicMock(
+                status_code=200,
+                text='{"status": "success", "text": "' + "x" * 500_000 + '"}',
+                json=lambda: {"status": "success", "text": large_text},
+            )
+
+            with caplog.at_level(logging.WARNING):
+                await process_text(large_text, config)
+
+            # Check that a warning about large input was logged
+            assert any(
+                "large" in record.message.lower() or "400" in record.message
+                for record in caplog.records
+            )
+
+    @pytest.mark.unit
+    def test_check_server_health_empty_response(self) -> None:
+        """Should return False when health check returns empty response."""
+        with patch("httpx.get") as mock_get:
+            empty_response = MagicMock(
+                status_code=200,
+                text="",
+            )
+            from json import JSONDecodeError
+
+            empty_response.json = MagicMock(side_effect=JSONDecodeError("Expecting value", "", 0))
+            mock_get.return_value = empty_response
+
+            result = check_server_health()
+            assert result is False
+
+    @pytest.mark.unit
+    def test_check_server_health_invalid_json(self) -> None:
+        """Should return False when health check returns invalid JSON."""
+        with patch("httpx.get") as mock_get:
+            invalid_response = MagicMock(
+                status_code=200,
+                text="not valid json at all",
+            )
+            from json import JSONDecodeError
+
+            invalid_response.json = MagicMock(
+                side_effect=JSONDecodeError("Expecting value", "not valid json at all", 0)
+            )
+            mock_get.return_value = invalid_response
+
+            result = check_server_health()
+            assert result is False
