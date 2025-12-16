@@ -26,16 +26,20 @@ target
 # ProleWiki source data (large corpus - not versioned)
 prolewiki-exports/
 
-# ChromaDB data
-chroma_data/
+# ChromaDB data (keep directory structure, ignore contents)
+chroma_data/*
+!chroma_data/.gitkeep
 
 # Sembr sample output (for testing)
 prolewiki-sembr-sample/
 
-# Pipeline output directories
-extracted/
-# Sembr output directory (not tests/unit/sembr/)
-/sembr/
-chunks/
-embeddings/
+# Pipeline output directories (keep directory structure, ignore contents)
+extracted/*
+!extracted/.gitkeep
+/sembr/*
+!/sembr/.gitkeep
+chunks/*
+!chunks/.gitkeep
+embeddings/*
+!embeddings/.gitkeep
 logs/

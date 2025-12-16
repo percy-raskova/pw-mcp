@@ -129,6 +129,19 @@ OPENAI_API_KEY=sk-...         # For OpenAI embeddings
 OLLAMA_HOST=http://localhost:11434  # For local Ollama
 ```
 
+## Data
+
+The ProleWiki corpus (`prolewiki-exports/`) is **not included** in this repository at the request of ProleWiki staff. Pipeline output directories (`extracted/`, `sembr/`, `chunks/`, `embeddings/`, `chroma_data/`) are also gitignored but their structure is preserved via `.gitkeep` files.
+
+To obtain the corpus, contact ProleWiki directly or use their public export tools.
+
+## Acknowledgments
+
+- **[ProleWiki](https://en.prolewiki.org/)** - The Marxist-Leninist encyclopedia that provides the source corpus. Special thanks to their staff for guidance on data usage.
+- **[ChromaDB](https://www.trychroma.com/)** - The AI-native open-source vector database powering semantic search.
+- **[claude-mem](https://github.com/thedotmack/claude-mem)** - Cross-session memory plugin for Claude Code that helped maintain context during development.
+- **[sembr](https://github.com/admko/sembr)** - Semantic line breaking model for intelligent text chunking.
+
 ## License
 
 MIT
