@@ -164,18 +164,18 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-16: Sample pipeline added - 10 public domain works with all outputs committed"
+      - "2025-12-16: --flat flag for extract command (namespace from filename prefix)"
+      - "2025-12-16: Empty response handling fix for sembr (JSONDecodeError on large files)"
       - "2025-12-16: OpenAI text-embedding-3-large (1536-dim) now primary embedding provider"
+      - "2025-12-16: GPU manager + server manager modules for CUDA lifecycle"
+      - "2025-12-16: Comprehensive CLI with logging, resume, and progress display"
       - "2025-12-15: PHASE 5.5 - Test fixes + CLI server management (312 tests total)"
       - "2025-12-15: Fixed 4 failing tests (JSON support, graceful errors, concurrency)"
       - "2025-12-15: Added --restart-server/--no-restart CLI flags for CUDA cleanup"
       - "2025-12-15: PHASE 5 COMPLETE - embedding module fully implemented (35 tests)"
-      - "2025-12-15: PHASE 5.4 COMPLETE - slow integration tests with live Ollama (4 tests)"
-      - "2025-12-15: PHASE 5.1-5.3 COMPLETE - embedder module + CLI implemented (31 tests)"
       - "2025-12-15: Schema PHASED - Phase A (MVP, 13 fields) ready for implementation"
-      - "2025-12-15: Pipeline SIMPLIFIED - 5 core stages + optional graph"
       - "2025-12-15: PHASE 4 COMPLETE - chunking module + CLI implemented (70 tests)"
-      - "2025-12-15: Graph computation marked as DEFERRED (not blocking RAG)"
-      - "2025-12-15: Phase 8 PLANNED - finetune.yaml for Marxist LLM fine-tuning"
       - "2025-12-15: PHASE 3 COMPLETE - sembr integration implemented"
       - "2025-12-14: PHASE 2 COMPLETE - all parsers implemented"
 

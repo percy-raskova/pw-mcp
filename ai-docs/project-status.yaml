@@ -1,6 +1,6 @@
 # Project Status - pw-mcp
 # Purpose: Track implementation progress and next steps
-# Updated: 2025-12-15 (Phase 5.5 - Test fixes + CLI server management)
+# Updated: 2025-12-16 (Phase 5.6 - Sample pipeline, OpenAI embeddings, --flat flag)
 
 overview:
   project: ProleWiki MCP Server
@@ -372,9 +372,13 @@ phases:
     status: COMPLETE
     description: Vector embedding generation
     reference_doc: ai-docs/embedding.yaml
-    model: embeddinggemma (768-dim, Ollama local)
+    architecture: "Dual-provider: OpenAI (primary) + Ollama (fallback)"
+    models:
+      primary: "OpenAI text-embedding-3-large (1536-dim)"
+      fallback: "Ollama embeddinggemma (768-dim)"
     output: embeddings/{namespace}/{title}.npy
     completed_date: 2025-12-15
+    enhanced_date: 2025-12-16
     test_counts:
       embedder_unit: 21
       embed_cli: 10
@@ -439,17 +443,31 @@ phases:
           - Tests: embed_real_chunk, dimensions, normalized, deterministic
           - Updated ai-docs/ with final status
 
+      - id: 5.5
+        name: Dual-Provider Architecture + CLI Enhancements
+        status: COMPLETE
+        completed_date: 2025-12-16
+        details: |
+          Enhanced embedder with OpenAI as primary provider:
+          - Added --provider flag (openai/ollama)
+          - OpenAI text-embedding-3-large (1536-dim) as default
+          - Ollama embeddinggemma (768-dim) as fallback
+          - Updated mise tasks for both providers
+          - Sample pipeline uses OpenAI for production quality
+
     nice_to_have:
-      - Investigate parallel embeddinggemmas by directory (3 instances if GPU permits)
+      - Investigate parallel embedding by directory (3 instances if GPU permits)
       - Async embedding for higher throughput
+      - OpenAI dimension reduction (1536 → 768) for ChromaDB compatibility
 
     implementation_notes: |
-      Phase 5 COMPLETE - embedding module fully implemented:
-      - embedder.py handles Ollama API, batching, retries, JSONL parsing
-      - CLI provides full batch processing with progress and resume
-      - Slow tests validate real Ollama integration (L2 norm, determinism)
-      - All 35 tests pass (21 unit + 10 CLI + 4 slow), pre-commit hooks pass
-      - Ready for Phase 6 (ChromaDB loading)
+      Phase 5 COMPLETE - dual-provider embedding module:
+      - embedder.py supports OpenAI (primary) and Ollama (fallback)
+      - CLI provides --provider flag for easy switching
+      - OpenAI produces higher quality 1536-dim embeddings
+      - Ollama provides local/free fallback option
+      - All 35 tests pass, pre-commit hooks pass
+      - Sample pipeline verified with 152 OpenAI embeddings
 
   phase_6_loading:
     status: future
@@ -552,18 +570,30 @@ phases:
 
 current_focus:
   phase: 6 (ChromaDB Loading) - NEXT
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4]
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5]
   next_task: 6.1 - Phase A Schema Implementation
   reference: ai-docs/chromadb-schema.yaml
 
-  next_action: |
-    Phase 5 COMPLETE - embedding module fully implemented with integration tests.
+  today_summary: |
+    2025-12-16 Summary (15 commits):
+    - GPU manager + server manager for CUDA lifecycle
+    - ChromaDB interface module
+    - Semantic chunker and embedder with OpenAI/Ollama
+    - Comprehensive CLI with logging and resume
+    - Empty response handling fix (JSONDecodeError)
+    - --flat flag for flat directory extraction
+    - Sample pipeline with 10 public domain works (152 chunks, 152 embeddings)
+    - README and ai-docs updates
 
-    Phase 5 Summary:
+  next_action: |
+    Phase 5 COMPLETE with dual-provider architecture.
+
+    Phase 5 Final Summary:
     5.1 Red Phase - COMPLETE (31 tests created)
     5.2 Green Phase - COMPLETE (embedder.py implemented, 21 tests pass)
     5.3 CLI Integration - COMPLETE (embed subcommand, 10 tests pass)
     5.4 Integration Tests - COMPLETE (4 slow tests with live Ollama)
+    5.5 Dual-Provider - COMPLETE (OpenAI primary, Ollama fallback)
 
     Phase 6 Next Steps:
     - Implement Phase A schema (13 fields from chunker output)
@@ -571,10 +601,15 @@ current_focus:
     - Batch upsert with metadata
     - Add loading tests
 
-    Key Implementations from Phase 5:
-    - src/pw_mcp/ingest/embedder.py: EmbedConfig, EmbeddedArticle, embed_texts(), etc.
-    - CLI: pw-ingest embed -i chunks/ -o embeddings/ (7 options)
-    - Resume support, pre-flight check, batching, retry logic
+    Sample Pipeline Results (verified):
+    - 10 source files → 10 extracted → 10 sembr'd → 152 chunks → 152 embeddings
+    - OpenAI text-embedding-3-large (1536-dim) used
+    - All pipeline stages working correctly
+
+    Key Implementations:
+    - src/pw_mcp/ingest/embedder.py: Dual-provider embedding
+    - src/pw_mcp/ingest/cli.py: --flat flag, --provider flag
+    - sample-pipeline/: Complete reference implementation
 
   # How Implementation Phases map to Pipeline Stages
   phase_to_stage_mapping: |
@@ -693,6 +728,59 @@ decisions:
     date: 2025-12-15
     implementation: src/pw_mcp/ingest/linebreaker.py
 
+  flat_directory_mode:
+    decision: Add --flat flag to extract command with filename-based namespace inference
+    rationale: |
+      The extract command expected namespace subdirectories (Main/, Library/, Essays/).
+      For sample-pipeline/ and similar flat workflows, needed alternative approach.
+      Solution: _infer_namespace_from_filename() maps prefixes to namespaces:
+        - Essay_* → Essays
+        - Library_* → Library
+        - ProleWiki_* → ProleWiki
+        - (no prefix) → Main
+      Only extract stage needed changes; other stages use rglob() and work with any structure.
+    date: 2025-12-16
+    implementation: src/pw_mcp/ingest/cli.py
+
+  openai_primary_embedding:
+    decision: Use OpenAI text-embedding-3-large as primary, Ollama as fallback
+    rationale: |
+      OpenAI embeddings (1536-dim) provide superior quality for production use.
+      Ollama (768-dim) remains available for local/private/free development.
+      CLI --provider flag enables easy switching.
+    date: 2025-12-16
+    implementation: src/pw_mcp/ingest/embedder.py
+
+  sample_pipeline_committed:
+    decision: Commit all sample pipeline outputs to repository
+    rationale: |
+      ProleWiki granted permission to include 10 public domain/original works.
+      Full pipeline outputs committed (extracted, sembr, chunks, embeddings)
+      to serve as reference examples and demonstrate the RAG workflow.
+      Enables users to understand pipeline without running it.
+    date: 2025-12-16
+    files:
+      - sample-pipeline/source/ (10 input files)
+      - sample-pipeline/extracted/ (10 JSON files)
+      - sample-pipeline/sembr/ (10 text files)
+      - sample-pipeline/chunks/ (10 JSONL files, 152 total chunks)
+      - sample-pipeline/embeddings/ (10 NPY files, 152 vectors @ 1536-dim)
+
+  empty_response_handling:
+    decision: Add explicit empty response checking before JSON parsing
+    rationale: |
+      sembr server returns empty HTTP 200 responses for large files (>400KB).
+      This caused JSONDecodeError crashes in linebreaker.py.
+      Fix: Check response.text is non-empty before calling response.json().
+      Retry with exponential backoff on empty responses.
+    date: 2025-12-16
+    implementation: src/pw_mcp/ingest/linebreaker.py
+    constants_added:
+      - LARGE_FILE_THRESHOLD_BYTES = 400_000
+      - HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
+      - MIN_CONTENT_TOLERANCE_CHARS = 10
+      - CONTENT_TOLERANCE_RATIO = 0.001
+
 # =============================================================================
 # FILE LOCATIONS
 # =============================================================================
@@ -765,6 +853,14 @@ key_files:
     - prolewiki-exports/Library/    # Full books (Marx, Lenin, etc.)
     - prolewiki-exports/Essays/     # User-contributed essays
     - prolewiki-exports/ProleWiki/  # Meta/admin pages
+
+  sample_pipeline:
+    description: "10 public domain works demonstrating full RAG workflow"
+    source: sample-pipeline/source/         # 10 input files
+    extracted: sample-pipeline/extracted/   # 10 JSON metadata files
+    sembr: sample-pipeline/sembr/           # 10 sembr'd text files
+    chunks: sample-pipeline/chunks/         # 10 JSONL files (152 chunks)
+    embeddings: sample-pipeline/embeddings/  # 10 NPY files (152 × 1536 vectors)
 
   documentation:
     - ai-docs/index.yaml
@@ -885,5 +981,16 @@ useful_commands:
     chunk_sample: uv run pw-ingest chunk --sample 10
     chunk_process: uv run pw-ingest chunk -i sembr/ -o chunks/
     embed_help: uv run pw-ingest embed --help
-    embed_sample: uv run pw-ingest embed --sample 10
-    embed_process: uv run pw-ingest embed -i chunks/ -o embeddings/
+    embed_sample_openai: uv run pw-ingest embed --sample 10 --provider openai
+    embed_sample_ollama: uv run pw-ingest embed --sample 10 --provider ollama
+    embed_process: uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+
+  sample_pipeline:
+    status: mise run sample-status
+    full_pipeline: mise run sample-pipeline
+    extract: mise run sample-extract
+    sembr: mise run sample-sembr
+    chunk: mise run sample-chunk
+    embed_openai: mise run sample-embed
+    embed_ollama: mise run sample-embed-ollama
+    clean: mise run sample-clean

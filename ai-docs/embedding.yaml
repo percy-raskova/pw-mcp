@@ -1,43 +1,76 @@
 # Embedding Documentation - Phase 5
 # Purpose: Vector embedding generation for semantic search
-# Status: IMPLEMENTED - Phase 5 COMPLETE
+# Status: IMPLEMENTED - Phase 5 COMPLETE (OpenAI primary, Ollama fallback)
 # Dependencies: Phase 4 (chunks/*.jsonl)
+# Last updated: 2025-12-16
 
 overview:
-  goal: Generate 768-dimensional vector embeddings for all chunks
+  goal: Generate vector embeddings for all chunks
   input: chunks/{namespace}/{title}.jsonl
   output: embeddings/{namespace}/{title}.npy
-  model: Ollama embeddinggemma (Gemma3-based, 307M params)
+  architecture: Dual-provider (OpenAI primary, Ollama fallback)
+  primary_model: OpenAI text-embedding-3-large (1536-dim)
+  fallback_model: Ollama embeddinggemma (768-dim)
 
 # =============================================================================
-# MODEL SPECIFICATION
+# MODEL SPECIFICATION (DUAL-PROVIDER)
 # =============================================================================
 
-model:
-  name: embeddinggemma
-  provider: Ollama (local)
-  dimensions: 768
-  max_tokens: 2048
-  normalization: L2-normalized (unit vectors)
+models:
+  primary:
+    name: text-embedding-3-large
+    provider: OpenAI (API)
+    dimensions: 1536
+    max_tokens: 8191
+    normalization: L2-normalized (unit vectors)
+    cost: ~$0.13 per million tokens
 
-  performance:
-    note: Benchmarks needed during implementation
-    estimated_throughput: 50-100 chunks/second (batch of 32)
-    estimated_corpus_time: 3-10 minutes for ~26,000 chunks
+    setup: |
+      # Set API key in .env file
+      OPENAI_API_KEY=sk-...
 
-  installation: |
-    # Pull the model (one-time setup)
-    ollama pull embeddinggemma
+      # Or export directly
+      export OPENAI_API_KEY=sk-...
 
-    # Verify it's available
-    ollama list | grep embeddinggemma
+    why_openai: |
+      - Superior quality: Latest OpenAI embedding model
+      - High dimensions: 1536 captures more semantic nuance
+      - Proven performance: Well-benchmarked on retrieval tasks
+      - Configurable: Can reduce to 256-3072 dimensions
+      - Fast API: High throughput with batch support
 
-  why_embeddinggemma: |
-    - Local/private: No data leaves the machine
-    - Fast: Optimized for embedding generation
-    - Quality: Gemma3-based, good semantic understanding
-    - Size: 307M params, reasonable memory footprint
-    - Already available in Ollama ecosystem
+  fallback:
+    name: embeddinggemma
+    provider: Ollama (local)
+    dimensions: 768
+    max_tokens: 2048
+    normalization: L2-normalized (unit vectors)
+    params: 307M (Gemma3-based)
+
+    setup: |
+      # Pull the model (one-time setup)
+      ollama pull embeddinggemma
+
+      # Verify it's available
+      ollama list | grep embeddinggemma
+
+    why_ollama_fallback: |
+      - Local/private: No data leaves the machine
+      - Free: No API costs
+      - Offline: Works without internet connection
+      - Good quality: Gemma3-based, solid semantic understanding
+
+  selection_guidance: |
+    Use OpenAI (--provider openai) when:
+    - Quality is paramount (production, final corpus)
+    - API costs are acceptable
+    - Internet connection available
+
+    Use Ollama (--provider ollama) when:
+    - Data privacy is critical
+    - Offline operation required
+    - Development/testing (free, fast iteration)
+    - API quota concerns
 
 # =============================================================================
 # CONFIGURATION
@@ -47,29 +80,35 @@ config:
   dataclass: EmbedConfig
   frozen: true
   fields:
+    provider:
+      type: str
+      default: "openai"
+      enum: ["openai", "ollama"]
+      description: Embedding provider (openai or ollama)
+
     model:
       type: str
-      default: "embeddinggemma"
-      description: Ollama model name for embeddings
+      default: "text-embedding-3-large"  # or "embeddinggemma" for Ollama
+      description: Model name for embeddings (provider-specific)
 
     dimensions:
       type: int
-      default: 768
+      default: 1536  # OpenAI default; Ollama uses 768
       description: Expected embedding dimensions (for validation)
 
     batch_size:
       type: int
       default: 32
-      description: Number of texts per Ollama API call
+      description: Number of texts per API call
       notes: |
-        Higher = better throughput but more memory
-        32 is a good balance for most GPUs
+        OpenAI: Can handle larger batches efficiently
+        Ollama: 32 is good balance for GPU memory
         Reduce if OOM errors occur
 
     ollama_host:
       type: str
       default: "http://localhost:11434"
-      description: Ollama server URL
+      description: Ollama server URL (only used when provider=ollama)
 
     max_retries:
       type: int
@@ -103,7 +142,7 @@ dataclasses:
 
       embeddings:
         type: np.ndarray
-        shape: (num_chunks, 768)
+        shape: "(num_chunks, dim)"  # 1536 for OpenAI, 768 for Ollama
         dtype: float32
         description: Embedding vectors in chunk order
 
@@ -115,12 +154,13 @@ public_api:
   functions:
     embed_texts:
       signature: "def embed_texts(texts: list[str], config: EmbedConfig) -> np.ndarray"
-      description: Embed a batch of texts
-      returns: "np.ndarray of shape (len(texts), 768)"
+      description: Embed a batch of texts using configured provider
+      returns: "np.ndarray of shape (len(texts), dim)"  # 1536 OpenAI, 768 Ollama
       notes: |
         - Handles batching internally based on config.batch_size
         - Returns empty array for empty input
-        - Raises OllamaConnectionError if server unreachable
+        - Dispatches to OpenAI or Ollama based on config.provider
+        - Raises EmbeddingError if provider unavailable
 
     embed_article_chunks:
       signature: "def embed_article_chunks(jsonl_path: Path, config: EmbedConfig) -> EmbeddedArticle"
@@ -136,25 +176,72 @@ public_api:
       notes: |
         - Creates parent directories if needed
         - Uses np.save() with allow_pickle=False
-        - File contains shape (num_chunks, 768) float32 array
+        - Shape depends on provider (num_chunks, 1536 or 768)
 
-    check_ollama_ready:
-      signature: "def check_ollama_ready(config: EmbedConfig) -> bool"
-      description: Pre-flight check for Ollama server
+    check_provider_ready:
+      signature: "def check_provider_ready(config: EmbedConfig) -> bool"
+      description: Pre-flight check for embedding provider
       notes: |
-        - Attempts test embedding
+        - For OpenAI: Verifies API key and test embedding
+        - For Ollama: Checks server and model availability
         - Verifies model returns expected dimensions
         - Returns False on any error
 
   exceptions:
+    EmbeddingError:
+      description: Base exception for embedding errors
+
+    OpenAIError:
+      description: OpenAI API error (auth, rate limit, etc.)
+
     OllamaConnectionError:
-      description: Server not reachable
+      description: Ollama server not reachable
 
     OllamaModelError:
-      description: Model not available or returned wrong dimensions
+      description: Ollama model not available or wrong dimensions
 
 # =============================================================================
-# OLLAMA INTEGRATION
+# OPENAI INTEGRATION (PRIMARY)
+# =============================================================================
+
+openai_integration:
+  library: openai (Python package)
+  install: "uv add openai"
+
+  usage_pattern: |
+    from openai import OpenAI
+
+    client = OpenAI()  # Uses OPENAI_API_KEY env var
+
+    response = client.embeddings.create(
+        model="text-embedding-3-large",
+        input=["text1", "text2", "text3"]  # Batch support!
+    )
+    embeddings = [e.embedding for e in response.data]
+    # len(embeddings) == 3
+    # len(embeddings[0]) == 1536
+
+  async_pattern: |
+    from openai import AsyncOpenAI
+
+    async def embed_async(texts: list[str]) -> list[list[float]]:
+        client = AsyncOpenAI()
+        response = await client.embeddings.create(
+            model="text-embedding-3-large",
+            input=texts
+        )
+        return [e.embedding for e in response.data]
+
+  dimension_reduction: |
+    # OpenAI supports reducing dimensions (trade-off: speed vs quality)
+    response = client.embeddings.create(
+        model="text-embedding-3-large",
+        input=texts,
+        dimensions=768  # Reduce from 1536 to 768
+    )
+
+# =============================================================================
+# OLLAMA INTEGRATION (FALLBACK)
 # =============================================================================
 
 ollama_integration:
@@ -205,14 +292,21 @@ output_format:
   npy_spec:
     format: NumPy binary (.npy)
     dtype: float32
-    shape: (num_chunks, 768)
+    shape: "(num_chunks, dim)"  # 1536 for OpenAI, 768 for Ollama
     notes: |
       - Chunk order matches JSONL line order
       - embeddings[i] corresponds to chunk_index i
       - Can be loaded with: np.load(path)
       - Memory-mappable with: np.load(path, mmap_mode='r')
+      - Dimension depends on provider used during generation
 
-  example:
+  example_openai:
+    input: chunks/Main/Five-Year_Plans.jsonl (5 chunks)
+    output: embeddings/Main/Five-Year_Plans.npy
+    shape: (5, 1536)
+    size: ~30KB (5 * 1536 * 4 bytes)
+
+  example_ollama:
     input: chunks/Main/Five-Year_Plans.jsonl (5 chunks)
     output: embeddings/Main/Five-Year_Plans.npy
     shape: (5, 768)
@@ -254,6 +348,13 @@ cli:
       default: embeddings/
       description: Output directory for NPY embedding files
 
+    provider:
+      flags: [--provider]
+      type: str
+      default: openai
+      choices: [openai, ollama]
+      description: Embedding provider (openai or ollama)
+
     sample:
       flags: [--sample]
       type: int
@@ -269,30 +370,37 @@ cli:
     model:
       flags: [--model]
       type: str
-      default: embeddinggemma
-      description: Ollama embedding model name
+      default: "(provider-specific)"
+      description: Model name (text-embedding-3-large or embeddinggemma)
 
     batch_size:
       flags: [--batch-size]
       type: int
       default: 32
-      description: Chunks per Ollama API call
+      description: Chunks per API call
 
     host:
       flags: [--host]
       type: str
       default: http://localhost:11434
-      description: Ollama server URL
+      description: Ollama server URL (only used with --provider ollama)
 
   usage_examples:
+    # OpenAI (default, recommended)
+    openai_sample: pw-ingest embed --sample 10 --provider openai
+    openai_full: pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+    # Ollama (local fallback)
+    ollama_sample: pw-ingest embed --sample 10 --provider ollama
+    ollama_full: pw-ingest embed -i chunks/ -o embeddings/ --provider ollama
+    # Legacy (defaults to openai)
     check_sample: pw-ingest embed --sample 10
     full_corpus: pw-ingest embed -i chunks/ -o embeddings/
     custom_batch: pw-ingest embed --batch-size 64
-    remote_ollama: pw-ingest embed --host http://gpu-server:11434
+    remote_ollama: pw-ingest embed --provider ollama --host http://gpu-server:11434
 
   exit_codes:
     0: Success
-    1: Error (Ollama not available, no files found)
+    1: Error (provider not available, no files found)
     130: Keyboard interrupt
 
 # =============================================================================
@@ -545,15 +653,39 @@ dependencies:
 # =============================================================================
 
 mise_tasks:
+  # OpenAI (primary)
+  embed:
+    description: Embed full corpus with OpenAI (recommended)
+    command: uv run pw-ingest embed -i chunks/ -o embeddings/ --provider openai
+
+  # Ollama (fallback)
+  embed-ollama:
+    description: Embed full corpus with local Ollama
+    command: uv run pw-ingest embed -i chunks/ -o embeddings/ --provider ollama
+
   embed-check:
-    description: Verify Ollama and embeddinggemma are available
+    description: Verify embedding providers are available
     command: |
-      ollama list | grep -q embeddinggemma && echo "Ready" || echo "Run: ollama pull embeddinggemma"
+      echo "OpenAI: $(python3 -c 'import os; print("Ready" if os.getenv("OPENAI_API_KEY") else "Set key")')"
+      echo "Ollama: $(ollama list 2>/dev/null | grep -q embeddinggemma && echo 'Ready' || echo 'Pull model')"
 
   embed-sample:
-    description: Test embedding with sample files
-    command: uv run pw-ingest embed --sample 10
+    description: Test embedding with sample files (OpenAI)
+    command: uv run pw-ingest embed --sample 10 --provider openai
 
-  embed-process:
-    description: Embed full corpus
-    command: uv run pw-ingest embed -i chunks/ -o embeddings/
+  embed-sample-ollama:
+    description: Test embedding with sample files (Ollama)
+    command: uv run pw-ingest embed --sample 10 --provider ollama
+
+# =============================================================================
+# SAMPLE PIPELINE TASKS
+# =============================================================================
+
+sample_pipeline_tasks:
+  sample-embed:
+    description: Embed sample pipeline chunks with OpenAI
+    command: uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embeddings --provider openai
+
+  sample-embed-ollama:
+    description: Embed sample pipeline chunks with Ollama (local)
+    command: uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embeddings --provider ollama

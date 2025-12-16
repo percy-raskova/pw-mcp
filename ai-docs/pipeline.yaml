@@ -1,14 +1,17 @@
 # ProleWiki Ingestion Pipeline Architecture
 # Status: Stages 1-4 IMPLEMENTED, Stage 5 NEXT
-# Last updated: 2025-12-15
+# Last updated: 2025-12-16
 #
 # Pipeline Structure (simplified):
 #   Stage 1: Extraction  ✓  - Parse MediaWiki → extracted/articles/*.json
 #   Stage 2: Sembr       ✓  - Semantic linebreaking → sembr/*.txt
 #   Stage 3: Chunking    ✓  - Create chunks → chunks/*.jsonl
-#   Stage 4: Embedding   ✓  - Generate vectors → embeddings/*.npy
+#   Stage 4: Embedding   ✓  - Generate vectors → embeddings/*.npy (OpenAI/Ollama)
 #   Stage 5: Loading        - Load into ChromaDB → chroma_data/
 #   (Optional) Graph        - Compute backlinks → graph/*.jsonl
+#
+# Sample Pipeline: sample-pipeline/ contains 10 public domain works
+# demonstrating full workflow with all outputs committed to repo
 
 # =============================================================================
 # DESIGN PRINCIPLES
@@ -74,7 +77,8 @@ data_flow: |
        ▼
   ┌─────────────────────────────────────────────────────────────┐
   │  Stage 4: EMBEDDING                                    [✓]  │
-  │  Generate vectors via Ollama embeddinggemma (768-dim)       │
+  │  Generate vectors (OpenAI 1536-dim or Ollama 768-dim)       │
+  │  Provider: --provider openai (default) or --provider ollama │
   │                                                             │
   │  Outputs:                                                   │
   │    embeddings/{namespace}/{title}.npy                       │
@@ -1226,9 +1230,17 @@ cli:
   commands:
     # Core pipeline (Stages 1-5)
     extract:
-      usage: "pw-ingest extract --source prolewiki-exports/ --output extracted/"
+      usage: "pw-ingest extract -i prolewiki-exports/ -o extracted/ [--flat]"
       description: "Stage 1: Parse MediaWiki → extracted/articles/*.json"
-      status: "planned"
+      status: "implemented"
+      options:
+        --flat: |
+          Process flat directory (infer namespace from filename prefix):
+            Essay_* → Essays
+            Library_* → Library
+            ProleWiki_* → ProleWiki
+            (no prefix) → Main
+          Used for sample-pipeline/ and similar flat structures.
 
     sembr:
       usage: "pw-ingest sembr -i extracted/ -o sembr/ [--server URL]"
@@ -1241,9 +1253,14 @@ cli:
       status: "implemented"
 
     embed:
-      usage: "pw-ingest embed -i chunks/ -o embeddings/ [--model embeddinggemma]"
+      usage: "pw-ingest embed -i chunks/ -o embeddings/ [--provider openai|ollama]"
       description: "Stage 4: Generate embeddings → embeddings/*.npy"
-      status: "planned"
+      status: "implemented"
+      options:
+        --provider: |
+          Embedding provider:
+            openai (default) - text-embedding-3-large (1536-dim)
+            ollama - embeddinggemma (768-dim, local)
 
     load:
       usage: "pw-ingest load -c chunks/ -e embeddings/ -o chroma_data/"
@@ -1271,6 +1288,19 @@ cli:
     stats:
       usage: "pw-ingest stats --path extracted/"
       description: "Print statistics about extracted data"
+
+  # Sample pipeline commands
+  sample_pipeline:
+    description: "10 public domain works demonstrating full RAG workflow"
+    commands:
+      sample-status: "mise run sample-status"
+      sample-extract: "mise run sample-extract  # Uses --flat flag"
+      sample-sembr: "mise run sample-sembr"
+      sample-chunk: "mise run sample-chunk"
+      sample-embed: "mise run sample-embed       # OpenAI default"
+      sample-embed-ollama: "mise run sample-embed-ollama"
+      sample-pipeline: "mise run sample-pipeline # Full workflow"
+      sample-clean: "mise run sample-clean"
 
 # =============================================================================
 # OPEN QUESTIONS / TODO
