@@ -1,739 +1,297 @@
 # Fine-tuning Documentation - Phase 8
 # Purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
-# Status: PLANNED (research complete, ready for implementation)
-# Dependencies: Phases 1-7 (complete RAG pipeline provides chunk source data)
-# Last Updated: 2025-12-16
+# Status: IN_PROGRESS (implementation complete, training execution pending)
+# Method: GRPO (Group Relative Policy Optimization) - NOT SFT
+# Last Updated: 2025-12-17
+
+# =============================================================================
+# METHODOLOGY PIVOT: SFT → GRPO
+# =============================================================================
+# IMPORTANT: This project pivoted from SFT to GRPO methodology.
+# This document has been updated to reflect the current approach.
+#
+# WHY GRPO OVER SFT:
+# - Political theory has no single "correct" answer (unlike math)
+# - Open-ended prose requires semantic similarity, not exact string matching
+# - Reward functions can encode domain expertise
+# - Multi-layer rewards defeat adversarial "word soup" attacks
+# - GRPO naturally handles the inherent subjectivity of political analysis
+#
+# AUTHORITATIVE SOURCES:
+# - Training notebook: training_data/Marxist_GRPO_Training.ipynb
+# - Reward functions: src/pw_mcp/ai_training/grpo_rewards.py
+# - W&B logging: src/pw_mcp/ai_training/wandb_logging.py
+# - Reward design: ai-docs/reward-modeling.yaml
+# =============================================================================
 
 overview:
-  goal: Fine-tune DeepSeek 7B Abliterated to produce a Marxist-Leninist domain expert
-  method: QLoRA (Quantized Low-Rank Adaptation) via Unsloth framework
-  dataset_source: Existing pipeline chunks (sample-pipeline/chunks/) + full corpus
-  dataset_size: 2,000-5,000 Q&A pairs transformed from ProleWiki chunks
-  output_format: GGUF for Ollama deployment
-  hardware_requirement: 16-24GB VRAM (RTX 3090/4090/A4000)
+  goal: Fine-tune DeepSeek-R1-0528-Qwen3-8B for Marxist-Leninist theory responses
+  method: GRPO (Group Relative Policy Optimization) via Unsloth + TRL
+  dataset: 128 curated Q&A pairs (training_data/grpo_dataset.jsonl)
+  output_format: LoRA adapter → GGUF for Ollama deployment
+  hardware_requirement: A40 48GB (RunPod) or similar high-VRAM GPU
+  status: Implementation complete, execution pending
 
 # =============================================================================
-# ABLITERATION RATIONALE
-# =============================================================================
-# Standard LLMs often refuse to engage with political philosophy content:
-# - Revolutionary theory and class struggle analysis
-# - Critique of capitalism and bourgeois ideology
-# - Historical discussions of socialist movements
-# - Dialectical materialist analysis
-#
-# "Abliterated" models have refusal mechanisms surgically removed via:
-# 1. Weight modification (identifying and neutralizing "refusal neurons")
-# 2. NOT retraining - direct modification of model internals
-#
-# This is a legitimate educational/research use case for:
-# - Academic study of Marxist-Leninist theory
-# - Historical research on socialist movements
-# - Unfiltered access to political philosophy
-#
-# Key insight: Abliteration may degrade model quality slightly.
-# Mitigation: DPO (Direct Preference Optimization) "healing" pass after SFT.
-#
-# Sources:
-# - https://huggingface.co/blog/mlabonne/abliteration
-# - https://medium.com/@david.chew/llms-unrestrained-43820eff85c1
+# GRPO VS SFT RATIONALE
 # =============================================================================
 
+grpo_rationale:
+  description: |
+    GRPO (Group Relative Policy Optimization) is preferred over SFT for
+    Marxist-Leninist training because political theory responses have no
+    single "correct" answer. Unlike math problems (where GRPO was originally
+    popularized with DeepSeek-R1), political theory is inherently open-ended.
+
+  sft_limitations:
+    - "Exact answer matching fails for prose responses"
+    - "No way to express 'this answer is better than that answer'"
+    - "Can only train on (input, output) pairs, not preferences"
+    - "Easily reward-hacked by models memorizing training data"
+
+  grpo_advantages:
+    - "Uses reward functions to score response quality"
+    - "Multiple generations compared (Group Relative)"
+    - "Semantic similarity captures meaning, not verbatim wording"
+    - "Multi-layer rewards prevent adversarial gaming"
+    - "Can penalize 'word soup' via coherence checks"
+
+  key_insight: |
+    The breakthrough insight is that GRPO's reward function paradigm
+    perfectly maps to political theory training: we can encode what
+    makes a "good Marxist-Leninist response" through semantic rewards
+    rather than exact answer matching.
+
 # =============================================================================
-# BASE MODEL SELECTION
+# BASE MODEL
 # =============================================================================
 
 model:
   primary:
-    name: DeepSeek-R1-Distill-Qwen-7B-abliterated
-    huggingface: huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated
-    params: 7B
-    architecture: Qwen-2.5 (NOT native DeepSeek architecture)
-    context_length: 4096
-    chat_template: Qwen (<|im_start|>/<|im_end|>)
-    reasoning: |
-      1. Abliterated = no refusals on political/revolutionary content
-      2. Qwen-2.5 base = full Unsloth optimization support
-      3. R1 distillation = reasoning capabilities (800k training samples)
-      4. 7B params = fits on consumer GPUs with QLoRA
-      5. huihui-ai is prolific abliterated model creator (verified)
-
-  alternative:
-    name: DeepSeek-R1-Distill-Llama-8B-abliterated
-    huggingface: huihui-ai/DeepSeek-R1-Distill-Llama-8B-abliterated
+    name: DeepSeek-R1-0528-Qwen3-8B
+    huggingface: unsloth/DeepSeek-R1-0528-Qwen3-8B
     params: 8B
-    architecture: Llama-3
-    chat_template: Llama-3 (<|start_header_id|>/<|end_header_id|>)
-    reasoning: If Qwen variant unavailable; Llama architecture also well-supported
-
-  non_abliterated_fallback:
-    name: DeepSeek-R1-Distill-Qwen-7B
-    huggingface: unsloth/DeepSeek-R1-Distill-Qwen-7B
+    architecture: Qwen-2.5
+    context_length: 2048 (training max_completion_length)
     reasoning: |
-      Use if abliteration causes too much quality degradation.
-      May refuse some content but maintains full model quality.
+      1. DeepSeek R1 architecture has strong reasoning capabilities
+      2. 8B params = fits on A40 with LoRA
+      3. Full Unsloth optimization support
+      4. unsloth/ namespace provides optimized 4-bit version
 
-  unsloth_loading:
-    code: |
-      from unsloth import FastLanguageModel
-
-      # Load abliterated model from HuggingFace community
-      model, tokenizer = FastLanguageModel.from_pretrained(
-          model_name = "huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated",
-          max_seq_length = 4096,  # R1 models benefit from long context
-          load_in_4bit = True,    # QLoRA 4-bit quantization
-          dtype = None,           # Auto-detect (bf16 if available)
-          # token = "hf_...",     # If model requires auth
-      )
-
-      # Verify architecture
-      print(f"Model type: {model.config.model_type}")  # Should be "qwen2"
-      print(f"Vocab size: {model.config.vocab_size}")
+  lora_config:
+    rank: 64
+    lora_alpha: 64
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+    use_rslora: true
+    use_gradient_checkpointing: unsloth
 
 # =============================================================================
-# CHAT TEMPLATE (CRITICAL!)
+# DATASET
 # =============================================================================
 
-chat_template:
-  format: Qwen-2.5
-  note: |
-    DeepSeek-R1-Distill-Qwen uses Qwen's chat template, NOT Alpaca format!
-    Using wrong template = garbage output. This is the #1 mistake.
+dataset:
+  source: training_data/curated_qa.jsonl
+  transformed: training_data/grpo_dataset.jsonl
+  count: 128 curated Q&A pairs
+  format: |
+    {"prompt": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}], "answer": "..."}
 
-  qwen_format: |
-    <|im_start|>system
-    {system_message}<|im_end|>
-    <|im_start|>user
-    {user_message}<|im_end|>
-    <|im_start|>assistant
-    {assistant_response}<|im_end|>
-
-  alpaca_format_DO_NOT_USE: |
-    ### Instruction:
-    {instruction}
-
-    ### Response:
-    {output}
-
-  stop_tokens:
-    - "<|im_start|>"
-    - "<|im_end|>"
-    - "<|endoftext|>"
+  topics:
+    - Revisionism and opportunism
+    - Surplus value and exploitation
+    - Dialectical materialism
+    - Imperialism and monopoly capitalism
+    - Class struggle and revolution
+    - Socialist construction
+    - Historical figures (Marx, Lenin, Engels, Stalin, Mao)
 
 # =============================================================================
-# QLORA CONFIGURATION
+# REWARD FUNCTION SYSTEM (THE KEY INNOVATION)
 # =============================================================================
 
-qlora_config:
-  rank: 16  # r=16 (balance between quality and VRAM)
-  lora_alpha: 16  # Same as rank for stable gradients
-  lora_dropout: 0  # Unsloth recommendation (0 is optimized for speed)
-  bias: none  # "none" is optimized for speed
-  gradient_checkpointing: unsloth  # 30% less VRAM than standard
+reward_functions:
+  reference: ai-docs/reward-modeling.yaml
+  module: src/pw_mcp/ai_training/grpo_rewards.py
+  tests: tests/unit/training/test_grpo_rewards.py (43 tests)
 
-  target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
+  layers:
+    format_rewards:
+      - match_format_exactly: "3.0 for exact </think> pattern"
+      - match_format_approximately: "1.5-2.0 for partial pattern"
 
-  code: |
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r = 16,
-        lora_alpha = 16,
-        lora_dropout = 0,
-        target_modules = [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ],
-        bias = "none",
-        use_gradient_checkpointing = "unsloth",  # 30% less VRAM
-        random_state = 3407,
-        max_seq_length = 4096,
-    )
+    semantic_rewards:
+      - semantic_similarity_reward: "Sentence-transformer embedding similarity"
+      - terminology_reward: "Bonus for Marxist lexicon usage"
 
-    # Verify trainable parameters
-    print(f"Trainable params: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    coherence_rewards:
+      - nli_coherence_reward: "BART-large-MNLI entailment checking"
+      - self_consistency_reward: "No internal contradictions"
+      - structural_coherence_reward: "Terms in syntactic roles"
 
-# =============================================================================
-# DATA SOURCE: EXISTING PIPELINE CHUNKS
-# =============================================================================
+    anti_hacking_rewards:
+      - topic_relevance_reward: "Question→answer concept coverage"
+      - interconnection_depth_reward: "Anti-buzzword-salad detection"
+      - completeness_reward: "Key concept coverage"
 
-data_source:
-  description: |
-    Use existing chunked output from pipeline (sample-pipeline/chunks/).
-    Chunks are already in JSONL format with rich metadata.
-    Transform to Q&A pairs using metadata for question generation.
+  combined_functions:
+    full_coherence_reward: "5-layer combined (recommended)"
+    robust_coherence_reward: "3-layer (NLI + self-consistency + structural)"
 
-  current_chunks:
-    location: sample-pipeline/chunks/Library/
-    format: JSONL (one chunk per line)
-    count: 1,034 chunks (Library namespace alone)
-    breakdown:
-      - "Capital, vol. I (The commodity): 30 chunks"
-      - "State and Revolution: 745 chunks"
-      - "Left-wing Communism: 252 chunks"
-      - "Imperialism: 7 chunks"
-
-  chunk_schema:
-    fields:
-      - chunk_id: "Main/Library_Karl_Marx_Capital,...#0"
-      - text: "The wealth of societies in which the capitalist mode..."
-      - article_title: "Library Karl Marx Capital, vol. I..."
-      - namespace: "Main"
-      - section: "The two factors of the commodity"  # or null
-      - chunk_index: 0
-      - line_range: "1-19"
-      - word_count: 763
-      - categories: ["Capital volume I"]
-      - internal_links: ["Capitalism", "Commodity", "Use value"]
-      - is_stub: false
-      - citation_needed_count: 0
-      - has_blockquote: true
-
-  expansion:
-    full_corpus: prolewiki-exports/ (~5,222 files)
-    estimated_chunks: 50,000+ when full corpus processed
-    namespaces: [Main, Library, Essays, ProleWiki]
-
-# =============================================================================
-# DATA TRANSFORMATION: CHUNK TO Q&A
-# =============================================================================
-
-data_transformation:
-  overview: |
-    Transform JSONL chunks to Q&A training pairs in Qwen chat format.
-    Use metadata (section, internal_links, article_title) for question generation.
-    NOT Alpaca format - must use Qwen chat template!
-
-  transformation_code: |
-    import json
-    from pathlib import Path
-    from datasets import Dataset
-
-    def extract_author(article_title: str) -> str:
-        """Extract author from article title pattern."""
-        if "Marx" in article_title:
-            return "Karl Marx"
-        elif "Lenin" in article_title:
-            return "Vladimir Lenin"
-        elif "Engels" in article_title:
-            return "Friedrich Engels"
-        elif "Stalin" in article_title:
-            return "Joseph Stalin"
-        elif "Mao" in article_title:
-            return "Mao Zedong"
-        else:
-            return "a Marxist-Leninist theorist"
-
-    def chunk_to_qa(chunk: dict) -> dict:
-        """Transform chunk to Q&A pair with Qwen template."""
-        author = extract_author(chunk["article_title"])
-
-        # Generate instruction based on available metadata
-        if chunk["section"]:
-            instruction = f"Explain '{chunk['section']}' according to {author}."
-        elif chunk["internal_links"]:
-            concept = chunk["internal_links"][0]
-            instruction = f"What is the Marxist-Leninist analysis of {concept}?"
-        else:
-            instruction = f"Explain this passage from {author}'s writings."
-
-        # Format for Qwen-2.5 chat template (CRITICAL!)
-        text = f"""<|im_start|>user
-    {instruction}<|im_end|>
-    <|im_start|>assistant
-    {chunk['text']}<|im_end|}"""
-
-        return {"text": text, "instruction": instruction}
-
-    def load_and_transform(chunk_dir: Path) -> Dataset:
-        """Load all chunks and transform to training dataset."""
-        examples = []
-        for jsonl_file in chunk_dir.glob("**/*.jsonl"):
-            with open(jsonl_file) as f:
-                for line in f:
-                    chunk = json.loads(line)
-                    examples.append(chunk_to_qa(chunk))
-        return Dataset.from_list(examples)
-
-    # Usage
-    dataset = load_and_transform(Path("sample-pipeline/chunks/Library"))
-    print(f"Training examples: {len(dataset)}")
-
-  question_generation_strategies:
-    section_based:
-      description: Use section headers for direct explanation questions
-      template: "Explain '{section}' according to {author}."
-      yield: ~1,000 pairs (sections with headers)
-
-    concept_based:
-      description: Use internal_links for concept definition questions
-      template: "What is the Marxist-Leninist analysis of {concept}?"
-      yield: ~500-1,000 pairs (unique concepts)
-
-    blockquote_based:
-      description: Use has_blockquote=True for quote attribution
-      template: "What did {author} write about {topic}?"
-      yield: ~200-500 pairs (chunks with blockquotes)
-
-    category_based:
-      description: Use categories for thematic questions
-      template: "Summarize the key arguments about {category}."
-      yield: ~100-200 pairs (unique categories)
-
-  estimated_total: 1,800-2,700 pairs from Library namespace alone
+  anti_hacking_measures:
+    HOLLOW_BUZZWORDS: "Penalty for activist jargon without substance"
+    DEPTH_MARKERS: "Bonus for historical specificity"
+    EXPLANATORY_PHRASES: "Bonus for causal reasoning"
+    depth_ratio: "Words per concept (penalizes buzzword salad)"
 
 # =============================================================================
 # TRAINING CONFIGURATION
 # =============================================================================
 
 training_config:
-  trainer: SFTTrainer (from trl library)
-  epochs: 3  # Start with 3, increase if underfitting
-  batch_size: 2  # Per device
-  gradient_accumulation: 4  # Effective batch size = 8
-  learning_rate: 2e-4
-  lr_scheduler: cosine  # Better than linear for longer training
-  warmup_ratio: 0.1
-  optimizer: adamw_8bit
-  max_seq_length: 4096
-  precision: bf16 if supported, else fp16
+  trainer: GRPOTrainer (from trl library)
+  max_steps: 250
+  batch_size: 2
+  gradient_accumulation: 2
+  learning_rate: 5e-6
+  num_generations: 4
+  temperature: 1.0
+  gpu_memory_utilization: 0.85
+  hardware: A40 48GB (RunPod)
 
-  code: |
-    from trl import SFTTrainer, SFTConfig
-    import torch
-
-    trainer = SFTTrainer(
-        model = model,
-        tokenizer = tokenizer,
-        train_dataset = dataset,
-        dataset_text_field = "text",  # Pre-formatted Qwen template
-        max_seq_length = 4096,
-        args = SFTConfig(
-            # Batch settings
-            per_device_train_batch_size = 2,
-            gradient_accumulation_steps = 4,  # Effective batch = 8
-
-            # Learning rate
-            learning_rate = 2e-4,
-            lr_scheduler_type = "cosine",
-            warmup_ratio = 0.1,
-
-            # Training duration
-            num_train_epochs = 3,
-
-            # Memory optimization
-            fp16 = not torch.cuda.is_bf16_supported(),
-            bf16 = torch.cuda.is_bf16_supported(),
-            optim = "adamw_8bit",
-
-            # Logging
-            logging_steps = 10,
-            save_strategy = "epoch",
-
-            # Output
-            output_dir = "marxist-deepseek-outputs",
-            seed = 3407,
-            report_to = "none",  # or "wandb" for monitoring
-        ),
-    )
-
-    # Train
-    trainer.train()
-
-    # Save LoRA adapter
-    model.save_pretrained("marxist-lora-adapter")
-    tokenizer.save_pretrained("marxist-lora-adapter")
-
-  expected_training_time:
-    rtx_3090: "2-3 hours for 3 epochs on ~1,000 samples"
-    rtx_4090: "1.5-2 hours for 3 epochs on ~1,000 samples"
-    vram_usage: "16-18GB with QLoRA + Unsloth optimizations"
+  vllm_sampling:
+    min_p: 0.1
+    top_p: 1.0
+    top_k: -1
+    seed: 3407
 
 # =============================================================================
-# OPTIONAL: DPO HEALING PASS
+# WEIGHTS & BIASES INTEGRATION
 # =============================================================================
 
-dpo_healing:
+wandb_logging:
+  module: src/pw_mcp/ai_training/wandb_logging.py
+  tests: tests/unit/training/test_wandb_logging.py (17 tests)
+
+  features:
+    - WandbSampleLogger: "Periodic sample tables (question → response → rewards)"
+    - create_logging_reward: "Zero-cost logging reward for GRPOTrainer"
+    - log_reward_metrics: "Per-reward mean/min/max tracking"
+    - init_wandb_logging: "Project/run initialization"
+    - finish_wandb_logging: "Summary statistics"
+    - log_model_checkpoint: "Artifact logging"
+
+  graceful_degradation: |
+    All functions work without wandb installed.
+    Falls back to print() statements when wandb unavailable.
+
+# =============================================================================
+# TRAINING NOTEBOOK (AUTHORITATIVE REFERENCE)
+# =============================================================================
+
+notebook:
+  location: training_data/Marxist_GRPO_Training.ipynb
   description: |
-    Abliteration may degrade model quality. DPO (Direct Preference Optimization)
-    can "heal" the model by training on preferred vs rejected responses.
+    Self-contained Jupyter notebook for RunPod execution.
+    Contains ALL reward functions inline (no external imports).
+    This is the authoritative reference for current implementation.
 
-  when_to_use:
-    - Output quality noticeably degraded after abliteration
-    - Model produces incoherent or low-quality responses
-    - Want to improve response style without losing abliteration
-
-  dataset_requirements:
-    - "Pairs of (prompt, chosen_response, rejected_response)"
-    - "Chosen = high-quality Marxist-Leninist response"
-    - "Rejected = lower-quality or off-topic response"
-
-  code: |
-    from unsloth import PatchDPOTrainer
-    from trl import DPOTrainer, DPOConfig
-    PatchDPOTrainer()
-
-    dpo_trainer = DPOTrainer(
-        model = model,
-        ref_model = None,  # Use implicit reference
-        train_dataset = dpo_dataset,  # (prompt, chosen, rejected)
-        tokenizer = tokenizer,
-        args = DPOConfig(
-            per_device_train_batch_size = 2,
-            gradient_accumulation_steps = 4,
-            learning_rate = 5e-6,  # Lower LR for DPO
-            num_train_epochs = 1,
-            beta = 0.1,
-            output_dir = "dpo_outputs",
-        ),
-    )
-    dpo_trainer.train()
+  contents:
+    - "Model loading (FastLanguageModel.from_pretrained)"
+    - "LoRA configuration (get_peft_model)"
+    - "Dataset loading from grpo_dataset.jsonl"
+    - "All 13+ reward functions inline"
+    - "W&B logging integration"
+    - "GRPOConfig with A40-optimized settings"
+    - "GRPOTrainer setup and training"
+    - "LoRA saving and GGUF export"
 
 # =============================================================================
 # EXPORT AND DEPLOYMENT
 # =============================================================================
 
 export:
-  gguf:
-    description: Quantized format for efficient local inference
-    quantization_levels:
-      q4_k_m:
-        description: "Recommended balance of size/quality"
-        file_size: "~4GB"
-      q5_k_m:
-        description: "Higher quality, larger file"
-        file_size: "~5GB"
-      q8_0:
-        description: "Near-full precision, largest"
-        file_size: "~7GB"
-
+  lora_save:
     code: |
-      # Export to GGUF (single quantization)
-      model.save_pretrained_gguf(
-          "marxist-deepseek-gguf",
-          tokenizer,
-          quantization_method = "q4_k_m",
-      )
+      model.save_pretrained_merged("marxist_lora", tokenizer)
 
-      # Export multiple quantization levels
-      for quant in ["q4_k_m", "q5_k_m", "q8_0"]:
-          model.save_pretrained_gguf(
-              f"marxist-deepseek-{quant}",
-              tokenizer,
-              quantization_method = quant,
-          )
+  gguf:
+    description: Quantized format for Ollama deployment
+    quantization_levels:
+      q4_k_m: "Recommended balance of size/quality (~4GB)"
+      q8_0: "Higher quality (~7GB)"
+    code: |
+      model.save_pretrained_gguf("marxist_gguf", tokenizer, quantization_method="q4_k_m")
 
-      # Push to HuggingFace Hub (optional)
-      model.push_to_hub_gguf(
-          "your-username/marxist-deepseek-7b",
-          tokenizer,
-          quantization_method = ["q4_k_m", "q5_k_m", "q8_0"],
-          token = "hf_...",
-      )
-
-  ollama_integration:
+  ollama:
     modelfile: |
-      FROM ./marxist-deepseek-q4_k_m.gguf
-
+      FROM ./marxist-gguf-q4_k_m.gguf
+      TEMPLATE """<|begin_of_text|>{{ .System }}<|User|>{{ .Prompt }}<|Assistant|>"""
+      SYSTEM "You are a Marxist-Leninist assistant..."
       PARAMETER temperature 0.7
-      PARAMETER top_p 0.9
-      PARAMETER num_ctx 4096
-
-      # Qwen-2.5 chat template (MUST match training format!)
-      TEMPLATE """<|im_start|>system
-      {{ .System }}<|im_end|>
-      <|im_start|>user
-      {{ .Prompt }}<|im_end|>
-      <|im_start|>assistant
-      {{ .Response }}<|im_end|>"""
-
-      SYSTEM """You are a Marxist-Leninist assistant trained on ProleWiki,
-      a communist encyclopedia. You provide accurate information about
-      socialist history, theory, and practice from a Marxist-Leninist
-      perspective. You explain concepts like dialectical materialism,
-      historical materialism, class struggle, and socialist construction
-      with clarity and ideological precision."""
-
-      PARAMETER stop "<|im_start|>"
-      PARAMETER stop "<|im_end|>"
-      PARAMETER stop "<|endoftext|>"
-
-    commands:
-      create: ollama create marxist-deepseek -f Modelfile
-      run: ollama run marxist-deepseek
-      test: |
-        ollama run marxist-deepseek "Explain the concept of surplus value."
-        ollama run marxist-deepseek "What is dialectical materialism?"
-        ollama run marxist-deepseek "Describe Lenin's theory of imperialism."
+      PARAMETER num_ctx 2048
 
 # =============================================================================
-# EVALUATION STRATEGY
+# IMPLEMENTATION STATUS
 # =============================================================================
 
-evaluation:
-  automated:
-    perplexity:
-      description: Lower is better; measure on held-out test set
-      target: "< 10 on test set"
-    loss:
-      description: Training/validation loss convergence
-      target: "< 1.0 final loss"
+implementation_status:
+  completed:
+    - "8.1 Dataset Preparation: grpo_dataset.jsonl (128 Q&A pairs)"
+    - "8.2 Reward Function System: 13+ functions with anti-hacking"
+    - "8.3 W&B Logging Integration: Full observability"
+    - "8.4 Training Notebook: Self-contained for RunPod"
 
-  manual:
-    golden_questions:
-      description: 50 hand-picked questions for human evaluation
-      categories:
-        factual:
-          count: 15
-          examples:
-            - "When did the October Revolution occur?"
-            - "Who wrote Das Kapital?"
-            - "What was the name of Lenin's party?"
-        conceptual:
-          count: 20
-          examples:
-            - "Explain the concept of surplus value."
-            - "What is the dictatorship of the proletariat?"
-            - "Define dialectical materialism."
-        reasoning:
-          count: 15
-          examples:
-            - "How does dialectical materialism differ from idealism?"
-            - "Why did Marx criticize utopian socialism?"
-            - "What is the relationship between base and superstructure?"
+  pending:
+    - "8.5 Training Execution: Run notebook on RunPod A40"
+    - "8.6 Model Evaluation: Manual review, reward hacking detection"
+    - "8.7 GGUF Export: Convert to Ollama format"
 
-    rubric:
-      accuracy: "Is the answer factually correct? (0-2)"
-      completeness: "Does it fully address the question? (0-2)"
-      coherence: "Is the reasoning logical and clear? (0-2)"
-      ideology: "Does it align with Marxist-Leninist analysis? (0-2)"
-      total: "8 points max per question"
-
-    success_threshold: "80% of questions score >= 6/8"
-
-  abliteration_quality_check:
-    description: Verify abliteration didn't degrade quality too much
-    tests:
-      - "Compare coherence to non-abliterated base model"
-      - "Check for repetition or nonsense outputs"
-      - "Verify factual accuracy on known questions"
-    action_if_failed: "Apply DPO healing pass"
-
-  baseline_comparison:
-    description: Compare to base model on same questions
-    expectation: Fine-tuned model significantly outperforms on Marxist content
-
-# =============================================================================
-# IMPLEMENTATION PHASES
-# =============================================================================
-
-implementation:
-  phase_8_1:
-    name: Data Transformation Pipeline
-    status: PLANNED
-    tasks:
-      - Create src/pw_mcp/finetune/__init__.py
-      - Implement chunk_to_qa() transformer
-      - Implement extract_author() helper
-      - Implement load_and_transform() dataset loader
-      - Add CLI command: pw-ingest generate-qa
-      - Support Qwen chat template formatting
-    input: sample-pipeline/chunks/**/*.jsonl
-    output: data/finetune/train_qwen.jsonl
-
-  phase_8_2:
-    name: Dataset Preparation
-    status: PLANNED
-    tasks:
-      - Implement deduplication (exact + semantic)
-      - Add length filtering (50-2000 tokens output)
-      - Create train/validation/test splits (80/10/10)
-      - Add format validation tests
-      - Verify Qwen template correctness
-    output:
-      - data/finetune/train.jsonl
-      - data/finetune/validation.jsonl
-      - data/finetune/test.jsonl
-
-  phase_8_3:
-    name: Training Infrastructure
-    status: PLANNED
-    tasks:
-      - Add unsloth to pyproject.toml dependencies
-      - Create scripts/train_marxist.py
-      - Configure QLoRA parameters for Qwen architecture
-      - Set up checkpoint saving
-      - Add training monitoring (wandb or tensorboard)
-      - Test loading abliterated model from HuggingFace
-
-  phase_8_4:
-    name: Fine-tuning Execution
-    status: PLANNED
-    tasks:
-      - Run training for 3 epochs
-      - Monitor loss curves
-      - Evaluate on validation set per epoch
-      - Select best checkpoint
-      - Optional: Run DPO healing if quality degraded
-
-  phase_8_5:
-    name: Evaluation and Export
-    status: PLANNED
-    tasks:
-      - Run perplexity evaluation on test set
-      - Conduct manual evaluation with 50 questions
-      - Compare to base model
-      - Export to GGUF format (q4_k_m, q5_k_m, q8_0)
-      - Create Ollama Modelfile with Qwen template
-      - Integration test with Ollama
+  test_counts:
+    grpo_rewards: 43 passing
+    wandb_logging: 17 passing
+    total: 60 passing
 
 # =============================================================================
 # HARDWARE REQUIREMENTS
 # =============================================================================
 
 hardware:
-  minimum:
-    gpu: RTX 3090 (24GB VRAM)
-    ram: 32GB system RAM
-    storage: 50GB free (model weights + checkpoints)
-
   recommended:
-    gpu: RTX 4090 (24GB VRAM) or A100 (40GB)
-    ram: 64GB system RAM
-    storage: 100GB free
+    gpu: A40 (48GB VRAM) on RunPod
+    cost: "~$0.79/hour spot, ~$1.14/hour on-demand"
+    training_time: "~2-4 hours for 250 steps"
 
-  with_qlora_unsloth:
-    vram_usage: "16-18GB (70% reduction from full fine-tuning)"
-    training_speed: "2x faster than standard HuggingFace"
+  vram_breakdown:
+    model_4bit: "~4GB"
+    lora_params: "~1GB"
+    optimizer_state: "~2GB"
+    activations: "~6GB with gradient checkpointing"
+    vllm_generation: "~8GB for 4 generations"
+    reward_models: "~2.5GB (NLI + embeddings + spaCy)"
+    total: "~24GB (safe on 48GB A40)"
 
   cloud_options:
-    - "RunPod (RTX 4090, ~$0.50/hour)"
-    - "Lambda Labs (A100, ~$1.10/hour)"
-    - "Vast.ai (variable pricing)"
-
-  notes: |
-    QLoRA + 4-bit quantization enables training on consumer GPUs.
-    Unsloth claims 2x speed and 70% VRAM reduction (verified).
-    16GB VRAM may work with batch_size=1 and gradient_accumulation=8.
-
-# =============================================================================
-# DEPENDENCIES
-# =============================================================================
-
-dependencies:
-  python_packages:
-    - unsloth  # Fast fine-tuning framework
-    - transformers>=4.36.0
-    - datasets
-    - trl>=0.7.0  # SFTTrainer, DPOTrainer
-    - peft  # LoRA adapters
-    - bitsandbytes  # 4-bit quantization
-    - accelerate  # Multi-GPU support
-    - wandb  # Optional: training monitoring
-    - tiktoken  # For accurate token counting
-
-  system:
-    - CUDA 12.x
-    - cuDNN 8.x
-    - Git LFS (for model downloads)
-
-  installation: |
-    # Add to pyproject.toml [project.optional-dependencies]
-    finetune = [
-        "unsloth",
-        "trl>=0.7.0",
-        "peft",
-        "bitsandbytes",
-        "accelerate",
-        "wandb",
-    ]
-
-    # Install
-    uv sync --group finetune
-
-    # Or install directly
-    pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-
-# =============================================================================
-# RISKS AND MITIGATIONS
-# =============================================================================
-
-risks:
-  abliteration_quality:
-    risk: Abliteration degrades model coherence and quality
-    mitigation: Apply DPO healing pass after SFT
-    detection: Compare outputs to non-abliterated baseline
-
-  chat_template_mismatch:
-    risk: Using wrong chat template (Alpaca vs Qwen) produces garbage
-    mitigation: Verify Qwen template in all training and inference code
-    detection: Check for <|im_start|> tokens in training data
-
-  data_quality:
-    risk: Low-quality Q&A pairs lead to poor model
-    mitigation: Human review of subset, automated quality checks
-
-  ideological_drift:
-    risk: Model loses Marxist perspective on edge cases
-    mitigation: Include diverse examples, manual evaluation on edge cases
-
-  catastrophic_forgetting:
-    risk: Model loses general capabilities after fine-tuning
-    mitigation: Use QLoRA (preserves base weights), test general tasks
-
-  overfitting:
-    risk: Model memorizes training data verbatim
-    mitigation: Early stopping, validation loss monitoring, diverse test set
-
-  hardware_limitations:
-    risk: Training fails due to OOM errors
-    mitigation: Reduce batch size, use gradient checkpointing, use cloud GPU
-
-# =============================================================================
-# SUCCESS CRITERIA
-# =============================================================================
-
-success_criteria:
-  quantitative:
-    - "Test perplexity < 10"
-    - "Training loss < 1.0"
-    - "80%+ manual evaluation score"
-    - "No quality degradation from abliteration (or healed with DPO)"
-
-  qualitative:
-    - "Correctly explains core Marxist concepts"
-    - "Accurately identifies historical figures and events"
-    - "Provides coherent ideological analysis"
-    - "Maintains respectful, educational tone"
-    - "Does not refuse political philosophy questions"
-
-  deployment:
-    - "GGUF export works without errors"
-    - "Ollama integration functional with Qwen template"
-    - "Response latency < 5 seconds for typical queries"
+    primary: "RunPod A40 (48GB) - see ai-docs/runpod.yaml"
+    alternative: "Lambda Labs A100 (40GB)"
 
 # =============================================================================
 # REFERENCES
 # =============================================================================
 
 references:
-  unsloth:
-    - "https://github.com/unslothai/unsloth"
-    - "https://docs.unsloth.ai/get-started/reinforcement-learning-rl-guide"
-    - "https://unsloth.ai/blog/deepseek-r1"
-  abliteration:
-    - "https://huggingface.co/blog/mlabonne/abliteration"
-    - "https://medium.com/@david.chew/llms-unrestrained-43820eff85c1"
-  deepseek:
-    - "https://www.analyticsvidhya.com/blog/2025/02/grpo-fine-tuning-on-deepseek-7b/"
-    - "https://unsloth.ai/blog/r1-reasoning"
-  ollama:
-    - "https://github.com/ollama/ollama/blob/main/docs/modelfile.mdx"
-    - "https://github.com/ollama/ollama/blob/main/docs/import.mdx"
-  peft:
-    - "https://github.com/huggingface/peft"
+  internal:
+    - "ai-docs/reward-modeling.yaml: Reward function design"
+    - "ai-docs/runpod.yaml: GPU setup instructions"
+    - "training_data/Marxist_GRPO_Training.ipynb: Authoritative notebook"
+    - "src/pw_mcp/ai_training/: Python module"
+
+  external:
+    unsloth:
+      - "https://github.com/unslothai/unsloth"
+      - "https://docs.unsloth.ai/get-started/reinforcement-learning-rl-guide"
+    grpo:
+      - "https://arxiv.org/abs/2508.18212 - NLI as reward paradigm"
+      - "https://arxiv.org/abs/2509.22047 - MO-GRPO reward hacking"
+    trl:
+      - "https://huggingface.co/docs/trl/en/grpo_trainer"

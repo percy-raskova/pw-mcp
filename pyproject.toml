@@ -16,6 +16,7 @@ dependencies = [
     "ollama>=0.4.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
+    "spacy>=3.8.11",
 ]
 
 [dependency-groups]
@@ -96,6 +97,12 @@ ignore = [
     "ARG002",  # unused method arguments (fixtures) are common in tests
     "SIM117",  # nested with statements for multiple mocks are clearer
 ]
+"src/pw_mcp/ai_training/**/*.py" = [
+    "ARG001",  # **kwargs required by GRPOTrainer reward function interface
+]
+"training_data/*.ipynb" = [
+    "ARG001",  # **kwargs required by GRPOTrainer reward function interface
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pw_mcp"]
@@ -135,6 +142,15 @@ module = [
     "openai",
     "openai.*",
     "dotenv.*",
+    # ML training libraries
+    "transformers",
+    "transformers.*",
+    "spacy",
+    "spacy.*",
+    "torch",
+    "torch.*",
+    "wandb",
+    "wandb.*",
 ]
 ignore_missing_imports = true
 

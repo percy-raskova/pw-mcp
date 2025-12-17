@@ -1,6 +1,22 @@
 # Marxist-Leninist Chatbot Training Set Design
 # General-purpose ideological chatbot using ProleWiki corpus
-# Status: READY FOR IMPLEMENTATION
+# Status: UPDATED FOR GRPO (was SFT)
+# Last Updated: 2025-12-17
+
+# =============================================================================
+# METHODOLOGY UPDATE: SFT → GRPO
+# =============================================================================
+# This document was originally designed for SFT. The project has pivoted to
+# GRPO (Group Relative Policy Optimization) for the reasons documented in
+# ai-docs/finetune.yaml. The ideological design principles and question
+# generation strategies here remain valid for GRPO training.
+#
+# Current implementation:
+# - Dataset: training_data/curated_qa.jsonl (128 curated pairs)
+# - GRPO format: training_data/grpo_dataset.jsonl
+# - Notebook: training_data/Marxist_GRPO_Training.ipynb
+# - Reward functions: src/pw_mcp/ai_training/grpo_rewards.py
+# =============================================================================
 
 overview:
   goal: |
@@ -19,10 +35,10 @@ overview:
     This chatbot shares that theoretical grounding but serves as a
     general educational/discussion tool.
 
-  training_approach: "Supervised Fine-Tuning (SFT) on Q&A pairs"
-  base_model: "huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated"
-  estimated_samples: "~1,000-1,500 Q&A pairs"
-  estimated_training_time: "20-30 minutes on RTX 4090"
+  training_approach: "GRPO (Group Relative Policy Optimization) with multi-layer rewards"
+  base_model: "unsloth/DeepSeek-R1-0528-Qwen3-8B"
+  current_samples: "128 curated Q&A pairs"
+  estimated_training_time: "~2-4 hours on A40 48GB"
 
 data_source:
   primary: "ProleWiki Library namespace chunks"
@@ -349,7 +365,9 @@ future_enhancements:
     - "RAG integration for expanded knowledge"
 
 related_docs:
-  - "ai-docs/finetune.yaml - Base model and training config"
+  - "ai-docs/finetune.yaml - GRPO methodology and training config"
+  - "ai-docs/reward-modeling.yaml - Multi-layer reward function design"
   - "ai-docs/runpod.yaml - Cloud GPU setup"
-  - "ai-docs/chunking.yaml - How chunks are generated"
-  - "ai-docs/embedding.yaml - Embedding pipeline"
+  - "ai-docs/project-status.yaml - Phase 8 implementation status"
+  - "training_data/Marxist_GRPO_Training.ipynb - Authoritative training notebook"
+  - "src/pw_mcp/ai_training/ - Python module with reward functions"

@@ -146,12 +146,12 @@ files:
       phases: All 8 implementation phases with status
       phase_1_foundation: Test infrastructure (COMPLETE)
       phase_2_parsers: TDD Green Phase - parser implementation (COMPLETE)
-      phase_3_sembr: Semantic linebreaking integration (COMPLETE)
-      phase_4_chunking: Text chunking for embeddings
-      phase_5_embedding: Vector embedding generation
-      phase_6_loading: ChromaDB ingestion
-      phase_7_mcp: MCP server implementation
-      phase_8_finetune: Marxist LLM fine-tuning with DeepSeek 7B (PLANNED)
+      phase_3_sembr: REMOVED (replaced by tiktoken chunking)
+      phase_4_chunking: Tiktoken-based chunking (COMPLETE)
+      phase_5_embedding: OpenAI/Ollama embeddings (COMPLETE)
+      phase_6_loading: ChromaDB ingestion (PENDING)
+      phase_7_mcp: MCP server implementation (PENDING)
+      phase_8_finetune: GRPO training with multi-layer rewards (IN_PROGRESS)
       current_focus: What to work on next
       decisions: Key architectural/process decisions
       key_files: Where everything lives (source_code, type_stubs, tests, fixtures)
@@ -164,17 +164,16 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-17: PHASE 8 IN_PROGRESS - GRPO reward system implemented (13+ functions)"
+      - "2025-12-17: Added interconnection_depth_reward (anti-buzzword-salad)"
+      - "2025-12-17: Added W&B logging integration (wandb_logging.py)"
+      - "2025-12-17: Training notebook complete (Marxist_GRPO_Training.ipynb)"
+      - "2025-12-17: 396 tests passing (60 new GRPO/wandb tests)"
       - "2025-12-16: MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking (~6000 lines removed)"
       - "2025-12-16: Pipeline now 4 stages (extract → chunk → embed → load) instead of 5"
       - "2025-12-16: Added oversized chunk handling (splits at sentence/word boundaries)"
       - "2025-12-16: Added token-aware batching for OpenAI embeddings API"
-      - "2025-12-16: Sample pipeline verified end-to-end (1053 chunks, 1053 embeddings)"
-      - "2025-12-16: 336 tests passing (17 new TDD tests for chunker fixes)"
-      - "2025-12-16: Sample pipeline added - 10 public domain works with all outputs committed"
-      - "2025-12-16: --flat flag for extract command (namespace from filename prefix)"
-      - "2025-12-16: OpenAI text-embedding-3-large (1536-dim) now primary embedding provider"
       - "2025-12-15: PHASE 5 COMPLETE - embedding module fully implemented"
-      - "2025-12-15: Schema PHASED - Phase A (MVP, 13 fields) ready for implementation"
       - "2025-12-14: PHASE 2 COMPLETE - all parsers implemented"
 
   embedding.yaml:
@@ -242,45 +241,41 @@ files:
       - evaluating fine-tuned model quality
 
   finetune.yaml:
-    status: PLANNED - Phase 8 specification (research complete 2025-12-16)
+    status: NEEDS_UPDATE - now using GRPO (not SFT)
     purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
+    note: |
+      THIS FILE NEEDS MAJOR UPDATE - methodology changed from SFT to GRPO.
+      See reward-modeling.yaml and ai_training_module for current approach.
+      The training notebook (training_data/Marxist_GRPO_Training.ipynb) is the
+      authoritative reference for current implementation.
+    current_approach:
+      method: GRPO (Group Relative Policy Optimization)
+      model: DeepSeek-R1-0528-Qwen3-8B (via Unsloth)
+      reward_functions: 13+ multi-layer rewards (see ai_training_module)
+      dataset: 128 curated Q&A pairs (training_data/grpo_dataset.jsonl)
+      notebook: training_data/Marxist_GRPO_Training.ipynb
     topics:
-      - DeepSeek 7B Abliterated model selection (huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated)
-      - ABLITERATION RATIONALE - why abliterated models for political content
-      - Qwen-2.5 chat template (NOT Alpaca!) - critical for correct training
-      - QLoRA configuration via Unsloth framework
-      - Chunk-to-Q&A transformation from existing pipeline output
-      - DPO healing pass for post-abliteration quality recovery
-      - Training configuration (SFTTrainer with Qwen template)
-      - Evaluation strategy (perplexity, manual review, abliteration quality check)
-      - GGUF export for Ollama deployment with correct Qwen template
+      - GRPO vs SFT methodology rationale
+      - DeepSeek-R1-0528-Qwen3-8B model via Unsloth
+      - Multi-layer reward functions (anti-word-soup)
+      - Weights & Biases logging integration
+      - LoRA configuration (r=64, alpha=64)
+      - GGUF export for Ollama deployment
     sections:
-      overview: Goal, method, hardware requirements
-      abliteration_rationale: Why abliterated models, legitimate use cases
-      model: DeepSeek-R1-Distill-Qwen-7B-abliterated (primary), alternatives
-      chat_template: Qwen format (<|im_start|>), stop tokens, DO NOT USE Alpaca
-      qlora_config: LoRA rank, alpha, target modules, gradient checkpointing
-      data_source: Existing pipeline chunks (1,034 Library chunks ready)
-      data_transformation: chunk_to_qa(), extract_author(), Qwen formatting code
-      training_config: SFTTrainer with Qwen template, expected training time
-      dpo_healing: Optional quality recovery after abliteration
-      export: GGUF conversion with multiple quant levels, Ollama Modelfile
-      evaluation: Automated, manual, abliteration quality check
-      implementation: Five substages (8.1-8.5) with updated tasks
-      hardware: GPU requirements, VRAM with QLoRA+Unsloth, cloud options
-      dependencies: Python packages including trl>=0.7.0, tiktoken
-      risks: Abliteration quality, chat template mismatch, data quality
-      success_criteria: Quantitative, qualitative, deployment targets
-      references: Unsloth, abliteration, DeepSeek, Ollama, PEFT sources
+      overview: Goal, GRPO method, hardware requirements
+      grpo_rationale: Why GRPO over SFT for political theory
+      model: DeepSeek-R1-0528-Qwen3-8B, Unsloth integration
+      reward_functions: Reference to reward-modeling.yaml
+      data_source: Curated Q&A pairs (128 examples)
+      training_config: GRPOTrainer configuration
+      export: GGUF conversion, Ollama Modelfile
+      evaluation: Manual review, reward hacking detection
     use_when:
-      - planning fine-tuning implementation
-      - understanding why abliterated models are needed
-      - transforming existing chunks to training data
-      - configuring Unsloth and QLoRA for Qwen architecture
-      - setting up training infrastructure
-      - applying DPO healing if quality degraded
+      - understanding GRPO vs SFT trade-offs
+      - planning fine-tuning infrastructure
+      - configuring Unsloth for GRPO
       - evaluating fine-tuned model
-      - deploying to Ollama with correct Qwen template
+      - deploying to Ollama
 
   runpod.yaml:
     status: READY - verified configuration (research complete 2025-12-16)
@@ -337,6 +332,92 @@ files:
       - writing chunking tests
       - configuring chunk sizes
       - using pw-ingest chunk CLI
+
+  reward-modeling.yaml:
+    status: IMPLEMENTED - multi-layer coherence rewards with W&B logging
+    purpose: Robust reward functions for Marxist-Leninist GRPO training
+    topics:
+      - NLI-based coherence rewards (bart-large-mnli)
+      - Self-consistency checking (internal contradictions)
+      - Structural coherence via spaCy dependency parsing
+      - Interconnection depth (anti-buzzword-salad)
+      - Topic relevance (question→answer concept coverage)
+      - Defeating reward hacking / word soup attacks
+      - Ideological bias considerations in NLI models
+      - Weights & Biases logging integration
+    sections:
+      overview: Goal, problem, solution, research basis
+      ideological_bias: Concern, empirical findings, mitigation strategy
+      reward_functions: All 13+ reward functions with scoring details
+      marxist_terms: Terminology categories for structural checking
+      anti_hacking: HOLLOW_BUZZWORDS, DEPTH_MARKERS, EXPLANATORY_PHRASES
+      wandb_logging: Sample tables, per-reward metrics, create_logging_reward
+      training_usage: Recommended reward sets, GRPOTrainer example
+      dependencies: Required packages, model downloads, GPU memory
+      testing: Example test cases for validation
+      references: Research papers, models, related docs
+    use_when:
+      - implementing GRPO reward functions
+      - understanding NLI-based coherence checking
+      - defeating word soup / reward hacking
+      - configuring robust training rewards
+      - understanding ideological bias in ML models
+      - setting up W&B logging for training observability
+    research_basis:
+      - "arxiv.org/abs/2508.18212 - NLI as reward paradigm"
+      - "arxiv.org/abs/2509.22047 - MO-GRPO reward hacking"
+      - "arxiv.org/abs/2508.05170 - Posterior-GRPO"
+
+  # ==========================================================================
+  # MODULE REFERENCE: src/pw_mcp/ai_training/
+  # ==========================================================================
+
+  ai_training_module:
+    status: IMPLEMENTED - GRPO rewards + W&B logging
+    purpose: Python module for GRPO fine-tuning reward functions and logging
+    location: src/pw_mcp/ai_training/
+    files:
+      grpo_rewards.py: |
+        13+ reward functions for GRPO training:
+        - match_format_exactly/approximately (</think> pattern)
+        - semantic_similarity_reward (sentence-transformers)
+        - terminology_reward (Marxist lexicon bonus)
+        - nli_coherence_reward (BART-large-MNLI entailment)
+        - self_consistency_reward (no internal contradictions)
+        - structural_coherence_reward (terms in syntactic roles)
+        - topic_relevance_reward (question→answer coverage)
+        - interconnection_depth_reward (anti-buzzword-salad)
+        - completeness_reward (key concept coverage)
+        - full_coherence_reward (combined 5-layer)
+        - robust_coherence_reward (NLI + self-consistency + structural)
+        - debug_print_reward (development logging)
+      wandb_logging.py: |
+        Weights & Biases integration:
+        - WandbSampleLogger (periodic sample tables)
+        - create_logging_reward() (zero-cost logging reward)
+        - init_wandb_logging() / finish_wandb_logging()
+        - log_reward_metrics() / log_model_checkpoint()
+        - Graceful degradation without wandb installed
+      __init__.py: "Public API exports for all functions and constants"
+    constants:
+      - MARXIST_TERMS (100+ terms by category)
+      - DISCOURSE_CONNECTIVES (analytical reasoning markers)
+      - EXPLANATORY_PHRASES (causal reasoning indicators)
+      - HOLLOW_BUZZWORDS (activist jargon penalty)
+      - DEPTH_MARKERS (historical specificity bonus)
+      - CONCEPT_EQUIVALENCES (term synonym mapping)
+    test_files:
+      - tests/unit/training/test_grpo_rewards.py (43 tests)
+      - tests/unit/training/test_wandb_logging.py (17 tests)
+    use_when:
+      - implementing or modifying GRPO reward functions
+      - adding new anti-hacking measures
+      - integrating W&B logging
+      - understanding reward function signatures
+      - testing reward function behavior
+    related_docs:
+      - ai-docs/reward-modeling.yaml (detailed design)
+      - training_data/Marxist_GRPO_Training.ipynb (notebook with inline versions)
 
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
