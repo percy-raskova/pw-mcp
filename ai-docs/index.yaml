@@ -215,37 +215,45 @@ files:
         dimensions: 768
 
   finetune.yaml:
-    status: PLANNED - Phase 8 specification
+    status: PLANNED - Phase 8 specification (research complete 2025-12-16)
     purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus
     topics:
-      - DeepSeek 7B base model selection
+      - DeepSeek 7B Abliterated model selection (huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated)
+      - ABLITERATION RATIONALE - why abliterated models for political content
+      - Qwen-2.5 chat template (NOT Alpaca!) - critical for correct training
       - QLoRA configuration via Unsloth framework
-      - Q&A data generation from ProleWiki corpus
-      - Dataset preparation (Alpaca JSONL format)
-      - Training configuration (SFTTrainer)
-      - Evaluation strategy (perplexity, manual review)
-      - GGUF export for Ollama deployment
+      - Chunk-to-Q&A transformation from existing pipeline output
+      - DPO healing pass for post-abliteration quality recovery
+      - Training configuration (SFTTrainer with Qwen template)
+      - Evaluation strategy (perplexity, manual review, abliteration quality check)
+      - GGUF export for Ollama deployment with correct Qwen template
     sections:
       overview: Goal, method, hardware requirements
-      model: DeepSeek-R1-7B selection and loading code
-      qlora_config: LoRA rank, alpha, target modules
-      data_generation: Four sources (infobox, section, library, crossref)
-      dataset_format: Alpaca JSONL schema and splits
-      training_config: SFTTrainer parameters and code
-      evaluation: Automated and manual evaluation criteria
-      export: GGUF conversion and Ollama integration
-      implementation: Five substages (8.1-8.5)
-      hardware: GPU requirements and cloud options
-      dependencies: Python packages and system requirements
-      risks: Data quality, ideological drift, overfitting mitigations
-      success_criteria: Quantitative and qualitative targets
+      abliteration_rationale: Why abliterated models, legitimate use cases
+      model: DeepSeek-R1-Distill-Qwen-7B-abliterated (primary), alternatives
+      chat_template: Qwen format (<|im_start|>), stop tokens, DO NOT USE Alpaca
+      qlora_config: LoRA rank, alpha, target modules, gradient checkpointing
+      data_source: Existing pipeline chunks (1,034 Library chunks ready)
+      data_transformation: chunk_to_qa(), extract_author(), Qwen formatting code
+      training_config: SFTTrainer with Qwen template, expected training time
+      dpo_healing: Optional quality recovery after abliteration
+      export: GGUF conversion with multiple quant levels, Ollama Modelfile
+      evaluation: Automated, manual, abliteration quality check
+      implementation: Five substages (8.1-8.5) with updated tasks
+      hardware: GPU requirements, VRAM with QLoRA+Unsloth, cloud options
+      dependencies: Python packages including trl>=0.7.0, tiktoken
+      risks: Abliteration quality, chat template mismatch, data quality
+      success_criteria: Quantitative, qualitative, deployment targets
+      references: Unsloth, abliteration, DeepSeek, Ollama, PEFT sources
     use_when:
       - planning fine-tuning implementation
-      - understanding Q&A data generation strategy
-      - configuring Unsloth and QLoRA
+      - understanding why abliterated models are needed
+      - transforming existing chunks to training data
+      - configuring Unsloth and QLoRA for Qwen architecture
       - setting up training infrastructure
+      - applying DPO healing if quality degraded
       - evaluating fine-tuned model
-      - deploying to Ollama
+      - deploying to Ollama with correct Qwen template
 
   chunking.yaml:
     status: IMPLEMENTED - tiktoken-based (sembr removed)
