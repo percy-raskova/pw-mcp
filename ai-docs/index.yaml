@@ -214,6 +214,33 @@ files:
         provider: Ollama (local)
         dimensions: 768
 
+  chatbot-ideology.yaml:
+    status: READY FOR IMPLEMENTATION
+    purpose: Training set design for general Marxist-Leninist chatbot
+    topics:
+      - General ML chatbot (not game-specific)
+      - ProleWiki Library chunks as data source
+      - Question generation from chunk metadata
+      - Qwen chat template formatting
+      - Transformation code (chunks → Q&A pairs)
+      - System prompt options
+      - Evaluation criteria
+    sections:
+      overview: Goal, approach, estimated training size
+      data_source: ProleWiki chunks, available works, schema
+      system_prompt: Recommended persona and alternatives
+      question_generation: Templates, author extraction, priority
+      training_format: Qwen template structure
+      transformation_code: Complete Python implementation
+      quality_considerations: Chunk quality, diversity, improvements
+      implementation_steps: 6-step workflow
+      evaluation: Test questions, quality criteria, red flags
+    use_when:
+      - preparing training data for ML chatbot
+      - understanding question generation strategy
+      - writing the transformation script
+      - evaluating fine-tuned model quality
+
   finetune.yaml:
     status: PLANNED - Phase 8 specification (research complete 2025-12-16)
     purpose: Marxist-Leninist LLM fine-tuning on ProleWiki corpus

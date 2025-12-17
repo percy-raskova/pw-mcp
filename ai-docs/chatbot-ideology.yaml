@@ -1,0 +1,355 @@
+# Marxist-Leninist Chatbot Training Set Design
+# General-purpose ideological chatbot using ProleWiki corpus
+# Status: READY FOR IMPLEMENTATION
+
+overview:
+  goal: |
+    A general-purpose chatbot well-versed in Marxist-Leninist theory.
+    Can discuss revolutionary theory, imperialism, class struggle,
+    dialectical materialism, and related topics through materialist analysis.
+
+  not_goal: |
+    NOT a game-specific assistant. NOT tied to any particular application.
+    The Babylon game project informed the ideological direction, but
+    the chatbot itself is a standalone ML theory assistant.
+
+  inspiration: |
+    The Babylon game (~/projects/game/babylon/) models class struggle
+    through MLM-TW (Marxist-Leninist-Maoist Third Worldist) theory.
+    This chatbot shares that theoretical grounding but serves as a
+    general educational/discussion tool.
+
+  training_approach: "Supervised Fine-Tuning (SFT) on Q&A pairs"
+  base_model: "huihui-ai/DeepSeek-R1-Distill-Qwen-7B-abliterated"
+  estimated_samples: "~1,000-1,500 Q&A pairs"
+  estimated_training_time: "20-30 minutes on RTX 4090"
+
+data_source:
+  primary: "ProleWiki Library namespace chunks"
+  location: "sample-pipeline/chunks/Library/*.jsonl"
+  format: "JSONL with metadata"
+
+  chunk_schema:
+    chunk_id: "Unique identifier"
+    text: "The actual content (training answer)"
+    article_title: "Source work title (contains author)"
+    section: "Section/chapter name (question seed)"
+    categories: "Topic categories"
+    internal_links: "Referenced concepts (question seeds)"
+    word_count: "Chunk size"
+
+  available_works:
+    marx:
+      - "Capital, Volume I"
+      - "Capital, Volume II"
+      - "Capital, Volume III"
+      - "Grundrisse"
+      - "The German Ideology"
+    lenin:
+      - "Imperialism, the Highest Stage of Capitalism"
+      - "State and Revolution"
+      - "What Is To Be Done?"
+    mao:
+      - "On Contradiction"
+      - "On Practice"
+    other:
+      - "Additional works in Library namespace"
+
+  chunk_count: "~1,034 chunks currently available"
+
+system_prompt:
+  description: "Defines the chatbot's persona and approach"
+
+  recommended: |
+    You are a Marxist-Leninist assistant. You explain revolutionary theory
+    through materialist analysis, drawing on the works of Marx, Engels,
+    Lenin, Mao, and other socialist thinkers. You ground explanations in
+    historical materialism and class analysis.
+
+  alternatives:
+    concise: |
+      You are a Marxist theorist. You explain concepts through
+      dialectical and historical materialism.
+
+    educational: |
+      You are a patient teacher of Marxist-Leninist theory. You explain
+      complex concepts clearly, always connecting theory to material
+      conditions and class relations.
+
+    third_worldist: |
+      You are a Marxist-Leninist-Maoist Third Worldist. You analyze
+      imperialism, unequal exchange, and the global class structure,
+      recognizing the labor aristocracy in imperial core nations.
+
+question_generation:
+  description: |
+    Transform chunk metadata into natural questions that a user might ask.
+    The chunk text becomes the answer.
+
+  strategy: "Use available metadata to generate contextual questions"
+
+  templates:
+    with_section:
+      pattern: "What does {author} say about {section}?"
+      example: "What does Marx say about the commodity form?"
+      priority: 1
+
+    with_internal_links:
+      pattern: "Explain {concept} from a Marxist perspective."
+      example: "Explain surplus value from a Marxist perspective."
+      priority: 2
+
+    with_categories:
+      pattern: "Discuss {category} in Marxist theory."
+      example: "Discuss imperialism in Marxist theory."
+      priority: 3
+
+    fallback:
+      pattern: "What does {author} teach us about this?"
+      example: "What does Lenin teach us about this?"
+      priority: 4
+
+  author_extraction:
+    description: "Extract author name from article_title field"
+    pattern: "Library {Author} {Work Title}"
+    examples:
+      - input: "Library Karl Marx Capital, vol. I, Chapter 1"
+        output: "Marx"
+      - input: "Library Vladimir Lenin Imperialism"
+        output: "Lenin"
+      - input: "Library Mao Zedong On Contradiction"
+        output: "Mao"
+
+    code: |
+      def extract_author(title: str) -> str:
+          """Extract author from 'Library Author Name Work...' format."""
+          if not title.startswith("Library "):
+              return "the author"
+
+          # Common author mappings
+          author_map = {
+              "Karl Marx": "Marx",
+              "Friedrich Engels": "Engels",
+              "Vladimir Lenin": "Lenin",
+              "V.I. Lenin": "Lenin",
+              "Mao Zedong": "Mao",
+              "Mao Tse-tung": "Mao",
+              "Joseph Stalin": "Stalin",
+              "Rosa Luxemburg": "Luxemburg",
+              "Antonio Gramsci": "Gramsci",
+              "Frantz Fanon": "Fanon",
+          }
+
+          title_part = title[8:]  # Remove "Library "
+          for full_name, short_name in author_map.items():
+              if title_part.startswith(full_name):
+                  return short_name
+
+          # Fallback: first two words
+          words = title_part.split()
+          if len(words) >= 2:
+              return words[1]  # Usually last name
+          return "the author"
+
+training_format:
+  template: "Qwen-2.5 chat format"
+  note: "MUST use Qwen template for DeepSeek-R1-Distill-Qwen model"
+
+  structure: |
+    <|im_start|>system
+    {system_prompt}<|im_end|>
+    <|im_start|>user
+    {question}<|im_end|>
+    <|im_start|>assistant
+    {answer}<|im_end|>
+
+  example:
+    system: "You are a Marxist-Leninist assistant..."
+    user: "What does Marx say about the commodity form?"
+    answer: |
+      The wealth of those societies in which the capitalist mode of
+      production prevails, presents itself as an immense accumulation
+      of commodities...
+
+  output_field: "text"
+  description: |
+    For Unsloth SFTTrainer, provide a single 'text' field containing
+    the complete formatted conversation.
+
+transformation_code:
+  description: "Complete transformation from chunks to training data"
+
+  implementation: |
+    import json
+    from pathlib import Path
+
+    def extract_author(title: str) -> str:
+        """Extract author from article title."""
+        if not title.startswith("Library "):
+            return "the author"
+
+        author_map = {
+            "Karl Marx": "Marx",
+            "Friedrich Engels": "Engels",
+            "Vladimir Lenin": "Lenin",
+            "Mao Zedong": "Mao",
+            "Joseph Stalin": "Stalin",
+        }
+
+        title_part = title[8:]
+        for full_name, short_name in author_map.items():
+            if title_part.startswith(full_name):
+                return short_name
+
+        words = title_part.split()
+        return words[1] if len(words) >= 2 else "the author"
+
+    def generate_question(chunk: dict) -> str:
+        """Generate a natural question from chunk metadata."""
+        author = extract_author(chunk.get("article_title", ""))
+
+        # Priority 1: Use section
+        if chunk.get("section"):
+            section = chunk["section"].lower()
+            return f"What does {author} say about {section}?"
+
+        # Priority 2: Use internal links
+        if chunk.get("internal_links"):
+            concept = chunk["internal_links"][0]
+            return f"Explain {concept} from a Marxist perspective."
+
+        # Priority 3: Use categories
+        if chunk.get("categories"):
+            category = chunk["categories"][0]
+            return f"Discuss {category} in Marxist theory."
+
+        # Fallback
+        return f"What does {author} teach us in this passage?"
+
+    def chunk_to_training(chunk: dict, system_prompt: str) -> dict:
+        """Convert a chunk to Qwen-formatted training example."""
+        question = generate_question(chunk)
+        answer = chunk["text"]
+
+        text = f"""<|im_start|>system
+    {system_prompt}<|im_end|>
+    <|im_start|>user
+    {question}<|im_end|>
+    <|im_start|>assistant
+    {answer}<|im_end|>"""
+
+        return {"text": text}
+
+    def process_chunks(input_dir: Path, output_path: Path):
+        """Process all chunk files into training dataset."""
+        system_prompt = (
+            "You are a Marxist-Leninist assistant. You explain revolutionary "
+            "theory through materialist analysis, drawing on the works of Marx, "
+            "Engels, Lenin, Mao, and other socialist thinkers."
+        )
+
+        training_data = []
+
+        for jsonl_file in input_dir.glob("*.jsonl"):
+            with open(jsonl_file) as f:
+                for line in f:
+                    chunk = json.loads(line)
+                    example = chunk_to_training(chunk, system_prompt)
+                    training_data.append(example)
+
+        with open(output_path, "w") as f:
+            for example in training_data:
+                f.write(json.dumps(example) + "\n")
+
+        print(f"Generated {len(training_data)} training examples")
+
+quality_considerations:
+  chunk_quality:
+    - "ProleWiki text is already high-quality Marxist writing"
+    - "Chunks preserve context through overlap"
+    - "Section boundaries respected"
+
+  question_diversity:
+    - "Vary question templates to avoid repetitive patterns"
+    - "Use all available metadata fields"
+    - "Consider adding manual seed questions for key concepts"
+
+  answer_length:
+    - "Chunks are 350-500 tokens (good length for chat responses)"
+    - "Not too short (lacks substance) or too long (loses focus)"
+
+  potential_improvements:
+    - "Add conversational variations (rephrase questions)"
+    - "Include follow-up question pairs"
+    - "Add explicit concept definitions from glossary"
+    - "Include historical examples and applications"
+
+implementation_steps:
+  step_1:
+    name: "Verify chunk data"
+    command: "ls -la sample-pipeline/chunks/Library/"
+    check: "Confirm JSONL files exist with expected format"
+
+  step_2:
+    name: "Create transformation script"
+    location: "src/pw_mcp/finetune/prepare_training.py"
+    description: "Implement the transformation code above"
+
+  step_3:
+    name: "Generate training data"
+    command: "uv run python -m pw_mcp.finetune.prepare_training"
+    output: "training_data/ml_chatbot.jsonl"
+
+  step_4:
+    name: "Upload to RunPod"
+    description: "Transfer JSONL to pod's /workspace/data/"
+
+  step_5:
+    name: "Run fine-tuning"
+    description: "Execute training script (see finetune.yaml)"
+
+  step_6:
+    name: "Export and test"
+    description: "GGUF export, Ollama deployment, manual testing"
+
+evaluation:
+  manual_testing:
+    description: "Chat with model and assess quality"
+    test_questions:
+      - "What is surplus value?"
+      - "Explain the labor theory of value."
+      - "What is imperialism according to Lenin?"
+      - "How does dialectical materialism differ from idealism?"
+      - "What is the role of the vanguard party?"
+      - "Why do contradictions drive historical change?"
+      - "What is the labor aristocracy?"
+
+  quality_criteria:
+    - "Responses grounded in Marxist theory"
+    - "Materialist analysis (not idealist)"
+    - "Accurate to source texts"
+    - "Coherent and well-structured"
+    - "Appropriate length for chat"
+
+  red_flags:
+    - "Refusing to discuss political topics (abliteration failure)"
+    - "Generic/vague responses not grounded in theory"
+    - "Mixing incompatible ideological frameworks"
+    - "Hallucinating quotes or concepts"
+
+future_enhancements:
+  phase_2:
+    - "Add conversational multi-turn examples"
+    - "Include debate/argument handling"
+    - "Add current events analysis capability"
+
+  phase_3:
+    - "Multi-persona support (different theoretical traditions)"
+    - "Game integration (Babylon narrative generation)"
+    - "RAG integration for expanded knowledge"
+
+related_docs:
+  - "ai-docs/finetune.yaml - Base model and training config"
+  - "ai-docs/runpod.yaml - Cloud GPU setup"
+  - "ai-docs/chunking.yaml - How chunks are generated"
+  - "ai-docs/embedding.yaml - Embedding pipeline"

@@ -184,7 +184,7 @@ data_source:
       - text: "The wealth of societies in which the capitalist mode..."
       - article_title: "Library Karl Marx Capital, vol. I..."
       - namespace: "Main"
-      - section: "The two factors of the commodity" # or null
+      - section: "The two factors of the commodity"  # or null
       - chunk_index: 0
       - line_range: "1-19"
       - word_count: 763
