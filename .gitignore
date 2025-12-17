@@ -44,4 +44,6 @@ embeddings/*
 !embeddings/.gitkeep
 logs/
 
-# Sample pipeline: ALL outputs tracked to demonstrate pipeline workflow
+# Sample pipeline: Source, extracted, chunks, and embeddings are tracked.
+# ChromaDB is generated from embeddings and not tracked (too large, binary).
+sample-pipeline/chroma_data/

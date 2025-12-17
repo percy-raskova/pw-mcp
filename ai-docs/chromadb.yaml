@@ -50,16 +50,34 @@ collection:
     notes: idempotent, safe for repeated runs
 
   distance_metrics:
+    # -------------------------------------------------------------------------
+    # IMPORTANT: For OpenAI embeddings (unit-normalized), all three metrics
+    # produce IDENTICAL rankings. Choice is about interpretability/convention.
+    # See chromadb-schema.yaml for full rationale.
+    # -------------------------------------------------------------------------
     cosine:
       config: {"hnsw:space": "cosine"}
+      formula: 1 - cos(θ)
+      range: 0-2 (0=identical, 1=orthogonal, 2=opposite)
       use: semantic similarity (normalized vectors)
-      recommended: true  # best for text embeddings
+      recommended: true  # OpenAI recommends, NLP standard
+      interpretation: |
+        0.0 = identical direction
+        0.3 = very similar (~85% cosine similarity)
+        0.5 = moderately similar (~75%)
+        1.0 = unrelated (orthogonal)
     l2:
       config: {"hnsw:space": "l2"}
+      formula: √Σ(aᵢ - bᵢ)²
+      range: 0-2 (for unit vectors)
       use: euclidean distance
+      notes: equivalent ranking to cosine for normalized vectors, less intuitive values
     ip:
       config: {"hnsw:space": "ip"}
+      formula: -Σ(aᵢ × bᵢ)  # ChromaDB negates for "smaller=closer"
+      range: -1 to 1
       use: inner product (dot product)
+      notes: equivalent ranking, but negative values are confusing
 
   hnsw_tuning:
     ef_construction:

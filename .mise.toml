@@ -305,13 +305,22 @@ run = "uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embed
 description = "Generate embeddings for sample chunks (Ollama local)"
 run = "uv run pw-ingest embed -i sample-pipeline/chunks -o sample-pipeline/embeddings --provider ollama"
 
+[tasks.sample-load]
+description = "Load sample chunks into ChromaDB"
+run = "uv run pw-ingest load -c sample-pipeline/chunks -e sample-pipeline/embeddings -o sample-pipeline/chroma_data"
+
+[tasks.sample-load-reset]
+description = "Clear sample ChromaDB and reload"
+run = "uv run pw-ingest load -c sample-pipeline/chunks -e sample-pipeline/embeddings -o sample-pipeline/chroma_data --reset"
+
 [tasks.sample-pipeline]
-description = "Run full sample pipeline"
+description = "Run full sample pipeline (extract → chunk → embed → load)"
 run = """
 echo "Running sample pipeline..."
 mise run sample-extract
 mise run sample-chunk
 mise run sample-embed
+mise run sample-load
 echo ""
 mise run sample-status
 echo ""
