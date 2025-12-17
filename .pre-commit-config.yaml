@@ -48,7 +48,7 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: ['--maxkb=500']
-        exclude: ^(prolewiki-exports/|sample-pipeline/|uv\.lock)$
+        exclude: ^(prolewiki-exports/|sample-pipeline/|training_data/)|uv\.lock$
       - id: check-merge-conflict
       - id: debug-statements
 
