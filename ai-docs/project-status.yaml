@@ -1,6 +1,9 @@
 # Project Status - pw-mcp
 # Purpose: Track implementation progress and next steps
-# Updated: 2025-12-16 (Phase 5.6 - Sample pipeline, OpenAI embeddings, --flat flag)
+# Updated: 2025-12-16 (MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking)
+#
+# KEY CHANGE: Pipeline is now 4 stages (extract → chunk → embed → load)
+# The sembr ML pipeline was completely removed (~6000 lines of code)
 
 overview:
   project: ProleWiki MCP Server
@@ -166,124 +169,71 @@ phases:
         implementation: src/pw_mcp/ingest/extraction.py
 
   phase_3_sembr:
-    status: COMPLETE
-    completed_date: 2025-12-15
-    description: Semantic linebreaking integration
-    reference_doc: ai-docs/sembr.yaml
-    test_counts:
-      linebreaker_unit: 33
-      sembr_integration: 8
-      sembr_slow: 9
-      total_with_sembr: 171
-    enhancements_added:
-      date: 2025-12-15
-      items:
-        - "CLI server management (--restart-server, --no-restart)"
-        - "CUDA cache reset on server restart"
-        - "JSON file support in process_batch (both .txt and .json)"
-        - "Graceful error handling (failed files return None)"
-        - "Retry jitter for 'Already borrowed' errors"
-        - "_extract_clean_text_from_json() supports both clean_text and text fields"
+    status: REMOVED (2025-12-16)
+    description: |
+      Semantic linebreaking was COMPLETELY REMOVED and replaced with
+      tiktoken-based chunking. This simplified the pipeline from 5 stages
+      to 4 stages and removed ~6000 lines of complex ML infrastructure.
 
-    tasks:
-      - id: 3.1
-        name: Test infrastructure (Red Phase)
-        status: COMPLETE
-        completed_date: 2025-12-15
-        details: |
-          Created test infrastructure:
-          - tests/unit/sembr/__init__.py
-          - tests/unit/sembr/test_linebreaker.py (33 tests)
-          - tests/slow/__init__.py
-          - tests/fixtures/sembr/input/ (7 files)
-          - tests/fixtures/sembr/expected/ (5 files)
-          - tests/fixtures/sembr/mock_responses/ (3 files)
-          - conftest.py updated with 8 sembr fixtures
+    removal_reason: |
+      Sembr required:
+      - GPU server management with CUDA crash recovery
+      - HTTP client with retry logic, semaphores, health checks
+      - 135M parameter DistilBERT model (6+ second startup)
+      - Complex error handling for device-side assertions
+      - ~9 seconds per file processing time
+      - ~6000 lines of infrastructure code
 
-      - id: 3.2
-        name: Core module implementation (Green Phase)
-        status: COMPLETE
-        completed_date: 2025-12-15
-        tests: 33 passing
-        details: |
-          Created src/pw_mcp/ingest/linebreaker.py (487 lines):
-          - SembrConfig (frozen dataclass, 7 config fields)
-          - SembrResult (dataclass, 5 result fields)
-          - SembrError, SembrServerError, SembrTimeoutError, SembrContentError
-          - check_server_health() - sync HTTP GET
-          - process_text() - async with retry logic
-          - process_file() - async file I/O wrapper
-          - process_batch() - async with Semaphore concurrency
-          - _extract_clean_text_from_json() helper
-          All 33 unit tests pass. Pre-commit hooks pass.
+      Tiktoken replacement provides:
+      - No server needed (runs in-process)
+      - No GPU needed (pure CPU)
+      - Deterministic output
+      - <1ms per file processing
+      - Zero crash risk
+      - ~600 lines of simple code
 
-      - id: 3.3
-        name: CLI integration
-        status: COMPLETE
-        completed_date: 2025-12-15
-        details: |
-          Updated src/pw_mcp/ingest/cli.py (362 lines):
-          - Added "sembr" subcommand with 8 options
-          - --input/-i, --output/-o, --server/-s
-          - --check-only, --sample, --max-concurrent
-          - --no-progress, --timeout
-          - Progress display with file counts
-          - Proper error handling and exit codes
+    files_deleted:
+      - src/pw_mcp/ingest/linebreaker.py (~950 lines)
+      - src/pw_mcp/ingest/server_manager.py (~740 lines)
+      - src/pw_mcp/ingest/gpu_manager.py (~520 lines)
+      - tests/unit/sembr/test_linebreaker.py (~1400 lines)
+      - tests/unit/ingest/test_server_manager.py (~600 lines)
+      - tests/unit/ingest/test_gpu_manager.py (~500 lines)
+      - tests/fixtures/sembr/ (entire directory)
+      - ai-docs/sembr.yaml
 
-          Added 3 mise tasks in .mise.toml:
-          - sembr-check: Check server health
-          - sembr-process: Process full corpus
-          - sembr-sample: Test with sample files
-
-      - id: 3.4
-        name: Documentation
-        status: COMPLETE
-        completed_date: 2025-12-15
-        details: |
-          Updated documentation files:
-          - ai-docs/project-status.yaml (this file)
-          - ai-docs/sembr.yaml (implementation tasks)
-          - ai-docs/index.yaml (status update)
-          - ai-docs/pipeline.yaml (Stage 4 status)
-          - ai-docs/testing-plan.yaml (test counts)
-
-    server_protocol:
-      endpoints:
-        health: "GET /check"
-        process: "POST /rewrap (JSON: {text, predict_func})"
-      response_format: JSON with status, text fields
-
-    model:
-      name: admko/sembr2023-distilbert-base-multilingual-cased
-      params: 135M
-      languages: [English, Russian, Chinese, Spanish, German, French]
-
-    implementation_notes: |
-      Phase 3 COMPLETE - sembr integration fully implemented:
-      - linebreaker.py handles HTTP client, retries, content validation
-      - CLI provides full batch processing with progress
-      - All 33 tests pass, pre-commit hooks pass
-      - Ready for Phase 4 (Chunking)
+    replacement: |
+      See phase_4_chunking - now uses tiktoken-based chunking that
+      reads directly from extracted/ JSON files (no sembr preprocessing).
+      Pipeline: extract → chunk → embed → load (4 stages)
 
   phase_4_chunking:
-    status: COMPLETE
-    completed_date: 2025-12-15
-    description: Text chunking for embeddings
+    status: COMPLETE (MAJOR REFACTOR 2025-12-16)
+    completed_date: 2025-12-16
+    description: Tiktoken-based text chunking (replaced sembr dependency)
     reference_doc: ai-docs/chunking.yaml
-    dependencies: Phases 2-3 (ArticleData + sembr'd text)
+    dependencies: Phase 2 only (ArticleData) - no sembr needed
     test_counts:
-      chunker_unit: 25
-      chunk_metadata: 18
+      chunker_unit: 67
+      oversized_line_handling: 7  # New TDD tests for splitting
       cli_chunk: 18
-      total: 61
+      total: 74
+
+    key_changes_2025_12_16:
+      - "Replaced word-based estimation with tiktoken (cl100k_base)"
+      - "Added oversized line handling (splits at sentence/word boundaries)"
+      - "Added token-aware batching for OpenAI embeddings API"
+      - "Reads directly from extracted/ (no sembr preprocessing)"
+      - "No chunk exceeds max_tokens (enforced by splitting)"
 
     overview:
-      input: sembr/{namespace}/{title}.txt + extracted article JSON
+      input: extracted/articles/{namespace}/{title}.json (clean_text field)
       output: chunks/{namespace}/{title}.jsonl
       token_targets:
-        target: 600  # Revised from 350 to leverage EmbeddingGemma's 2048 limit
-        min: 200
+        target: 350
+        min: 100
         max: 1000
+        overlap: 50
 
     tasks:
       - id: 4.1
@@ -570,30 +520,27 @@ phases:
 
 current_focus:
   phase: 6 (ChromaDB Loading) - NEXT
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5]
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5]
+  removed: [3.1, 3.2, 3.3, 3.4]  # sembr phases removed 2025-12-16
   next_task: 6.1 - Phase A Schema Implementation
   reference: ai-docs/chromadb-schema.yaml
 
   today_summary: |
-    2025-12-16 Summary (15 commits):
-    - GPU manager + server manager for CUDA lifecycle
-    - ChromaDB interface module
-    - Semantic chunker and embedder with OpenAI/Ollama
-    - Comprehensive CLI with logging and resume
-    - Empty response handling fix (JSONDecodeError)
-    - --flat flag for flat directory extraction
-    - Sample pipeline with 10 public domain works (152 chunks, 152 embeddings)
-    - README and ai-docs updates
+    2025-12-16 Summary (MAJOR REFACTOR):
+    - REMOVED sembr ML pipeline (~6000 lines deleted)
+    - REPLACED with tiktoken-based chunking (~600 lines added)
+    - Pipeline is now 4 stages instead of 5: extract → chunk → embed → load
+    - Added oversized line handling (splits at sentence/word boundaries)
+    - Added token-aware batching for OpenAI embeddings API
+    - Sample pipeline verified: 10 files → 1053 chunks → 1053 embeddings
+    - 336 tests passing (17 new TDD tests for chunker fixes)
 
   next_action: |
-    Phase 5 COMPLETE with dual-provider architecture.
-
-    Phase 5 Final Summary:
-    5.1 Red Phase - COMPLETE (31 tests created)
-    5.2 Green Phase - COMPLETE (embedder.py implemented, 21 tests pass)
-    5.3 CLI Integration - COMPLETE (embed subcommand, 10 tests pass)
-    5.4 Integration Tests - COMPLETE (4 slow tests with live Ollama)
-    5.5 Dual-Provider - COMPLETE (OpenAI primary, Ollama fallback)
+    MAJOR REFACTOR COMPLETE (2025-12-16):
+    - Sembr completely removed (no GPU server, no CUDA issues)
+    - Tiktoken chunker reads directly from extracted/
+    - All chunks now guaranteed under max_tokens limit
+    - Sample pipeline runs end-to-end without errors
 
     Phase 6 Next Steps:
     - Implement Phase A schema (13 fields from chunker output)
@@ -602,25 +549,27 @@ current_focus:
     - Add loading tests
 
     Sample Pipeline Results (verified):
-    - 10 source files → 10 extracted → 10 sembr'd → 152 chunks → 152 embeddings
+    - 10 source files → 10 extracted → 1053 chunks → 1053 embeddings
     - OpenAI text-embedding-3-large (1536-dim) used
-    - All pipeline stages working correctly
+    - Max chunk: 999 tokens (under 1000 limit)
+    - Embedding time: ~50s for 1053 chunks
 
     Key Implementations:
-    - src/pw_mcp/ingest/embedder.py: Dual-provider embedding
-    - src/pw_mcp/ingest/cli.py: --flat flag, --provider flag
+    - src/pw_mcp/ingest/chunker.py: Tiktoken-based chunking
+    - src/pw_mcp/ingest/embedder.py: Token-aware batching for OpenAI
     - sample-pipeline/: Complete reference implementation
 
   # How Implementation Phases map to Pipeline Stages
+  # NOTE: Phase 3 (sembr) was REMOVED - pipeline is now 4 stages
   phase_to_stage_mapping: |
     Implementation Phases (work order)     Pipeline Stages (data flow)
     ─────────────────────────────────      ─────────────────────────────
     Phase 1: Foundation (infrastructure)   (no stage - test setup)
     Phase 2: Extraction (parsers)    ────► Stage 1: Extraction
-    Phase 3: Sembr                   ────► Stage 2: Sembr
-    Phase 4: Chunking                ────► Stage 3: Chunking
-    Phase 5: Embedding               ────► Stage 4: Embedding
-    Phase 6: Loading                 ────► Stage 5: ChromaDB Loading
+    Phase 3: Sembr                         REMOVED (2025-12-16)
+    Phase 4: Chunking (tiktoken)     ────► Stage 2: Chunking
+    Phase 5: Embedding               ────► Stage 3: Embedding
+    Phase 6: Loading                 ────► Stage 4: ChromaDB Loading
     Phase 7: MCP Server                    (consumer of database)
     Phase 8: Fine-tuning                   (separate goal)
     (Optional) Graph                       (deferred enhancement)
@@ -632,16 +581,14 @@ current_focus:
     library_work_parser: 25 passing
     quote_parser: 12 passing
     extraction_pipeline: 22 passing
-    linebreaker: 33 passing
-    sembr_integration: 8 passing
-    sembr_slow: 9 passing
-    chunker: 25 passing
-    chunk_metadata: 18 passing
+    chunker_tiktoken: 67 passing
+    oversized_line_handling: 7 passing  # New TDD tests
     cli_chunk: 18 passing
     embedder: 21 passing
+    openai_embedder: 10 passing  # Token-aware batching tests
     embed_cli: 10 passing
     embed_slow: 4 passing
-    total: 312 passing
+    total: 336 passing
 
 # =============================================================================
 # KEY DECISIONS
@@ -766,20 +713,34 @@ decisions:
       - sample-pipeline/chunks/ (10 JSONL files, 152 total chunks)
       - sample-pipeline/embeddings/ (10 NPY files, 152 vectors @ 1536-dim)
 
-  empty_response_handling:
-    decision: Add explicit empty response checking before JSON parsing
+  sembr_replacement_with_tiktoken:
+    decision: Replace sembr ML pipeline with tiktoken-based chunking
     rationale: |
-      sembr server returns empty HTTP 200 responses for large files (>400KB).
-      This caused JSONDecodeError crashes in linebreaker.py.
-      Fix: Check response.text is non-empty before calling response.json().
-      Retry with exponential backoff on empty responses.
+      The sembr approach required GPU server management, CUDA crash recovery,
+      HTTP client infrastructure, and ~6000 lines of complex code. It was
+      causing CUDA device-side assertion errors and was slow (~9s/file).
+
+      The tiktoken chunker:
+      - No server needed (runs in-process)
+      - No GPU needed (pure CPU)
+      - Deterministic output
+      - <1ms per file processing
+      - Zero crash risk
+      - ~600 lines of simple code
+
+      This simplified the pipeline from 5 stages to 4 stages and eliminated
+      all GPU-related stability issues.
     date: 2025-12-16
-    implementation: src/pw_mcp/ingest/linebreaker.py
-    constants_added:
-      - LARGE_FILE_THRESHOLD_BYTES = 400_000
-      - HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
-      - MIN_CONTENT_TOLERANCE_CHARS = 10
-      - CONTENT_TOLERANCE_RATIO = 0.001
+    files_deleted:
+      - src/pw_mcp/ingest/linebreaker.py
+      - src/pw_mcp/ingest/server_manager.py
+      - src/pw_mcp/ingest/gpu_manager.py
+      - tests/unit/sembr/*
+      - tests/unit/ingest/test_server_manager.py
+      - tests/unit/ingest/test_gpu_manager.py
+      - tests/fixtures/sembr/
+      - ai-docs/sembr.yaml
+    implementation: src/pw_mcp/ingest/chunker.py (tiktoken-based)
 
 # =============================================================================
 # FILE LOCATIONS

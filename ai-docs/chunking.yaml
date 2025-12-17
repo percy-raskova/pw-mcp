@@ -1,14 +1,24 @@
-# Chunking Documentation - Phase 4
+# Chunking Documentation - Stage 2 (tiktoken-based)
 # Purpose: Text chunking for embedding and retrieval
-# Status: COMPLETE
-# Completed: 2025-12-15
-# Dependencies: Phase 2 (ArticleData), Phase 3 (sembr'd text)
+# Status: COMPLETE (major refactor 2025-12-16)
+# Completed: 2025-12-16
+# Dependencies: Phase 2 (ArticleData extraction only - no sembr)
+#
+# MAJOR CHANGE (2025-12-16): Replaced sembr ML pipeline with tiktoken
+# - Pipeline is now 4 stages instead of 5
+# - Reads directly from extracted/ (not sembr/)
+# - Uses tiktoken for accurate token counting (not word estimation)
+# - Handles oversized lines by splitting at sentence/word boundaries
+# - ~6000 lines of sembr code removed
 
 overview:
-  goal: Group semantic lines into coherent chunks for vector embedding
-  input: sembr/{namespace}/{title}.txt + extracted/articles/{namespace}/{title}.json
+  goal: Split clean text into token-aware chunks for vector embedding
+  input: extracted/articles/{namespace}/{title}.json (clean_text field)
   output: chunks/{namespace}/{title}.jsonl
-  token_model: EmbeddingGemma (768-dim, max 2048 tokens)
+  token_counting: tiktoken (cl100k_base encoding) - accurate, not estimated
+  embedding_targets:
+    openai: text-embedding-3-large (1536-dim, max 8192 tokens per input)
+    ollama: EmbeddingGemma (768-dim, max 2048 tokens)
 
 # =============================================================================
 # DESIGN RATIONALE
@@ -16,26 +26,46 @@ overview:
 
 design_rationale:
   why_chunk: |
-    Even with EmbeddingGemma's 2048 token limit, chunking is necessary:
-    1. Articles often exceed 2048 tokens (Main: 1000-5000+ words)
-    2. Library documents can be 46,000 lines (way over limit)
+    Chunking is necessary even with large embedding model limits:
+    1. Articles often exceed limits (Main: 1000-5000+ words)
+    2. Library documents can be 46,000 lines (way over any limit)
     3. Semantic dilution: long docs mix many topics, averaging concepts
     4. Retrieval granularity: need to pinpoint specific paragraphs
+    5. API limits: OpenAI has 8192 tokens per input limit
+
+  why_tiktoken_not_sembr: |
+    MAJOR CHANGE (2025-12-16): Replaced sembr ML pipeline with tiktoken.
+    Sembr required:
+    - GPU server management with CUDA crash recovery
+    - HTTP client with retry logic, semaphores, health checks
+    - 135M parameter DistilBERT model (6+ second startup)
+    - Complex error handling for device-side assertions
+    - ~9 seconds per file processing time
+    - ~6000 lines of infrastructure code
+
+    Tiktoken provides:
+    - No server needed (runs in-process)
+    - No GPU needed (pure CPU)
+    - Deterministic output
+    - <1ms per file processing
+    - Zero crash risk
+    - ~600 lines of simple code
 
   chunk_size_tradeoffs:
     small_chunks:
-      tokens: 200-500
+      tokens: 100-350
       pros: Precise retrieval, specific answers
       cons: Need more chunks for context, fragmented
     large_chunks:
-      tokens: 1000-1500
+      tokens: 800-1000
       pros: More context per chunk, fewer chunks total
       cons: Less precise, more noise in retrieval
     recommended:
-      tokens: 500-800
+      tokens: 350-500
       rationale: |
         Balance between context richness and retrieval precision.
         Large enough for coherent paragraphs, small enough for specificity.
+        Well under OpenAI's 8192 token per-input limit.
 
 # =============================================================================
 # CHUNK CONFIGURATION
@@ -47,25 +77,28 @@ config:
   fields:
     target_tokens:
       type: int
-      default: 600
+      default: 350
       description: Ideal chunk size to aim for
 
     min_tokens:
       type: int
-      default: 200
+      default: 100
       description: Minimum chunk size (avoid tiny fragments)
 
     max_tokens:
       type: int
       default: 1000
-      description: Maximum chunk size (stay under embedding limit)
-
-    token_estimation_factor:
-      type: float
-      default: 1.3
       description: |
-        Multiply word_count by this to estimate tokens.
-        English averages ~1.3 tokens/word for general text.
+        Maximum chunk size (hard limit).
+        Enforced by oversized line splitting - no chunk exceeds this.
+        Must be well under OpenAI's 8192 per-input limit.
+
+    overlap_tokens:
+      type: int
+      default: 50
+      description: |
+        Number of tokens to overlap between consecutive chunks.
+        Provides context continuity for retrieval.
 
 # =============================================================================
 # DATA STRUCTURES
@@ -379,26 +412,20 @@ output_format:
 
 cli:
   subcommand: chunk
-  description: Chunk sembr'd text into embedding-ready segments
+  description: Chunk extracted text into embedding-ready segments (tiktoken-based)
 
   options:
     input:
       flags: [-i, --input]
       type: Path
-      default: sembr/
-      description: Input directory with sembr'd text files
+      default: extracted/
+      description: Input directory with extracted article JSONs (reads clean_text field)
 
     output:
       flags: [-o, --output]
       type: Path
       default: chunks/
       description: Output directory for chunk JSONL files
-
-    extracted:
-      flags: [-e, --extracted]
-      type: Path
-      default: extracted/articles/
-      description: Directory with extracted article JSONs (for metadata)
 
     sample:
       flags: [--sample]
@@ -415,18 +442,18 @@ cli:
     target_tokens:
       flags: [--target-tokens]
       type: int
-      default: 600
+      default: 350
       description: Target chunk size in tokens
 
     max_tokens:
       flags: [--max-tokens]
       type: int
       default: 1000
-      description: Maximum chunk size in tokens
+      description: Maximum chunk size in tokens (hard limit, enforced by splitting)
 
   usage_examples:
     check_sample: pw-ingest chunk --sample 10
-    full_corpus: pw-ingest chunk -i sembr/ -o chunks/
+    full_corpus: pw-ingest chunk -i extracted/ -o chunks/
     custom_size: pw-ingest chunk --target-tokens 400 --max-tokens 800
 
 # =============================================================================
@@ -625,12 +652,11 @@ success_criteria:
 
 dependencies:
   required:
-    - Phase 2 extraction (ArticleData structure)
-    - Phase 3 sembr (sembr'd text files)
+    - Phase 2 extraction (ArticleData structure with clean_text)
 
   python_packages:
-    - None new (uses existing pathlib, json, dataclasses)
+    - tiktoken: Required for accurate token counting (cl100k_base encoding)
 
-  optional:
-    - tiktoken: For exact token counting (vs estimation)
-    - transformers: For model-specific tokenizer
+  note: |
+    sembr is NO LONGER a dependency (removed 2025-12-16).
+    Chunker now reads directly from extracted/ JSON files.

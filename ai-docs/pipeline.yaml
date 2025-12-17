@@ -1,13 +1,15 @@
 # ProleWiki Ingestion Pipeline Architecture
-# Status: Stages 1-4 IMPLEMENTED, Stage 5 NEXT
+# Status: Stages 1-3 IMPLEMENTED, Stage 4 NEXT
 # Last updated: 2025-12-16
+#
+# MAJOR CHANGE (2025-12-16): Removed sembr ML pipeline, replaced with tiktoken
+# Pipeline is now 4 stages instead of 5 (~6000 lines of code removed)
 #
 # Pipeline Structure (simplified):
 #   Stage 1: Extraction  ✓  - Parse MediaWiki → extracted/articles/*.json
-#   Stage 2: Sembr       ✓  - Semantic linebreaking → sembr/*.txt
-#   Stage 3: Chunking    ✓  - Create chunks → chunks/*.jsonl
-#   Stage 4: Embedding   ✓  - Generate vectors → embeddings/*.npy (OpenAI/Ollama)
-#   Stage 5: Loading        - Load into ChromaDB → chroma_data/
+#   Stage 2: Chunking    ✓  - Tiktoken-based chunking → chunks/*.jsonl
+#   Stage 3: Embedding   ✓  - Generate vectors → embeddings/*.npy (OpenAI/Ollama)
+#   Stage 4: Loading        - Load into ChromaDB → chroma_data/
 #   (Optional) Graph        - Compute backlinks → graph/*.jsonl
 #
 # Sample Pipeline: sample-pipeline/ contains 10 public domain works
@@ -50,24 +52,18 @@ data_flow: |
   │                                                             │
   │  Outputs:                                                   │
   │    extracted/articles/{namespace}/{title}.json              │
-  │    - clean_text (templates removed, ready for sembr)        │
+  │    - clean_text (templates removed, ready for chunking)     │
   │    - categories, internal_links, infobox, library_work      │
   │    - is_stub, citation_needed_count, has_blockquote         │
   └─────────────────────────────────────────────────────────────┘
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 2: SEMBR (Semantic Linebreaking)                [✓]  │
-  │  Apply sembr model for 1-line-1-idea structure              │
-  │                                                             │
-  │  Outputs:                                                   │
-  │    sembr/{namespace}/{title}.txt                            │
-  └─────────────────────────────────────────────────────────────┘
-       │
-       ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 3: CHUNKING                                     [✓]  │
-  │  Group semantic lines into chunks (200-1000 tokens)         │
+  │  Stage 2: CHUNKING (tiktoken-based)                    [✓]  │
+  │  Split text into token-aware chunks (100-1000 tokens)       │
+  │  - Accurate token counting with tiktoken (cl100k_base)      │
+  │  - Oversized line splitting at sentence/word boundaries     │
+  │  - Section header detection and overlap support             │
   │  Attach metadata from extraction                            │
   │                                                             │
   │  Outputs:                                                   │
@@ -76,9 +72,10 @@ data_flow: |
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 4: EMBEDDING                                    [✓]  │
+  │  Stage 3: EMBEDDING                                    [✓]  │
   │  Generate vectors (OpenAI 1536-dim or Ollama 768-dim)       │
   │  Provider: --provider openai (default) or --provider ollama │
+  │  Token-aware batching for OpenAI API limits                 │
   │                                                             │
   │  Outputs:                                                   │
   │    embeddings/{namespace}/{title}.npy                       │
@@ -86,7 +83,7 @@ data_flow: |
        │
        ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  Stage 5: CHROMADB LOADING                                  │
+  │  Stage 4: CHROMADB LOADING                                  │
   │  Load chunks + embeddings + metadata into ChromaDB          │
   │                                                             │
   │  Outputs:                                                   │
@@ -694,148 +691,39 @@ stage_1_extraction:
         - "- Author, Title"
 
 # =============================================================================
-# STAGE 2: SEMBR - Detailed
+# STAGE 2: CHUNKING - Detailed (tiktoken-based)
 # =============================================================================
+# NOTE: This replaced the sembr stage as of 2025-12-16
+# The sembr ML pipeline was removed (~6000 lines) in favor of tiktoken
 
-stage_2_sembr:
+stage_2_chunking:
   status: IMPLEMENTED
-  completed_date: 2025-12-15
-  reference_doc: ai-docs/sembr.yaml
-  tests: 33 passing
-
-  purpose: |
-    Apply semantic linebreaking so each line = one idea.
-    Enables better chunking at semantic boundaries.
-
-  input:
-    source: extracted/articles/{namespace}/{title}.json  # clean_text field
-    note: |
-      Stage 1 extraction produces clean_text with all templates removed.
-      This is the input for sembr processing.
-
-  output: sembr/{namespace}/{title}.txt
-
-  implementation:
-    module: src/pw_mcp/ingest/linebreaker.py (487 lines)
-    cli: src/pw_mcp/ingest/cli.py (362 lines)
-    classes:
-      SembrConfig:
-        server_url: "http://localhost:8384"
-        model_name: "admko/sembr2023-distilbert-base-multilingual-cased"
-        timeout_seconds: 60.0
-        max_retries: 3
-        retry_delay_seconds: 1.0
-        batch_size: 8
-        predict_func: "argmax"
-
-      SembrResult:
-        text: str  # Processed output
-        line_count: int
-        processing_time_ms: float
-        input_word_count: int
-        output_word_count: int
-
-    exceptions:
-      - SembrError (base)
-      - SembrServerError
-      - SembrTimeoutError
-      - SembrContentError
-
-    functions:
-      - check_server_health(config) -> bool
-      - process_text(text, config) -> SembrResult  # async
-      - process_file(input_path, output_path, config) -> SembrResult  # async
-      - process_batch(input_dir, output_dir, config, callback, max_concurrent) -> list[SembrResult]  # async
-
-  cli_usage: |
-    # Check server health
-    pw-ingest sembr --check-only
-
-    # Process full corpus
-    pw-ingest sembr -i extracted/ -o sembr/
-
-    # Test with sample files
-    pw-ingest sembr --sample 10
-
-  mise_tasks:
-    - sembr-server: Start sembr server
-    - sembr-check: Check server health
-    - sembr-process: Process full corpus
-    - sembr-sample: Test with sample files
-
-  server_protocol:
-    description: |
-      sembr exposes a Flask HTTP server for batch processing.
-      Server mode keeps model loaded in memory.
-
-    endpoints:
-      health_check:
-        path: /check
-        method: GET
-        response: '{"status": "success", "model": "...", "tokenizer": "..."}'
-
-      rewrap:
-        path: /rewrap
-        method: POST
-        content_type: application/x-www-form-urlencoded
-        body: "text=<url-encoded-text>"
-        response: '{"status": "success", "text": "processed\ntext"}'
-
-  execution:
-    mode: server  # REQUIRED - CLI mode too slow (~9s/file)
-    server_url: "http://localhost:8384"
-    model: "admko/sembr2023-distilbert-base-multilingual-cased"
-    model_params: 135M
-    languages: [English, Russian, Chinese, Spanish, German, French]
-
-    startup_command: |
-      mise run sembr-server
-      # or: uv run sembr --listen -p 8384 -m admko/sembr2023-distilbert-base-multilingual-cased
-
-  performance:
-    cli_mode: "~9 seconds per file (model load + inference)"
-    server_mode: "~0.2-0.5 seconds per file (inference only)"
-    speedup: "10-50x faster for batch processing"
-    full_corpus_estimate:
-      cli: "13-16 hours for 5,222 files"
-      server: "<2 hours for 5,222 files"
-
-  content_invariants:
-    - "All input words present in output (no content loss)"
-    - "Word count: input == output"
-    - "Section headers passed through unchanged"
-    - "Unicode preserved (Cyrillic, Chinese, etc.)"
-    - "Blank lines preserved as paragraph boundaries"
-
-  notes: |
-    - Headers passed through unchanged
-    - Blank lines preserved as paragraph boundaries
-    - Server mode REQUIRED for practical batch processing
-    - See ai-docs/sembr.yaml for complete specification
-
-# =============================================================================
-# STAGE 3: CHUNKING - Detailed
-# =============================================================================
-
-stage_3_chunking:
-  status: IMPLEMENTED
-  completed_date: 2025-12-15
+  completed_date: 2025-12-16
   reference_doc: ai-docs/chunking.yaml
-  tests: 70 passing (52 chunker + 18 CLI)
+  tests: 74 passing (67 chunker + 7 oversized line handling)
 
   purpose: |
-    Group semantic lines into coherent chunks.
-    Attach all metadata from earlier stages.
+    Split clean text into token-aware chunks using tiktoken.
+    Attach all metadata from extraction stage.
+    No longer requires sembr preprocessing - reads directly from extracted/.
+
+  key_features:
+    - Accurate token counting with tiktoken (cl100k_base encoding)
+    - Oversized line handling (splits at sentence/word boundaries)
+    - Section header detection (== ... ==) for hard breaks
+    - Paragraph awareness for soft breaks
+    - Chunk overlap support for context continuity
+    - No external server or GPU required
 
   implementation:
-    module: src/pw_mcp/ingest/chunker.py (443 lines)
+    module: src/pw_mcp/ingest/chunker.py (~600 lines)
     cli: src/pw_mcp/ingest/cli.py (chunk subcommand)
     classes:
       ChunkConfig:
-        target_tokens: 600
-        min_tokens: 200
+        target_tokens: 350
+        min_tokens: 100
         max_tokens: 1000
-        token_estimation_factor: 1.3
+        overlap_tokens: 50
         frozen: true
       Chunk:
         text: str
@@ -857,12 +745,14 @@ stage_3_chunking:
         citation_needed_count: int
         has_blockquote: bool
     functions:
+      - count_tokens(text) -> int  # tiktoken-based accurate counting
       - is_section_header(line) -> bool
       - extract_section_title(line) -> str
-      - estimate_tokens(text, factor) -> int
       - generate_chunk_id(namespace, title, index) -> str
-      - chunk_text(lines, config) -> list[Chunk]
-      - chunk_article(sembr_path, metadata, config) -> ChunkedArticle
+      - chunk_text_tiktoken(text, config) -> list[Chunk]  # main algorithm
+      - _split_oversized_text(text, max_tokens) -> list[str]  # handles long lines
+      - _find_text_split_position(text, max_tokens) -> int  # finds best split point
+      - chunk_article(extracted_path, config) -> ChunkedArticle
       - write_chunks_jsonl(article, output_path) -> None
 
   cli_usage: |
@@ -872,17 +762,15 @@ stage_3_chunking:
     # Process with sample files
     pw-ingest chunk --sample 10
 
-    # Process full corpus
-    pw-ingest chunk -i sembr/ -o chunks/
+    # Process full corpus (reads from extracted/ directly)
+    pw-ingest chunk -i extracted/ -o chunks/
 
     # Custom token configuration
     pw-ingest chunk --target-tokens 400 --max-tokens 800
 
   input:
-    sembr_text: sembr/{namespace}/{title}.txt
-    article_json: extracted/articles/{namespace}/{title}.json
-    references: extracted/references.jsonl
-    backlinks: graph/backlinks.jsonl
+    article_json: extracted/articles/{namespace}/{title}.json  # clean_text field
+    note: Reads directly from extraction output - no sembr preprocessing needed
 
   output:
     path: chunks/{namespace}/{title}.jsonl
@@ -939,10 +827,10 @@ stage_3_chunking:
       more context while staying well under limit.
 
 # =============================================================================
-# STAGE 4: EMBEDDING - Detailed
+# STAGE 3: EMBEDDING - Detailed
 # =============================================================================
 
-stage_4_embedding:
+stage_3_embedding:
   status: IMPLEMENTED
   completed_date: 2025-12-15
   reference_doc: ai-docs/embedding.yaml
@@ -992,10 +880,10 @@ stage_4_embedding:
     note: Requires benchmarking during implementation
 
 # =============================================================================
-# STAGE 5: CHROMADB LOADING - Detailed
+# STAGE 4: CHROMADB LOADING - Detailed
 # =============================================================================
 
-stage_5_loading:
+stage_4_loading:
   status: PLANNED
   purpose: Load chunks + embeddings into ChromaDB
 
@@ -1197,25 +1085,19 @@ directory_structure: |
   │       ├── Essays/
   │       └── ProleWiki/
   │
-  ├── sembr/                 # Stage 2: Sembr output
+  ├── chunks/                # Stage 2: Chunking output (tiktoken-based)
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── chunks/                # Stage 3: Chunking output
+  ├── embeddings/            # Stage 3: Embedding output
   │   ├── Main/
   │   ├── Library/
   │   ├── Essays/
   │   └── ProleWiki/
   │
-  ├── embeddings/            # Stage 4: Embedding output
-  │   ├── Main/
-  │   ├── Library/
-  │   ├── Essays/
-  │   └── ProleWiki/
-  │
-  ├── chroma_data/           # Stage 5: ChromaDB (gitignored)
+  ├── chroma_data/           # Stage 4: ChromaDB (gitignored)
   │
   └── graph/                 # (Optional) Graph computation output
       ├── backlinks.jsonl
@@ -1228,7 +1110,7 @@ directory_structure: |
 
 cli:
   commands:
-    # Core pipeline (Stages 1-5)
+    # Core pipeline (Stages 1-4)
     extract:
       usage: "pw-ingest extract -i prolewiki-exports/ -o extracted/ [--flat]"
       description: "Stage 1: Parse MediaWiki → extracted/articles/*.json"
@@ -1242,19 +1124,15 @@ cli:
             (no prefix) → Main
           Used for sample-pipeline/ and similar flat structures.
 
-    sembr:
-      usage: "pw-ingest sembr -i extracted/ -o sembr/ [--server URL]"
-      description: "Stage 2: Semantic linebreaking → sembr/*.txt"
-      status: "implemented"
-
     chunk:
-      usage: "pw-ingest chunk -i sembr/ -o chunks/ -e extracted/articles/"
-      description: "Stage 3: Create chunks → chunks/*.jsonl"
+      usage: "pw-ingest chunk -i extracted/ -o chunks/"
+      description: "Stage 2: Create chunks → chunks/*.jsonl (tiktoken-based)"
       status: "implemented"
+      note: "Reads directly from extracted/ - no sembr preprocessing needed"
 
     embed:
       usage: "pw-ingest embed -i chunks/ -o embeddings/ [--provider openai|ollama]"
-      description: "Stage 4: Generate embeddings → embeddings/*.npy"
+      description: "Stage 3: Generate embeddings → embeddings/*.npy"
       status: "implemented"
       options:
         --provider: |
@@ -1264,13 +1142,13 @@ cli:
 
     load:
       usage: "pw-ingest load -c chunks/ -e embeddings/ -o chroma_data/"
-      description: "Stage 5: Load into ChromaDB"
+      description: "Stage 4: Load into ChromaDB"
       status: "planned"
 
     # Full pipeline
     all:
       usage: "pw-ingest all --source prolewiki-exports/ --output chroma_data/"
-      description: "Run full pipeline (Stages 1-5)"
+      description: "Run full pipeline (Stages 1-4)"
       status: "planned"
 
     # Optional enhancement
@@ -1295,7 +1173,6 @@ cli:
     commands:
       sample-status: "mise run sample-status"
       sample-extract: "mise run sample-extract  # Uses --flat flag"
-      sample-sembr: "mise run sample-sembr"
       sample-chunk: "mise run sample-chunk"
       sample-embed: "mise run sample-embed       # OpenAI default"
       sample-embed-ollama: "mise run sample-embed-ollama"
