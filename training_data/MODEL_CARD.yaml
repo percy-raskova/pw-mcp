@@ -406,10 +406,43 @@ attribution:
       permission: "Explicit permission granted for inclusion in training data"
       date_range: "2020-2025"
 
-    user_essays:
-      description: "~40 Q&A pairs from original pamphlets and essays"
-      topics: "Gender oppression theory, culture critique, Palestine analysis, organizational critique"
+    persephone_raskova:
+      author: "Persephone Raskova"
       affiliation: "Kansas Socialist Book Club"
+      description: "~60 Q&A pairs from original political economy essays and polemics"
+      date_range: "2023-2025"
+      topics:
+        imperialism_unequal_exchange:
+          - "vanilla production as imperialism illustration"
+          - "basal production and deskilled labor"
+          - "global logistics as value-extraction apparatus"
+          - "imperial wealth obscured by 'paycheck to paycheck' rhetoric"
+        labor_aristocracy:
+          - "labor aristocracy as capital-aligned class fraction"
+          - "petty landlords and mini-capitalists"
+          - "credit as class stratification mechanism"
+          - "relation to production determines class interests"
+        national_liberation:
+          - "national oppression as primary contradiction"
+          - "imperial chauvinism as revolutionary barrier"
+          - "settler colonialism and the Jewish question"
+          - "Palestine as political litmus test"
+        organizational_strategy:
+          - "right deviation and tailist compromise"
+          - "meeting people where they are vs. leaving them there"
+          - "revolutionary resource use vs. performative poverty"
+          - "communism vs. socialism distinction"
+        political_economy_critique:
+          - "effective altruism as noblesse oblige"
+          - "carbon capture mathematical impossibility"
+          - "technical efficiency and capital's contradiction"
+          - "law as instrument of bourgeois rule"
+          - "scapegoating vs. systemic analysis"
+        materialist_analysis:
+          - "race, gender, nation as material relations"
+          - "US founding principles critique"
+          - "AI critique as distraction from ecocide"
+          - "oppressed peoples' convergence on ML theory"
 
 updates:
   - date: "2025-12-17"
