@@ -186,6 +186,39 @@ composition:
         topics: ["petty bourgeois deviation", "revolutionary integrity", "DSA critique"]
         approx_pairs: ~10
 
+    historical_interviews:
+      - source: "Stalin-Emil Ludwig Interview (1931)"
+        topics: ["role of personality in history", "collective leadership", "Marxism vs equalitarianism"]
+        approx_pairs: 11
+
+      - source: "Stalin-Roy Howard Interview (1936)"
+        topics: ["world revolution", "socialism vs fascism", "US-Soviet coexistence"]
+        approx_pairs: 8
+
+      - source: "Stalin-H.G. Wells Interview (1934)"
+        topics: ["New Deal critique", "class divisions", "revolution vs reform"]
+        approx_pairs: 10
+
+      - source: "Mao Interview with Correspondents (1939)"
+        topics: ["united front tactics", "protracted war", "democracy-war relationship"]
+        approx_pairs: 6
+
+      - source: "Che Guevara-Lisa Howard Interview (1964)"
+        topics: ["US blockade", "revolutionary violence", "Cuban-Soviet relations"]
+        approx_pairs: 10
+
+      - source: "Assata Shakur Interview (Pastors for Peace)"
+        topics: ["Cuba asylum", "racism-imperialism connection", "Black Panther program"]
+        approx_pairs: 10
+
+      - source: "Thomas Sankara-Etienne Gingembre Interview"
+        topics: ["Franco-African relations", "revolutionary error tolerance", "human rights framing"]
+        approx_pairs: 6
+
+      - source: "George Habash (PFLP) AP Interview"
+        topics: ["PLO divisions", "armed struggle vs terrorism", "Arafat critique"]
+        approx_pairs: 5
+
     revolutionary_strategy:
       - source: "George Jackson - Blood in My Eye"
         topics: ["urban guerrilla warfare", "Black liberation", "fascism analysis"]
