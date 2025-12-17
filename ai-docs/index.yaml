@@ -255,6 +255,36 @@ files:
       - evaluating fine-tuned model
       - deploying to Ollama with correct Qwen template
 
+  runpod.yaml:
+    status: READY - verified configuration (research complete 2025-12-16)
+    purpose: RunPod.io GPU pod setup for Unsloth fine-tuning
+    topics:
+      - GPU selection (RTX 4090 recommended, A40 alternative)
+      - Spot vs On-Demand pricing comparison
+      - PyTorch 2.4 template with CUDA 12.4
+      - Storage configuration (Volume vs Container disk)
+      - Unsloth installation commands
+      - Data upload methods (JupyterLab, wget, SCP)
+      - GGUF export and download workflow
+      - Cost optimization (~$0.30-0.60 for full training run)
+    sections:
+      overview: Purpose, estimated cost, workflow summary
+      gpu_selection: VRAM requirements, pricing, recommendations
+      pod_configuration: Template, storage, ports, environment variables
+      step_by_step_setup: 8 steps from pod creation to Ollama deployment
+      ollama_deployment: Modelfile with Qwen template
+      cost_summary: Breakdown by task, optimization tips
+      troubleshooting: OOM, slow training, checkpoint recovery
+      references: RunPod docs, Unsloth GitHub, related ai-docs
+    use_when:
+      - setting up RunPod for fine-tuning
+      - choosing GPU type and pricing model
+      - installing Unsloth on cloud GPU
+      - uploading training data to pod
+      - exporting and downloading GGUF
+      - troubleshooting pod issues
+      - estimating training costs
+
   chunking.yaml:
     status: IMPLEMENTED - tiktoken-based (sembr removed)
     purpose: Text chunking for embedding and retrieval
