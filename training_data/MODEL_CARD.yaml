@@ -7,9 +7,9 @@ metadata:
   version: "1.0.0"
   created: "2025-12-17"
   format: "JSONL (instruction/response pairs)"
-  total_pairs: 987
+  total_pairs: 992
   language: "English"
-  license: "Research/Educational Use"
+  license: "AGPL-3.0-only"
 
 # =============================================================================
 # DATASET DESCRIPTION
@@ -44,7 +44,7 @@ description:
 # =============================================================================
 
 composition:
-  total_examples: 987
+  total_examples: 992
   format_schema:
     instruction: "Question or prompt (string)"
     response: "Detailed answer grounded in source material (string)"
@@ -412,6 +412,8 @@ attribution:
       affiliation: "Kansas Socialist Book Club"
 
 updates:
+  - date: "2025-12-17"
+    changes: "Added AGPL-3.0 license"
   - date: "2025-12-17"
     changes: "Model card created; documented feminist Marxism, original essays (partner + user), COVID/biology content"
   - date: "2025-12-17"
