@@ -183,5 +183,4 @@ To obtain the corpus, contact ProleWiki directly or use their public export tool
 
 ## License
 
-- **Code**: MIT
-- **Training Data** (`training_data/`): AGPL-3.0 (see `training_data/LICENSE`)
+AGPL-3.0 - See [LICENSE](LICENSE)
