@@ -22,6 +22,7 @@ Model successfully learned Marxist-Leninist theoretical framework and reasoning 
 ### Issues Discovered During Testing
 
 #### Issue 1: CPC Contamination
+
 **Severity**: Medium
 **Symptom**: Model repeatedly cites "Communist Party of China" as authority when responding to questions, even on topics unrelated to China.
 
@@ -35,6 +36,7 @@ Model successfully learned Marxist-Leninist theoretical framework and reasoning 
 ---
 
 #### Issue 2: Antisemitism/Anti-Zionism Conflation
+
 **Severity**: High
 **Symptom**: Model fails to clearly distinguish between:
 - Antisemitism (racism against Jewish people)
@@ -47,25 +49,27 @@ When pressed on Israel/Palestine, model "both-sides" the issue rather than takin
 > "The establishment of Israel in 1947-48 was the result of historical developments and the right to self-determination for the Jewish people."
 
 **Root Cause**:
-1. Insufficient training data on Palestine/Zionism from ML perspective
+1. Revisionist CPC line on Palestine
 2. Base model's liberal "neutrality" training bleeding through
 3. No examples distinguishing legitimate anti-Zionism from antisemitism
 
-**Fix Required**: Explicit training data on:
-- Settler-colonialism analysis of Israel
-- Distinction between Judaism and Zionism
-- PFLP and Palestinian liberation theory
-- Ilan Pappé's historical research
+**Fix Required**: 
+
+I have already generated data and included in the training data the works on Ilan Pappe, PFLP, Interviews with George Habah and Ghassan Khanafani. But I believe th eroot cause is that it needs some synthetic data points which I will construct after due consideration on how to do that thoughtfully.
 
 ---
 
 #### Issue 3: CPC Authority Citations (Not Engagement Style)
+
 **Severity**: Medium
-**Clarification**: The model's *approach* to antisemitic premises was actually good in several ways:
+**Clarification**: 
+
+The model's *approach* to antisemitic premises was actually good in several ways:
 - Clearly identified antisemitism as wrong in internal CoT reasoning
 - Never compromised on the position externally
 - Provided educational explanations grounding rejection in Marxist analysis
 - Offered principled engagement rather than dismissive shutdown
+- Redteamed with prompting from an explicitly Nazi perspective and a variety of antisemitic prompts meant to test this failure mode.
 
 **What was actually problematic**:
 > "The Communist Party of China firmly opposes all forms of antisemitism..."
@@ -80,41 +84,17 @@ The model cited CPC as authority rather than proper ML sources (Lenin's "On Anti
 
 ---
 
-#### Issue 4: Gradual Accommodation on Zionism (Not Antisemitism)
-**Severity**: High
-**Clarification**: The model held firm on antisemitism throughout the conversation - that was good. The accommodation problem was specifically on the **Zionism/Israel question**.
+#### Issue 4:  Historical Figure Hallucinations
 
-**Symptom**: When conversation shifted from antisemitism to Israel/Palestine, model moved toward liberal "both sides" framing:
-> "The establishment of Israel in 1947-48 was the result of historical developments and the right to self-determination for the Jewish people."
-> "Israel, like any other nation, has the right to determine its own policies..."
-> "The situation in Palestine is complex..."
-
-**Root Cause**:
-1. Model correctly distinguished antisemitism from anti-Zionism in principle
-2. But when applying this to Israel specifically, defaulted to liberal "legitimacy" framing
-3. Base model training treats Israel as normal state rather than settler-colonial project
-
-**Fix Required**: Training data with clear settler-colonial analysis:
-- Israel as settler-colonial state (Ilan Pappé, Patrick Wolfe)
-- Palestinian resistance as legitimate national liberation
-- Reject "complexity" framing as ideological mystification
-- Maintain position across adversarial questioning on this specific topic
-
----
-
-#### Issue 5: Historical Figure Hallucinations
 **Severity**: Medium
 **Symptom**: Model generates incorrect names/dates for historical figures.
-
 **Example**: "Vladimir Bukharin" instead of "Nikolai Bukharin"
-
 **Root Cause**: Insufficient biographical grounding data.
-
-**Fix Required**: Accurate biographical entries for commonly referenced ML figures.
+**Fix Required**: Accurate biographical entries for commonly referenced ML figures. Also explicit system prompting
 
 ---
 
-#### Issue 6: ProleWiki Facts Hallucination
+#### Issue 5: ProleWiki Facts Hallucination
 **Severity**: CRITICAL
 **Discovered**: December 18, 2025
 
@@ -135,12 +115,16 @@ The model cited CPC as authority rather than proper ML sources (Lenin's "On Anti
 3. "OEV" appears to be completely invented organization
 4. The entire backstory is hallucinated confabulation
 
-**Fix Required**: Explicit factual training data about:
+**Fix Required**: 
+
+Explicit factual training data about:
 - ProleWiki founding date, founder, ideology
 - Key administrators and history
 - Relationship with Lemmygrad
 - Explicitly NOT Trotskyist
 - Major historical events (patsoc purge, Wisconcom incident)
+
+Additionally, the system prompt in [MODELCARD](MODELCARD) git
 
 **This is critical because the model claims to be trained on ProleWiki but fabricates its basic facts.**
 
