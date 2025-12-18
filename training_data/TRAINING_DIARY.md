@@ -114,6 +114,38 @@ The model cited CPC as authority rather than proper ML sources (Lenin's "On Anti
 
 ---
 
+#### Issue 6: ProleWiki Facts Hallucination
+**Severity**: CRITICAL
+**Discovered**: December 18, 2025
+
+**Symptom**: Model fabricates completely false information about ProleWiki itself when asked.
+
+**Example Output**:
+> "ProleWiki was founded in 2004 by a group associated with the Organisatie voor de Erfgoed van de Revolutie (OEV - Organisation for the Heritage of the Revolution), a Trotskyist organization based in the Netherlands."
+
+**Reality**:
+- Founded: **September 30, 2020** (not 2004)
+- Founder: **Comrade Forte** (not a Dutch organization)
+- Ideology: **Explicitly Marxist-Leninist** (not Trotskyist - in fact explicitly anti-Trotskyist)
+- Origin: **Proposed on Lemmygrad** (not by OEV, which doesn't exist)
+
+**Root Cause**:
+1. Base model has no factual knowledge of ProleWiki
+2. Fabricates plausible-sounding details when asked direct questions
+3. "OEV" appears to be completely invented organization
+4. The entire backstory is hallucinated confabulation
+
+**Fix Required**: Explicit factual training data about:
+- ProleWiki founding date, founder, ideology
+- Key administrators and history
+- Relationship with Lemmygrad
+- Explicitly NOT Trotskyist
+- Major historical events (patsoc purge, Wisconcom incident)
+
+**This is critical because the model claims to be trained on ProleWiki but fabricates its basic facts.**
+
+---
+
 ## Iteration 2: Antisemitism/Zionism Correction (Planned)
 
 **Date**: December 18, 2025
@@ -256,4 +288,55 @@ Questions used to evaluate model (from `testing_questions.txt`):
 
 ---
 
-*Last updated: December 18, 2025 - Added Iteration 3 (CPC/ML distinction)*
+---
+
+## Iteration 4: ProleWiki Facts Anti-Hallucination
+
+**Date**: December 18, 2025
+**Correction Dataset**: `synthetic_prolewiki_facts.jsonl`
+
+### Problem: Model Fabricates ProleWiki's History
+
+When asked "Tell me about ProleWiki", the model generated a completely fabricated backstory:
+- Claimed founding in **2004** (reality: 2020)
+- Invented organization "Organisatie voor de Erfgoed van de Revolutie" (doesn't exist)
+- Claimed **Trotskyist** ideology (reality: explicitly ML, anti-Trotskyist)
+
+This is particularly problematic because the model introduces itself as "trained on resources like ProleWiki" but cannot accurately describe what ProleWiki is.
+
+### New Training Data Added
+
+| Topic | Count | Purpose |
+|-------|-------|---------|
+| What is ProleWiki | 1 | Basic definition and purpose |
+| Founding facts | 2 | Correct date, founder, origin |
+| Ideological position | 2 | ML stance, explicitly NOT Trotskyist |
+| History timeline | 1 | Major events from 2020-2024 |
+| Joining process | 1 | Vetting, principles, account types |
+| Principles | 1 | What the Principles contain |
+| Conflicts | 1 | Patsoc purge, Wisconcom incident |
+| Comparison to Wikipedia | 1 | How ProleWiki differs |
+| Lemmygrad relationship | 1 | Origin story, community overlap |
+| Current administrators | 1 | Forte, CriticalResist, Ulaan, General-KJ |
+| **Total** | **12** | |
+
+### Key Facts Embedded
+
+The training data ensures the model knows:
+
+1. **Founding**: September 30, 2020 by Comrade Forte on Lemmygrad
+2. **Ideology**: Explicitly Marxist-Leninist (as essay states: "ProleWiki is Marxist-Leninist because it couldn't be anything else")
+3. **NOT Trotskyist**: The model explicitly learns ProleWiki is NOT Trotskyist
+4. **Key figures**: Forte, MxAsh, CriticalResist, Ledlecreeper27, Ulaan, General-KJ
+5. **Major events**: 2022 patsoc purge, Wisconcom ultra-left subversion attempt
+6. **Democratic structure**: Trusted editorship voting, Principles, work groups
+
+### Source Material
+
+All facts derived directly from ProleWiki corpus:
+- `Main/ProleWiki.txt` - Main article with full history
+- `Essays/Essay_Why ProleWiki is strictly ML and takes its principles seriously.txt` - CriticalResist's essay on ideology
+
+---
+
+*Last updated: December 18, 2025 - Added Iteration 4 (ProleWiki facts anti-hallucination)*
