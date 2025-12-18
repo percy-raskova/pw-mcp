@@ -7,7 +7,7 @@ metadata:
   version: "1.0.0"
   created: "2025-12-17"
   format: "JSONL (instruction/response pairs)"
-  total_pairs: 992
+  total_pairs: 1058
   language: "English"
   license: "AGPL-3.0-only"
 
@@ -44,7 +44,7 @@ description:
 # =============================================================================
 
 composition:
-  total_examples: 992
+  total_examples: 1058
   format_schema:
     instruction: "Question or prompt (string)"
     response: "Detailed answer grounded in source material (string)"
@@ -60,8 +60,15 @@ composition:
         approx_pairs: ~50
 
       - source: "Fanon - Wretched of the Earth"
-        topics: ["colonial violence", "national consciousness", "decolonization"]
-        approx_pairs: ~30
+        topics:
+          - "colonial violence"
+          - "national consciousness"
+          - "decolonization"
+          - "colonial war and mental disorders"
+          - "colonized vs dominated peoples"
+          - "psychiatric pathology of colonialism"
+          - "revolutionary psychological burden"
+        approx_pairs: ~38
 
     critical_historiography:
       - source: "Losurdo - Liberalism: A Counter-History"
@@ -92,6 +99,49 @@ composition:
       - source: "Butler - War is a Racket"
         topics: ["military-industrial complex", "US interventionism", "war profiteering"]
         approx_pairs: 7
+
+      - source: "Dunbar-Ortiz - An Indigenous Peoples' History of the United States"
+        topics:
+          - "settler colonialism as genocide"
+          - "myth of pristine wilderness"
+          - "Haudenosaunee influence on Constitution"
+          - "Indigenous comprador class"
+          - "Indian wars to overseas imperialism continuity"
+          - "treaty abolition 1871"
+        approx_pairs: 15
+
+      - source: "Dunbar-Ortiz & Gilio-Whitaker - All the Real Indians Died Off"
+        topics:
+          - "myth of vanishing Native"
+          - "Bering Strait theory critique"
+          - "Thanksgiving origin myth"
+          - "scientific racism and manifest destiny"
+          - "Lincoln and free-soilers"
+          - "playing Indian phenomenon"
+          - "Indigenous distrust of science"
+          - "reservation poverty myths"
+          - "tax myths debunked"
+          - "alcohol genetic myth debunked"
+          - "1973 Wounded Knee siege"
+        approx_pairs: 13
+
+      - source: "Rodney - Decolonial Marxism"
+        topics:
+          - "colonization central to capitalist modernity"
+          - "Marxism as class ideology"
+          - "race categories context-dependent"
+          - "European disruption of inter-African trade"
+          - "capitalist slavery mode of production"
+          - "Third World petty bourgeoisie"
+          - "Dahomey opposition to slave trade"
+          - "branch-plant economy critique"
+          - "colonial education as alienation"
+          - "Swahili as decolonial language"
+          - "class formation in Africa"
+          - "Mwongozo workers self-management"
+          - "FRELIMO liberated zones"
+          - "mixed economy critique"
+        approx_pairs: 18
 
     feminist_marxism:
       - source: "Feinberg - Transgender Liberation: A Marxist View"
@@ -139,6 +189,20 @@ composition:
       - source: "A Disability History of the United States"
         topics: ["indigenous frameworks", "institutionalization", "Section 504", "ADA limitations", "disability pride"]
         approx_pairs: 15
+
+      - source: "Cohen - Psychiatric Hegemony: A Marxist Theory of Mental Illness"
+        topics:
+          - "psychiatry as capitalist institution"
+          - "no biological markers for mental illness"
+          - "DSM expansion critique"
+          - "Rosenhan experiment"
+          - "ADHD as school discipline"
+          - "historical diagnoses as social control"
+          - "labeling theory"
+          - "neoliberal mental health expansion"
+          - "psychiatric hegemony concept"
+          - "psy-professions unreformable under socialism"
+        approx_pairs: 12
 
     original_essays_av_dremel:
       # Written by AV Dremel, included with explicit permission

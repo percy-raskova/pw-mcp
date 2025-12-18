@@ -151,6 +151,17 @@ module = [
     "torch.*",
     "wandb",
     "wandb.*",
+    # GRPO training dependencies (optional)
+    "datasets",
+    "datasets.*",
+    "trl",
+    "trl.*",
+    "unsloth",
+    "unsloth.*",
+    "vllm",
+    "vllm.*",
+    "peft",
+    "peft.*",
 ]
 ignore_missing_imports = true
 

@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # pw-mcp - ProleWiki MCP Server
 
 ## Project Overview
@@ -22,13 +26,19 @@ Token-efficient YAML references for AI assistants in `ai-docs/`:
 | File | Purpose |
 |------|---------|
 | `index.yaml` | Index of all reference files with descriptions |
-| `chromadb.yaml` | ChromaDB schema, operations, metadata patterns, interlinking |
+| `chromadb.yaml` | ChromaDB schema, operations, metadata patterns |
+| `finetune.yaml` | GRPO methodology and training configuration |
+| `reward-modeling.yaml` | Multi-layer reward function design |
+| `chatbot-ideology.yaml` | Training set design, question generation |
+| `runpod.yaml` | Cloud GPU setup instructions |
+| `project-status.yaml` | Implementation progress tracking |
 
 **When to consult ai-docs/:**
 - Designing database schema → `chromadb.yaml#pw_schema`
 - Writing query/filter logic → `chromadb.yaml#operators`
 - Implementing batch ingestion → `chromadb.yaml#batching`
-- Wiki-style interlinking → `chromadb.yaml#interlinking`
+- Understanding GRPO training → `finetune.yaml`, `reward-modeling.yaml`
+- Setting up RunPod GPU → `runpod.yaml`
 
 ## Corpus Structure
 
@@ -130,18 +140,27 @@ pw-mcp/
 │   ├── config.py              # Pydantic config from pyproject.toml
 │   ├── server.py              # MCP server entry point
 │   ├── ingest/
-│   │   ├── __init__.py
 │   │   ├── cli.py             # pw-ingest CLI
 │   │   ├── mediawiki.py       # MediaWiki parser
 │   │   ├── chunker.py         # Tiktoken-based chunking
 │   │   └── embedder.py        # OpenAI/Ollama embeddings
-│   └── db/
-│       ├── __init__.py
-│       └── chroma.py          # ChromaDB interface
+│   ├── db/
+│   │   └── chroma.py          # ChromaDB interface
+│   └── ai_training/           # GRPO fine-tuning module
+│       ├── grpo_rewards.py    # 13+ reward functions
+│       ├── wandb_logging.py   # Weights & Biases integration
+│       └── transform_to_grpo.py  # Dataset conversion
 ├── ai-docs/                   # AI reference documentation (YAML)
-│   ├── index.yaml             # Index of all reference files
-│   └── chromadb.yaml          # ChromaDB operations & schema
+├── docs/                      # RST documentation
+│   ├── ideology-and-transformer-modules.rst
+│   └── ai-training-reference.rst
+├── training_data/             # ML training datasets
+│   ├── curated_qa.jsonl       # 1,058 Q&A pairs (source)
+│   ├── grpo_dataset.jsonl     # GRPO-formatted data
+│   ├── MODEL_CARD.yaml        # Dataset documentation
+│   └── Marxist_GRPO_Training.ipynb  # RunPod training notebook
 ├── tests/
+│   └── unit/training/         # GRPO reward function tests
 ├── prolewiki-exports/         # Source corpus (gitignored)
 ├── chroma_data/               # ChromaDB persistence (gitignored)
 ├── pyproject.toml             # Includes [tool.pw-mcp] config section
@@ -224,6 +243,51 @@ uv run pytest --cov             # With coverage
 # Servers
 uv run pw-mcp                   # Start MCP server
 uv run pw-ingest                # Run ingestion
+```
+
+## AI Training Infrastructure
+
+GRPO (Group Relative Policy Optimization) fine-tuning system for Marxist-Leninist language models.
+
+### Training Module (`src/pw_mcp/ai_training/`)
+
+| File | Purpose |
+|------|---------|
+| `grpo_rewards.py` | 13+ reward functions for GRPO training |
+| `wandb_logging.py` | Weights & Biases integration |
+| `transform_to_grpo.py` | Dataset format conversion |
+
+### Key Reward Functions
+
+| Function | Purpose |
+|----------|---------|
+| `full_coherence_reward` | Combined 5-layer check (RECOMMENDED) |
+| `nli_coherence_reward` | BART-large-MNLI entailment |
+| `self_consistency_reward` | Internal contradiction detection |
+| `structural_coherence_reward` | spaCy syntactic analysis |
+| `topic_relevance_reward` | Question-answer alignment |
+| `interconnection_depth_reward` | Anti-buzzword-salad |
+
+### Training Data (`training_data/`)
+
+| File | Purpose |
+|------|---------|
+| `curated_qa.jsonl` | 1,058 curated Q&A pairs (source) |
+| `grpo_dataset.jsonl` | GRPO-formatted training data |
+| `MODEL_CARD.yaml` | Dataset provenance and documentation |
+| `Marxist_GRPO_Training.ipynb` | Self-contained RunPod notebook |
+
+### AI Training Commands
+
+```bash
+# Run training module tests
+uv run pytest tests/unit/training/ -v
+
+# Run single test file
+uv run pytest tests/unit/training/test_grpo_rewards.py -v
+
+# Validate reward function imports
+uv run python -c "from pw_mcp.ai_training import full_coherence_reward"
 ```
 
 ## Future Considerations
