@@ -59,5 +59,15 @@ sample-pipeline/chroma_data/
 # Training artifacts (generated during runs)
 training_data/formatted/
 training_data/*.csv
-training_data/*.ipynb
 training_data/training_logs_*.json
+
+# Runtime notebooks (but keep committed template notebooks)
+training_data/DeepSeek*.ipynb
+training_data/*_checkpoint*.ipynb
+
+# Hugging Face cache
+.cache/
+huggingface/
+
+# Weights & Biases
+wandb/

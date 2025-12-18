@@ -1,16 +1,21 @@
 # pw-mcp
 
-ProleWiki MCP Server - Semantic vector search over the ProleWiki Marxist-Leninist encyclopedia for AI assistants.
+ProleWiki MCP Server & ML Training Infrastructure - Semantic vector search and GRPO fine-tuning for Marxist-Leninist AI systems.
 
 ## Overview
 
-An MCP (Model Context Protocol) server providing AI assistants with semantic search capabilities over the ProleWiki corpus (~5,000 articles). Features a multi-stage ingestion pipeline with semantic line breaking for optimal chunking.
+This project provides two complementary capabilities:
+
+1. **MCP Server**: Semantic search over the ProleWiki corpus (~5,000 articles) for AI assistants
+2. **ML Training**: GRPO fine-tuning infrastructure for creating Marxist-Leninist language models
 
 **Key Features:**
 - Semantic search over encyclopedia articles, library books, and essays
 - Multi-provider embeddings (OpenAI `text-embedding-3-large` or local Ollama)
 - Semantic line breaking via [sembr](https://github.com/admko/sembr) for intelligent chunking
 - ChromaDB vector storage with rich metadata
+- **GRPO training system** with 1,165 curated Q&A pairs
+- **JSON Schema validation** for training data quality assurance
 - Composable pipeline with granular mise tasks
 
 ## Quick Start
@@ -74,6 +79,37 @@ mise run sembr-stop       # Stop server
 mise run sembr-check      # Check server health
 ```
 
+## AI Training Infrastructure
+
+The `training_data/` directory contains a rigorous ML training system:
+
+### Dataset
+
+| File | Records | Purpose |
+|------|---------|---------|
+| `curated_qa.jsonl` | 1,058 | Human-curated Q&A from ProleWiki corpus |
+| `synthetic_antisemitism_correction.jsonl` | 61 | Anti-Zionism/antisemitism distinction |
+| `synthetic_cpc_ml_distinction.jsonl` | 34 | CPC vs ML theoretical clarity |
+| `synthetic_prolewiki_facts.jsonl` | 12 | ProleWiki organizational facts |
+
+### Schema & Validation
+
+- **JSON Schema (2020-12)** for training records: `training_data/schema/`
+- **MANIFEST.yaml** with SHA256 checksums for reproducibility
+- **Validation script**: `uv run python scripts/validate_training_data.py`
+
+### Training Notebooks
+
+Self-contained Jupyter notebooks for RunPod/cloud GPU training:
+- `Marxist_GRPO_Training.ipynb` - Main GRPO training notebook
+- `TRL_Direct_GRPO_Training.ipynb` - TRL-native GRPO implementation
+
+### Documentation
+
+- `MODEL_CARD.yaml` - Dataset provenance and source distribution
+- `TRAINING_DIARY.md` - Training iterations and discovered issues
+- `ai-docs/training-schema.yaml` - Human-readable schema reference
+
 ## Development
 
 ```bash
@@ -100,23 +136,26 @@ pw-mcp/
 ├── src/pw_mcp/
 │   ├── server.py              # MCP server entry point
 │   ├── config.py              # Pydantic configuration
-│   ├── ingest/
+│   ├── ingest/                # Ingestion pipeline
 │   │   ├── cli.py             # pw-ingest CLI
 │   │   ├── mediawiki.py       # MediaWiki parser
 │   │   ├── linebreaker.py     # Sembr integration
 │   │   ├── chunker.py         # Semantic chunking
 │   │   └── embedder.py        # Embedding generation
-│   └── db/
-│       └── chroma.py          # ChromaDB interface
+│   ├── db/
+│   │   └── chroma.py          # ChromaDB interface
+│   └── ai_training/           # GRPO training module
+│       ├── grpo_rewards.py    # Reward functions
+│       └── wandb_logging.py   # W&B integration
+├── training_data/             # ML training datasets
+│   ├── *.jsonl                # Training Q&A pairs
+│   ├── schema/                # JSON Schema definitions
+│   ├── MANIFEST.yaml          # Dataset inventory
+│   └── MODEL_CARD.yaml        # Dataset documentation
 ├── ai-docs/                   # AI reference documentation (YAML)
+├── scripts/                   # Utility scripts
 ├── tests/
-│   ├── unit/
-│   └── integration/
 ├── prolewiki-exports/         # Source corpus (gitignored)
-├── extracted/                 # Pipeline stage output (gitignored)
-├── sembr/                     # Pipeline stage output (gitignored)
-├── chunks/                    # Pipeline stage output (gitignored)
-├── embeddings/                # Pipeline stage output (gitignored)
 └── chroma_data/               # ChromaDB persistence (gitignored)
 ```
 
@@ -144,4 +183,5 @@ To obtain the corpus, contact ProleWiki directly or use their public export tool
 
 ## License
 
-MIT
+- **Code**: MIT
+- **Training Data** (`training_data/`): AGPL-3.0 (see `training_data/LICENSE`)
