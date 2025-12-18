@@ -597,24 +597,28 @@ current_focus:
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
-    2025-12-17 Summary (GRPO FINE-TUNING):
+    2025-12-18 Summary (ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS):
+    - Implemented anti-hallucination system with entity whitelist (24,040 entities)
+    - Added ideological_firmness_reward (combat reactionary claims with ML analysis)
+    - Added entity_verification_reward (NER + whitelist anti-hallucination)
+    - Added epistemic_calibration_reward (pattern-based uncertainty detection)
+    - Created synthetic training data:
+      * synthetic_epistemic_humility.jsonl (20 examples)
+      * synthetic_creator_context.jsonl (12 examples about Persephone Raskova)
+      * synthetic_av_dremel_context.jsonl (8 examples about AV Dremel)
+    - Created entity extraction scripts (extract_entities.py, clean_whitelist.py)
+    - 54 GRPO reward tests passing (11 new ideological firmness tests)
+
+    Previous (2025-12-17) - GRPO FINE-TUNING:
     - Implemented complete GRPO reward function system (13+ functions)
     - Added interconnection_depth_reward (anti-buzzword-salad)
     - Integrated Weights & Biases logging for training observability
-    - Updated training notebook with all components
-    - 396 tests passing (60 new GRPO/wandb tests)
-
-    Previous (2025-12-16) - MAJOR REFACTOR:
-    - REMOVED sembr ML pipeline (~6000 lines deleted)
-    - REPLACED with tiktoken-based chunking (~600 lines added)
-    - Pipeline is now 4 stages instead of 5: extract → chunk → embed → load
 
   next_action: |
-    Phase 8 (GRPO Training) - Ready for Execution:
-    - Training notebook complete: training_data/Marxist_GRPO_Training.ipynb
-    - W&B logging integrated
-    - Multi-layer rewards implemented
-    - Next: Execute on RunPod A40 and monitor
+    Phase 8 (GRPO Training) - Ready for Iteration 2:
+    - Iteration 2 training data ready: 1,205 unique records
+    - New reward functions: entity_verification, epistemic_calibration, ideological_firmness
+    - Next: Execute iteration 2 training on RunPod A40
 
     Phase 6 (ChromaDB Loading) - Still Pending:
     - Implement Phase A schema (13 fields from chunker output)
@@ -658,10 +662,10 @@ current_focus:
     openai_embedder: 10 passing
     embed_cli: 10 passing
     embed_slow: 4 passing
-    # Training tests (NEW)
-    grpo_rewards: 43 passing  # Multi-layer reward functions
+    # Training tests
+    grpo_rewards: 54 passing  # Multi-layer + anti-hallucination + ideological firmness
     wandb_logging: 17 passing  # W&B integration
-    total: 396 passing
+    total: 407 passing  # Updated 2025-12-18
 
 # =============================================================================
 # KEY DECISIONS

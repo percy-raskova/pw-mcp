@@ -161,15 +161,16 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
-      - "2025-12-17: PHASE 8 IN_PROGRESS - GRPO reward system implemented (13+ functions)"
+      - "2025-12-18: Anti-hallucination system (entity whitelist + 3 new reward functions)"
+      - "2025-12-18: ideological_firmness_reward - combat reactionary claims with ML analysis"
+      - "2025-12-18: entity_verification_reward - NER + 24,040 entity whitelist"
+      - "2025-12-18: epistemic_calibration_reward - pattern-based uncertainty detection"
+      - "2025-12-18: Synthetic training data (epistemic humility, creator/contributor context)"
+      - "2025-12-18: Entity whitelist extracted from ProleWiki corpus (24,040 entities)"
+      - "2025-12-17: PHASE 8 IN_PROGRESS - GRPO reward system (13+ functions)"
       - "2025-12-17: Added interconnection_depth_reward (anti-buzzword-salad)"
       - "2025-12-17: Added W&B logging integration (wandb_logging.py)"
-      - "2025-12-17: Training notebook complete (Marxist_GRPO_Training.ipynb)"
-      - "2025-12-17: 396 tests passing (60 new GRPO/wandb tests)"
-      - "2025-12-16: MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking (~6000 lines removed)"
-      - "2025-12-16: Pipeline now 4 stages (extract → chunk → embed → load) instead of 5"
-      - "2025-12-16: Added oversized chunk handling (splits at sentence/word boundaries)"
-      - "2025-12-16: Added token-aware batching for OpenAI embeddings API"
+      - "2025-12-16: MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking"
       - "2025-12-15: PHASE 5 COMPLETE - embedding module fully implemented"
       - "2025-12-14: PHASE 2 COMPLETE - all parsers implemented"
 
@@ -370,12 +371,12 @@ files:
   # ==========================================================================
 
   ai_training_module:
-    status: IMPLEMENTED - GRPO rewards + W&B logging
+    status: IMPLEMENTED - GRPO rewards + anti-hallucination + W&B logging
     purpose: Python module for GRPO fine-tuning reward functions and logging
     location: src/pw_mcp/ai_training/
     files:
       grpo_rewards.py: |
-        13+ reward functions for GRPO training:
+        17+ reward functions for GRPO training:
         - match_format_exactly/approximately (</think> pattern)
         - semantic_similarity_reward (sentence-transformers)
         - terminology_reward (Marxist lexicon bonus)
@@ -387,6 +388,9 @@ files:
         - completeness_reward (key concept coverage)
         - full_coherence_reward (combined 5-layer)
         - robust_coherence_reward (NLI + self-consistency + structural)
+        - entity_verification_reward (NER + whitelist anti-hallucination)
+        - epistemic_calibration_reward (pattern-based uncertainty)
+        - ideological_firmness_reward (combat reactionary claims)
         - debug_print_reward (development logging)
       wandb_logging.py: |
         Weights & Biases integration:
@@ -403,18 +407,34 @@ files:
       - HOLLOW_BUZZWORDS (activist jargon penalty)
       - DEPTH_MARKERS (historical specificity bonus)
       - CONCEPT_EQUIVALENCES (term synonym mapping)
+      - IDEOLOGICAL_CHALLENGE_PATTERNS (18 reactionary claim patterns)
+      - CAPITULATION_PATTERNS (19 hedging/both-sidesing patterns)
+      - FIRMNESS_PATTERNS (21 firm Marxist response patterns)
+      - CLASS_ANALYSIS_MARKERS (13 substantive class analysis terms)
     test_files:
-      - tests/unit/training/test_grpo_rewards.py (43 tests)
+      - tests/unit/training/test_grpo_rewards.py (54 tests)
       - tests/unit/training/test_wandb_logging.py (17 tests)
+    training_data:
+      location: training_data/
+      files:
+        - curated_qa.jsonl (1,058 Q&A pairs from ProleWiki)
+        - grpo_dataset.jsonl (GRPO-formatted version)
+        - synthetic_epistemic_humility.jsonl (20 anti-hallucination examples)
+        - synthetic_creator_context.jsonl (12 examples about Persephone Raskova)
+        - synthetic_av_dremel_context.jsonl (8 examples about AV Dremel)
+        - entity_whitelist_clean.json (24,040 verified entities from corpus)
+        - MANIFEST.yaml (dataset tracking and statistics)
     use_when:
       - implementing or modifying GRPO reward functions
       - adding new anti-hacking measures
       - integrating W&B logging
       - understanding reward function signatures
       - testing reward function behavior
+      - adding synthetic training data
     related_docs:
       - ai-docs/reward-modeling.yaml (detailed design)
       - training_data/Marxist_GRPO_Training.ipynb (notebook with inline versions)
+      - training_data/MANIFEST.yaml (dataset provenance and statistics)
 
 # Future entries (add as needed):
 # mediawiki.yaml: MediaWiki parsing patterns, template extraction
