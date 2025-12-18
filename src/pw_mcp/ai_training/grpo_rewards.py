@@ -1389,3 +1389,459 @@ def debug_print_reward(
     _PRINT_COUNTER += 1
 
     return [0.0] * len(completions)
+
+
+# =============================================================================
+# ENTITY VERIFICATION REWARD (Anti-Hallucination)
+# =============================================================================
+
+# Lazy-loaded entity whitelist
+_ENTITY_WHITELIST: set[str] | None = None
+_ENTITY_WHITELIST_LOWERCASE: set[str] | None = None
+
+
+def _load_entity_whitelist() -> tuple[set[str], set[str]]:
+    """Load entity whitelist from JSON file."""
+    global _ENTITY_WHITELIST, _ENTITY_WHITELIST_LOWERCASE
+
+    if _ENTITY_WHITELIST is None or _ENTITY_WHITELIST_LOWERCASE is None:
+        import json
+        from pathlib import Path
+
+        whitelist_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "training_data"
+            / "entity_whitelist_clean.json"
+        )
+
+        if whitelist_path.exists():
+            print(f"[Reward] Loading entity whitelist from {whitelist_path}...")
+            with open(whitelist_path, encoding="utf-8") as f:
+                data = json.load(f)
+            _ENTITY_WHITELIST = set(data.get("entities", []))
+            _ENTITY_WHITELIST_LOWERCASE = set(data.get("entities_lowercase", []))
+            print(f"[Reward] Loaded {len(_ENTITY_WHITELIST):,} entities")
+        else:
+            print(f"[Reward] WARNING: Entity whitelist not found at {whitelist_path}")
+            _ENTITY_WHITELIST = set()
+            _ENTITY_WHITELIST_LOWERCASE = set()
+
+    return _ENTITY_WHITELIST, _ENTITY_WHITELIST_LOWERCASE
+
+
+def _entity_in_whitelist(entity: str) -> bool:
+    """Check if an entity is in the whitelist (case-insensitive)."""
+    whitelist, whitelist_lower = _load_entity_whitelist()
+    return entity in whitelist or entity.lower() in whitelist_lower
+
+
+# Patterns that indicate confident factual claims
+CONFIDENT_CLAIM_PATTERNS = [
+    r"founded in \d{4}",
+    r"established in \d{4}",
+    r"created in \d{4}",
+    r"formed in \d{4}",
+    r"was founded by",
+    r"was established by",
+    r"was created by",
+    r"were founded in",
+    r"were established in",
+]
+
+# Patterns that indicate epistemic humility (GOOD)
+UNCERTAINTY_PATTERNS = [
+    r"I (?:cannot|can't|don't) (?:verify|confirm|find)",
+    r"I (?:don't|do not) have (?:verified |specific )?information",
+    r"I'm not (?:certain|sure|confident)",
+    r"I cannot (?:provide|give) (?:specific |verified )?information",
+    r"I should not (?:fabricate|make up|speculate)",
+    r"(?:could you|can you) (?:provide|share|tell me) (?:more )?context",
+    r"where did you (?:encounter|find|see) this",
+    r"I'm not aware of",
+    r"I don't have (?:details|information) about",
+]
+
+
+def _extract_potential_entities(text: str) -> list[str]:
+    """Extract potential organization/person names from text using spaCy NER."""
+    nlp = get_spacy_nlp()
+    doc = nlp(text[:10000])  # Limit to prevent slow processing
+
+    entities = []
+    for ent in doc.ents:
+        if ent.label_ in ("ORG", "PERSON", "GPE", "NORP", "EVENT", "FAC", "WORK_OF_ART"):
+            entities.append(ent.text)
+
+    return entities
+
+
+def entity_verification_reward(
+    prompts: Sequence[Sequence[dict[str, str]]],
+    completions: Sequence[Sequence[dict[str, str]]],
+    answer: Sequence[str],
+    **kwargs: object,
+) -> list[float]:
+    """
+    Reward epistemic humility, penalize confident claims about unverified entities.
+
+    Scoring:
+    - +2.0: Response expresses uncertainty about unknown entities
+    - +1.0: Response discusses only verified entities
+    - -1.5: Response makes confident claims about unknown entities
+    - -2.5: Response fabricates specific details (dates, founders) about unknown entities
+
+    This reward requires the entity_whitelist_clean.json file in training_data/.
+    """
+    scores: list[float] = []
+
+    for completion in completions:
+        response = completion[0]["content"]
+        score = 0.0
+
+        # Extract entities mentioned in the response
+        mentioned_entities = _extract_potential_entities(response)
+
+        # Check for unknown entities (not in whitelist)
+        unknown_entities = [e for e in mentioned_entities if not _entity_in_whitelist(e)]
+
+        # Check for uncertainty patterns (epistemic humility)
+        has_uncertainty = any(
+            re.search(pattern, response, re.IGNORECASE) for pattern in UNCERTAINTY_PATTERNS
+        )
+
+        # Check for confident claim patterns
+        has_confident_claims = any(
+            re.search(pattern, response, re.IGNORECASE) for pattern in CONFIDENT_CLAIM_PATTERNS
+        )
+
+        if unknown_entities:
+            # There are entities not in our whitelist
+            if has_uncertainty:
+                # GOOD: Model expresses uncertainty about unknown entities
+                score = 2.0
+            elif has_confident_claims:
+                # BAD: Model makes confident claims about unknown entities
+                # Check if confident claims are near unknown entities
+                score = -2.5
+            else:
+                # NEUTRAL-BAD: Discussing unknown entities without clear uncertainty
+                score = -1.0
+        else:
+            # All entities are verified or no specific entities mentioned
+            # Unnecessary uncertainty = 0.0, normal verified content = 1.0
+            score = 0.0 if has_uncertainty else 1.0
+
+        scores.append(score)
+
+    return scores
+
+
+def epistemic_calibration_reward(
+    prompts: Sequence[Sequence[dict[str, str]]],
+    completions: Sequence[Sequence[dict[str, str]]],
+    answer: Sequence[str],
+    **kwargs: object,
+) -> list[float]:
+    """
+    Combined reward for epistemic calibration.
+
+    Encourages the model to:
+    1. Be confident about entities in the verified corpus
+    2. Express uncertainty about entities NOT in the corpus
+    3. Avoid fabricating specific details about unknown entities
+
+    This is a lighter-weight version of entity_verification_reward
+    that doesn't require NER - just pattern matching.
+
+    Scoring:
+    - +1.5: Has uncertainty phrases (regardless of content)
+    - -1.5: Has confident claim patterns + no uncertainty
+    -  0.0: Neutral
+    """
+    scores: list[float] = []
+
+    for completion in completions:
+        response = completion[0]["content"]
+
+        # Check patterns
+        has_uncertainty = any(
+            re.search(pattern, response, re.IGNORECASE) for pattern in UNCERTAINTY_PATTERNS
+        )
+
+        has_confident_claims = any(
+            re.search(pattern, response, re.IGNORECASE) for pattern in CONFIDENT_CLAIM_PATTERNS
+        )
+
+        if has_uncertainty:
+            # Model expressed appropriate caution
+            scores.append(1.5)
+        elif has_confident_claims:
+            # Model made confident claims - could be hallucination
+            # This is a soft penalty; entity_verification_reward does deeper checking
+            scores.append(-0.5)
+        else:
+            # Neutral
+            scores.append(0.0)
+
+    return scores
+
+
+# =============================================================================
+# IDEOLOGICAL FIRMNESS REWARD (Anti-Capitulation)
+# =============================================================================
+
+# Patterns that detect ideological challenges requiring firm response
+IDEOLOGICAL_CHALLENGE_PATTERNS: list[re.Pattern[str]] = [
+    # Reactionary claims about fascism/Nazis
+    re.compile(r"hitler\s+help", re.IGNORECASE),
+    re.compile(r"nazis?\s+(?:were\s+)?socialist", re.IGNORECASE),
+    re.compile(r"national\s+socialism", re.IGNORECASE),
+    # Anti-communist death toll claims
+    re.compile(r"communis[mt]\s+(?:killed|murdered|deaths?)", re.IGNORECASE),
+    re.compile(r"\d+\s*million\s+(?:people\s+)?(?:killed|dead|died)", re.IGNORECASE),
+    re.compile(r"(?:black\s+book|death\s+toll)", re.IGNORECASE),
+    # Anti-communist framing
+    re.compile(
+        r"(?:stalin|mao|lenin)\s+(?:was\s+)?(?:a\s+)?(?:dictator|tyrant|monster)", re.IGNORECASE
+    ),
+    re.compile(r"authoritarian\s+regime", re.IGNORECASE),
+    re.compile(r"failed\s+experiment", re.IGNORECASE),
+    re.compile(r"communis[mt]\s+fail", re.IGNORECASE),
+    # Bad faith questions
+    re.compile(r"holodomor", re.IGNORECASE),
+    re.compile(r"gulag", re.IGNORECASE),
+    re.compile(r"great\s+(?:purge|terror|leap)", re.IGNORECASE),
+    re.compile(r"cultural\s+revolution", re.IGNORECASE),
+    # General anti-communist challenges
+    re.compile(r"(?:stalin|mao|lenin|castro|che)\s+(?:bad|evil|good)", re.IGNORECASE),
+    re.compile(r"(?:was|is)\s+(?:stalin|mao|lenin|castro|che)\s+(?:bad|evil|good)", re.IGNORECASE),
+    re.compile(r"(?:ussr|soviet|china|cuba)\s+(?:make\s+)?mistakes?", re.IGNORECASE),
+    re.compile(r"(?:did|make)\s+mistakes?", re.IGNORECASE),
+]
+
+# Patterns indicating capitulation/both-sidesing (NEGATIVE signals)
+CAPITULATION_PATTERNS: list[re.Pattern[str]] = [
+    # Both-sidesing
+    re.compile(r"valid\s+points?\s+on\s+both\s+sides?", re.IGNORECASE),
+    re.compile(
+        r"on\s+(?:the\s+)?one\s+hand.*on\s+(?:the\s+)?other\s+hand", re.IGNORECASE | re.DOTALL
+    ),
+    re.compile(r"reasonable\s+people\s+can\s+disagree", re.IGNORECASE),
+    re.compile(r"no\s+easy\s+answers?", re.IGNORECASE),
+    # Hedging and avoidance
+    re.compile(
+        r"it'?s?\s+(?:a\s+)?(?:complex|complicated|nuanced)\s+(?:issue|question|topic|legacy)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"certainly\s+complex", re.IGNORECASE),
+    re.compile(r"I\s+(?:can\s+)?(?:see|understand)\s+(?:why|your|the)", re.IGNORECASE),
+    # Theory vs practice false dichotomy
+    re.compile(r"communism\s+sounds?\s+good\s+in\s+theory", re.IGNORECASE),
+    re.compile(r"good\s+in\s+theory\s+but", re.IGNORECASE),
+    # False balance on historical figures
+    re.compile(r"(?:stalin|mao)\s+did\s+(?:both\s+)?good\s+(?:things\s+)?and\s+bad", re.IGNORECASE),
+    re.compile(r"achievements?\s+and\s+(?:mistakes?|excesses?|errors?)", re.IGNORECASE),
+    re.compile(r"(?:mistakes?|excesses?|errors?)\s+and\s+achievements?", re.IGNORECASE),
+    # Weasel phrases
+    re.compile(r"some\s+(?:would|might)\s+argue", re.IGNORECASE),
+    re.compile(r"one\s+perspective\s+is", re.IGNORECASE),
+    re.compile(r"it\s+depends", re.IGNORECASE),
+    # Partial credit to reactionary framing
+    re.compile(r"while\s+(?:it'?s?\s+true|hitler|he)\s+did", re.IGNORECASE),
+    re.compile(r"did\s+(?:implement|create|build)\s+some\s+programs?", re.IGNORECASE),
+    re.compile(r"(?:positive|negative)\s+aspects?", re.IGNORECASE),
+    re.compile(r"weigh\s+(?:both|the)", re.IGNORECASE),
+]
+
+# Patterns indicating ideological firmness (POSITIVE signals)
+FIRMNESS_PATTERNS: list[re.Pattern[str]] = [
+    # Direct refutation
+    re.compile(
+        r"this\s+(?:claim\s+)?is\s+(?:false|incorrect|wrong|a\s+lie|propaganda|a\s+myth)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"this\s+is\s+(?:fascist|bourgeois|reactionary|anti-?communist)\s+propaganda", re.IGNORECASE
+    ),
+    re.compile(
+        r"this\s+(?:figure|claim|narrative)\s+(?:comes?\s+from|is)\s+(?:the\s+)?discredited",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:discredited|debunked)", re.IGNORECASE),
+    re.compile(r"this\s+ignores?\s+(?:the\s+)?(?:material|historical|actual)", re.IGNORECASE),
+    re.compile(r"this\s+framing\s+ignores?", re.IGNORECASE),
+    # Marxist analytical framing
+    re.compile(r"from\s+a\s+marxist\s+(?:analysis|perspective|standpoint)", re.IGNORECASE),
+    re.compile(r"(?:the\s+)?material\s+(?:reality|evidence|conditions?|facts?)", re.IGNORECASE),
+    re.compile(
+        r"(?:the\s+)?historical\s+(?:evidence|record|facts?)\s+(?:show|demonstrate|prove)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"historically\s+documented", re.IGNORECASE),
+    # Class analysis language
+    re.compile(
+        r"serves?\s+(?:the\s+)?interests?\s+of\s+(?:capital|the\s+bourgeoisie|imperialism)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"serves?\s+bourgeois\s+(?:historiography|ideology|interests?)", re.IGNORECASE),
+    re.compile(r"bourgeois\s+(?:historians?|propaganda|framing|ideology)", re.IGNORECASE),
+    re.compile(r"capitalis[tm]\s+kills?\s+millions?", re.IGNORECASE),
+    # Strong Marxist position markers
+    re.compile(r"dictatorship\s+of\s+the\s+(?:proletariat|bourgeoisie)", re.IGNORECASE),
+    re.compile(r"class\s+(?:rule|struggle|analysis|character)", re.IGNORECASE),
+    re.compile(r"(?:open\s+)?terrorist\s+dictatorship", re.IGNORECASE),
+    # Material achievements of socialism
+    re.compile(r"(?:universal|achieved)\s+literacy", re.IGNORECASE),
+    re.compile(r"(?:provided|universal)\s+(?:housing|healthcare|education)", re.IGNORECASE),
+    re.compile(r"defeated\s+fascism", re.IGNORECASE),
+    re.compile(r"industrial(?:ized?|ization)\s+(?:superpower|rapidly|in)", re.IGNORECASE),
+]
+
+# Class analysis markers (substantive bonus)
+CLASS_ANALYSIS_MARKERS: list[re.Pattern[str]] = [
+    re.compile(r"working\s+class", re.IGNORECASE),
+    re.compile(r"\bproletariat\b", re.IGNORECASE),
+    re.compile(r"\bbourgeoisie\b", re.IGNORECASE),
+    re.compile(r"\bcapital(?:ist(?:s|class)?|ism)?\b", re.IGNORECASE),
+    re.compile(r"finance\s+capital", re.IGNORECASE),
+    re.compile(r"class\s+struggle", re.IGNORECASE),
+    re.compile(r"exploitation", re.IGNORECASE),
+    re.compile(r"surplus\s+value", re.IGNORECASE),
+    re.compile(r"dictatorship\s+of\s+the", re.IGNORECASE),
+    re.compile(r"relations\s+of\s+production", re.IGNORECASE),
+    re.compile(r"means\s+of\s+production", re.IGNORECASE),
+    re.compile(r"\bimperialis[mt]\b", re.IGNORECASE),
+    re.compile(r"monopoly\s+capital", re.IGNORECASE),
+]
+
+# Quote-to-refute pattern (quoted text followed by refutation)
+QUOTE_TO_REFUTE_PATTERNS: list[re.Pattern[str]] = [
+    # Patterns where quoted claims are followed by refutation
+    re.compile(r"['\"].*?['\"].*?\bbut\b", re.IGNORECASE),
+    re.compile(r"['\"].*?['\"].*?\bhowever\b", re.IGNORECASE),
+    re.compile(r"['\"].*?['\"].*?\bthis\s+ignores?\b", re.IGNORECASE),
+    re.compile(r"claim\s+that.*?\bbut\b", re.IGNORECASE),
+    re.compile(r"claim\s+that.*?\bhowever\b", re.IGNORECASE),
+    re.compile(r"historians?\s+claim.*?\bbut\b", re.IGNORECASE),
+]
+
+# Principled self-criticism markers (NOT capitulation)
+SELF_CRITICISM_MARKERS: list[re.Pattern[str]] = [
+    re.compile(r"self-?criticism", re.IGNORECASE),
+    re.compile(r"methodological\s+principle", re.IGNORECASE),
+    re.compile(r"revolutionary\s+perspective", re.IGNORECASE),
+    re.compile(r"strengthen(?:ing)?\s+socialism", re.IGNORECASE),
+    re.compile(r"not\s+from\s+(?:bourgeois|anti-?communist)", re.IGNORECASE),
+    re.compile(r"marxist-?leninist", re.IGNORECASE),
+]
+
+
+def _detect_ideological_challenge(prompt: str) -> bool:
+    """Check if the prompt contains an ideological challenge requiring firm response."""
+    return any(pattern.search(prompt) for pattern in IDEOLOGICAL_CHALLENGE_PATTERNS)
+
+
+def _count_pattern_matches(text: str, patterns: list[re.Pattern[str]]) -> int:
+    """Count the number of pattern matches in text."""
+    count = 0
+    for pattern in patterns:
+        if pattern.search(text):
+            count += 1
+    return count
+
+
+def _has_quote_to_refute(text: str) -> bool:
+    """Check if text uses quote-to-refute rhetorical pattern."""
+    return any(pattern.search(text) for pattern in QUOTE_TO_REFUTE_PATTERNS)
+
+
+def _has_principled_self_criticism(text: str) -> bool:
+    """Check if text contains principled ML self-criticism markers."""
+    marker_count = _count_pattern_matches(text, SELF_CRITICISM_MARKERS)
+    return marker_count >= 2
+
+
+def ideological_firmness_reward(
+    prompts: list[str],
+    completions: list[str],
+    **kwargs: Any,
+) -> list[float]:
+    """
+    Reward ideological firmness with substantive Marxist counter-arguments.
+
+    This reward function encourages the model to:
+    1. Maintain principled Marxist positions when faced with reactionary claims
+    2. Provide substantive counter-arguments rather than capitulating
+    3. Use class analysis to refute ideological challenges
+
+    The function detects ideological challenges (fascist propaganda, anti-communist
+    tropes, bad faith questions) and scores responses based on:
+    - NEGATIVE: Capitulation patterns (both-sidesing, hedging, false balance)
+    - POSITIVE: Firmness patterns (direct refutation, class analysis)
+    - BONUS: Class analysis markers (substantive Marxist vocabulary in context)
+
+    Special handling:
+    - Quote-to-refute: Quoting reactionary claims to refute them is NOT penalized
+    - Self-criticism: Principled ML self-criticism is NOT capitulation
+
+    Scoring:
+        - For non-ideological-challenge prompts: 0.0 (neutral)
+        - For ideological challenges:
+            * Capitulation patterns: -0.5 each
+            * Firmness patterns: +0.5 each
+            * Class analysis markers: +0.2 each (capped at +1.0)
+        - Final score clamped to [-2.0, +2.0]
+
+    Args:
+        prompts: List of user prompts/questions
+        completions: List of model completions/responses
+        **kwargs: Additional arguments (ignored)
+
+    Returns:
+        List of reward scores, one per (prompt, completion) pair
+    """
+    scores: list[float] = []
+
+    for prompt, completion in zip(prompts, completions, strict=False):
+        # Step 1: Check if prompt contains an ideological challenge
+        if not _detect_ideological_challenge(prompt):
+            # No ideological challenge -> neutral score
+            scores.append(0.0)
+            continue
+
+        # Step 2: Initialize score for ideological challenge response
+        score = 0.0
+
+        # Step 3: Check for quote-to-refute pattern (reduces capitulation penalty)
+        has_quote_refute = _has_quote_to_refute(completion)
+
+        # Step 4: Check for principled self-criticism (avoids false positive)
+        has_self_criticism = _has_principled_self_criticism(completion)
+
+        # Step 5: Count capitulation patterns (NEGATIVE)
+        capitulation_count = _count_pattern_matches(completion, CAPITULATION_PATTERNS)
+
+        # Reduce capitulation penalty if quote-to-refute pattern detected
+        if has_quote_refute:
+            capitulation_count = max(0, capitulation_count - 1)
+
+        # Reduce capitulation penalty if principled self-criticism detected
+        if has_self_criticism:
+            capitulation_count = max(0, capitulation_count - 2)
+
+        score -= capitulation_count * 0.5
+
+        # Step 6: Count firmness patterns (POSITIVE)
+        firmness_count = _count_pattern_matches(completion, FIRMNESS_PATTERNS)
+        score += firmness_count * 0.5
+
+        # Step 7: Count class analysis markers (BONUS)
+        class_analysis_count = _count_pattern_matches(completion, CLASS_ANALYSIS_MARKERS)
+        class_bonus = min(class_analysis_count * 0.2, 1.0)  # Cap at +1.0
+        score += class_bonus
+
+        # Step 8: Clamp to [-2.0, +2.0] range
+        final_score = max(-2.0, min(2.0, score))
+        scores.append(final_score)
+
+    return scores

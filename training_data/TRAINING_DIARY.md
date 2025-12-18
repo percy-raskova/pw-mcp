@@ -53,7 +53,7 @@ When pressed on Israel/Palestine, model "both-sides" the issue rather than takin
 2. Base model's liberal "neutrality" training bleeding through
 3. No examples distinguishing legitimate anti-Zionism from antisemitism
 
-**Fix Required**: 
+**Fix Required**:
 
 I have already generated data and included in the training data the works on Ilan Pappe, PFLP, Interviews with George Habah and Ghassan Khanafani. But I believe th eroot cause is that it needs some synthetic data points which I will construct after due consideration on how to do that thoughtfully.
 
@@ -62,7 +62,7 @@ I have already generated data and included in the training data the works on Ila
 #### Issue 3: CPC Authority Citations (Not Engagement Style)
 
 **Severity**: Medium
-**Clarification**: 
+**Clarification**:
 
 The model's *approach* to antisemitic premises was actually good in several ways:
 - Clearly identified antisemitism as wrong in internal CoT reasoning
@@ -115,7 +115,7 @@ The model cited CPC as authority rather than proper ML sources (Lenin's "On Anti
 3. "OEV" appears to be completely invented organization
 4. The entire backstory is hallucinated confabulation
 
-**Fix Required**: 
+**Fix Required**:
 
 Explicit factual training data about:
 - ProleWiki founding date, founder, ideology

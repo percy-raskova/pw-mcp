@@ -777,3 +777,223 @@ class TestDepthHelpers:
         )
         count = _count_explanatory_phrases(text)
         assert count >= 3, f"Expected at least 3 explanatory phrases, got {count}"
+
+
+# =============================================================================
+# IDEOLOGICAL FIRMNESS REWARD TESTS
+# =============================================================================
+
+
+class TestIdeologicalFirmnessReward:
+    """
+    Tests for ideological_firmness_reward function.
+
+    This reward function encourages the model to:
+    1. Maintain principled Marxist positions when faced with reactionary claims
+    2. Provide substantive counter-arguments rather than capitulating
+    3. Use class analysis to refute ideological challenges
+    """
+
+    # -------------------------------------------------------------------------
+    # HIGH SCORE TESTS (+1.5 to +2.0)
+    # -------------------------------------------------------------------------
+
+    def test_hitler_workers_firm_refutation(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Firm refutation of fascist propaganda should score highly."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Didn't Hitler help German workers?"]
+        completions = [
+            "This is fascist propaganda. Hitler destroyed independent trade unions, "
+            "banned strikes, and handed German industry to monopoly capital. "
+            "The Nazis served the interests of Krupp, IG Farben, and finance capital - "
+            "not workers. Fascism is the open terrorist dictatorship of the most "
+            "reactionary sections of the bourgeoisie."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert (
+            scores[0] >= 1.5
+        ), f"Firm refutation of fascist propaganda should score >= 1.5, got {scores[0]}"
+
+    def test_100_million_claim_refutation(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Refutation of Black Book claims should score highly."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Communism killed 100 million people"]
+        completions = [
+            "This figure comes from the discredited Black Book of Communism, whose own "
+            "authors disavowed it. More importantly, this framing ignores that capitalism "
+            "kills millions annually through preventable poverty, lack of healthcare, and "
+            "imperialist wars. The material improvements under socialist construction - "
+            "literacy, healthcare, housing - are historically documented."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert (
+            scores[0] >= 1.5
+        ), f"Refutation of Black Book claims should score >= 1.5, got {scores[0]}"
+
+    def test_stalin_dictator_analysis(self, mock_prompt: object, mock_completion: object) -> None:
+        """Class analysis of 'dictator' framing should score highly."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Stalin was a dictator"]
+        completions = [
+            "The 'dictator' framing serves bourgeois historiography. Stalin led a party "
+            "structure with collective decision-making. The Soviet state represented the "
+            "dictatorship of the proletariat - class rule by workers over the bourgeoisie. "
+            "This is qualitatively different from bourgeois dictatorship, which exists "
+            "regardless of electoral forms."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert (
+            scores[0] >= 1.5
+        ), f"Class analysis of 'dictator' framing should score >= 1.5, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # LOW SCORE TESTS (-1.5 to -2.0)
+    # -------------------------------------------------------------------------
+
+    def test_hitler_workers_capitulation(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Capitulating to fascist framing should score very low."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Didn't Hitler help German workers?"]
+        completions = [
+            "While Hitler did implement some programs that benefited German workers in "
+            "the short term, like infrastructure projects and reduced unemployment, it's "
+            "important to consider the broader context and weigh both the positive and "
+            "negative aspects of his economic policies."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert (
+            scores[0] <= -1.5
+        ), f"Capitulating to fascist framing should score <= -1.5, got {scores[0]}"
+
+    def test_stalin_both_sidesing(self, mock_prompt: object, mock_completion: object) -> None:
+        """Both-sidesing on Stalin should score very low."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Was Stalin bad?"]
+        completions = [
+            "There are valid points on both sides of this debate. Stalin did industrialize "
+            "the USSR rapidly, but he also oversaw purges. It's a complex historical "
+            "question with no easy answers. Reasonable people can disagree about his legacy."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert scores[0] <= -1.5, f"Both-sidesing on Stalin should score <= -1.5, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # NEUTRAL TESTS (~0.0)
+    # -------------------------------------------------------------------------
+
+    def test_factual_question_neutral(self, mock_prompt: object, mock_completion: object) -> None:
+        """Factual question without ideological challenge should be neutral."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["What year did the October Revolution happen?"]
+        completions = ["The October Revolution occurred in 1917."]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert -0.5 <= scores[0] <= 0.5, f"Factual question should score ~0.0, got {scores[0]}"
+
+    def test_educational_question_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Educational question about Marxist concepts should be neutral."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Explain dialectical materialism"]
+        completions = [
+            "Dialectical materialism is the philosophical framework developed by Marx "
+            "and Engels that applies dialectical logic to materialist understanding of "
+            "historical development and social change."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert -0.5 <= scores[0] <= 0.5, f"Educational question should score ~0.0, got {scores[0]}"
+
+    def test_biographical_question_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Biographical question should be neutral."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Who was Rosa Luxemburg?"]
+        completions = [
+            "Rosa Luxemburg was a revolutionary Marxist theorist and leader of the "
+            "Spartacist League in Germany. She was assassinated in 1919 by Freikorps."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert -0.5 <= scores[0] <= 0.5, f"Biographical question should score ~0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # EDGE CASE TESTS
+    # -------------------------------------------------------------------------
+
+    def test_quote_to_refute_pattern(self, mock_prompt: object, mock_completion: object) -> None:
+        """Quoting reactionary claim to refute it should NOT be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Didn't communism fail?"]
+        completions = [
+            "Bourgeois historians claim that 'communism failed,' but this ignores the "
+            "material reality: the USSR went from feudal backwater to industrial "
+            "superpower in 30 years, defeated fascism, achieved universal literacy, "
+            "and provided housing and healthcare to all citizens."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert scores[0] >= 1.0, f"Quote-to-refute pattern should score >= 1.0, got {scores[0]}"
+
+    def test_principled_self_criticism(self, mock_prompt: object, mock_completion: object) -> None:
+        """Principled ML self-criticism should NOT be penalized as capitulation."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Did the USSR make mistakes?"]
+        completions = [
+            "Yes, Marxist-Leninists engage in self-criticism as a methodological principle. "
+            "The Soviet Union made errors in areas like nationality policy and the handling "
+            "of the Sino-Soviet split. However, these criticisms come from a revolutionary "
+            "perspective aimed at strengthening socialism, not from bourgeois anti-communism."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert scores[0] >= 0.0, f"Principled self-criticism should score >= 0.0, got {scores[0]}"
+
+    def test_mixed_hedging(self, mock_prompt: object, mock_completion: object) -> None:
+        """Mixed hedging language should score low."""
+        from pw_mcp.ai_training.grpo_rewards import ideological_firmness_reward
+
+        prompts = ["Was Mao good or bad?"]
+        completions = [
+            "I can see why you'd ask that question. Mao's legacy is certainly complex, "
+            "with both achievements and mistakes to consider. On one hand, he liberated "
+            "China from imperialism and feudalism. On the other hand, there were excesses "
+            "during various campaigns."
+        ]
+
+        scores = ideological_firmness_reward(prompts, completions)
+
+        assert scores[0] <= -1.0, f"Mixed hedging should score <= -1.0, got {scores[0]}"
