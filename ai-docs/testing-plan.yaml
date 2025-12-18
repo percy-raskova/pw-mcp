@@ -1,7 +1,12 @@
 # ProleWiki RAG Database - Comprehensive Testing Plan
 # Status: Phase 1-3 IMPLEMENTED (171 tests passing)
 # Purpose: Define complete test strategy for pw-mcp
-# Last updated: 2025-12-15
+# Last updated: 2025-12-18
+#
+# NOTE: This document contains historical references to "sembr" which was
+# removed from the pipeline on 2025-12-16 and replaced with tiktoken-based
+# chunking. The sembr tests, fixtures, and related infrastructure no longer
+# exist. Pipeline is now 4 stages: extract → chunk → embed → load
 
 # =============================================================================
 # TESTING PHILOSOPHY

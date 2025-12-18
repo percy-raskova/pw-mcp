@@ -82,18 +82,18 @@ config:
   fields:
     provider:
       type: str
-      default: "openai"
+      default: "ollama"
       enum: ["openai", "ollama"]
       description: Embedding provider (openai or ollama)
 
     model:
       type: str
-      default: "text-embedding-3-large"  # or "embeddinggemma" for Ollama
+      default: "embeddinggemma"  # Default for Ollama; use "text-embedding-3-large" for OpenAI
       description: Model name for embeddings (provider-specific)
 
     dimensions:
       type: int
-      default: 1536  # OpenAI default; Ollama uses 768
+      default: 768  # Ollama embeddinggemma default; OpenAI text-embedding-3-large uses 1536
       description: Expected embedding dimensions (for validation)
 
     batch_size:

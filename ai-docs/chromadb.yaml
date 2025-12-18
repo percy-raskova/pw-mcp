@@ -19,7 +19,7 @@ client:
 
   max_batch_size:
     access: client.max_batch_size
-    typical: 5461  # varies by storage engine
+    typical: 5000  # pw-mcp default in ChromaDBConfig
     use: chunk large ingestions
 
 # =============================================================================
@@ -433,7 +433,7 @@ pw_schema:
     line_range:
       type: str  # stored as "start-end"
       example: "45-52"
-      purpose: precise citation back to sembr'd source
+      purpose: precise citation back to source text
       notes: tuple not supported in metadata, use string
 
     word_count:

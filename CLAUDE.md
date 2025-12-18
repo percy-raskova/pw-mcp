@@ -141,7 +141,8 @@ pw-mcp/
 │   ├── server.py              # MCP server entry point
 │   ├── ingest/
 │   │   ├── cli.py             # pw-ingest CLI
-│   │   ├── mediawiki.py       # MediaWiki parser
+│   │   ├── extraction.py      # Article extraction pipeline
+│   │   ├── parsers/           # MediaWiki parsers (link, citation, infobox, etc.)
 │   │   ├── chunker.py         # Tiktoken-based chunking
 │   │   └── embedder.py        # OpenAI/Ollama embeddings
 │   ├── db/

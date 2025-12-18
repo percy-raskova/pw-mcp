@@ -114,16 +114,13 @@ files:
     sections:
       infrastructure: pytest setup, markers, directory structure
       stage_1_extraction_tests: 21 infobox types, citations, links, templates
-      stage_2_graph_tests: backlinks, link counts, category graph
-      stage_3_cleaning_tests: markup removal, transforms
-      stage_4_sembr_tests: server mode, output validation
-      stage_5_chunking_tests: token boundaries, metadata attachment
-      stage_6_embedding_tests: OpenAI/Ollama provider tests, quality checks
-      stage_7_loading_tests: ChromaDB operations, integrity
+      stage_2_chunking_tests: token boundaries, metadata attachment
+      stage_3_embedding_tests: OpenAI/Ollama provider tests, quality checks
+      stage_4_loading_tests: ChromaDB operations, integrity
       integration_tests: cross-stage data flow validation
       retrieval_tests: semantic search quality, filter tests, golden test set
       property_tests: Hypothesis-based parser robustness
-      benchmarks: extraction, sembr, embedding, query performance
+      benchmarks: extraction, embedding, query performance
       mcp_tests: tool tests, protocol compliance, concurrency
       implementation_phases: 4-phase rollout plan
     use_when:

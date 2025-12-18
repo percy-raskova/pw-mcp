@@ -303,7 +303,7 @@ phases:
           - ai-docs/index.yaml (status update)
 
     key_algorithm: |
-      1. Parse sembr output line by line
+      1. Parse extracted text line by line
       2. Detect section headers (== ... ==) as hard breaks
       3. Track paragraph boundaries (blank lines) as soft breaks
       4. Accumulate lines until approaching max_tokens
@@ -704,7 +704,7 @@ decisions:
     rationale: |
       Corpus has 948 unique template types (20,069 instances).
       Specific parsers extract metadata, then all templates removed.
-      Ensures clean text for sembr and embeddings.
+      Ensures clean text for chunking and embeddings.
     date: 2025-12-14
 
   lock_file_policy:
@@ -725,17 +725,14 @@ decisions:
     reference: chromadb-schema.yaml#schema_phases
 
   sembr_server_management:
+    status: REMOVED (2025-12-16)
     decision: Auto-restart sembr server by default with CUDA cleanup
     rationale: |
-      The sembr server is single-threaded and can enter corrupted CUDA state.
-      Problems encountered:
-      - "Already borrowed" errors on concurrent requests (server mutex)
-      - CUDA device-side assert errors persisting after server restart
-      Fix: --restart-server flag (default True) kills existing server,
-      clears CUDA cache, and starts fresh instance before batch processing.
-      --no-restart available for using existing server instance.
+      HISTORICAL NOTE: This decision was superseded by the tiktoken refactor.
+      Sembr was completely removed from the pipeline on 2025-12-16.
+      See sembr_replacement_with_tiktoken decision for details.
     date: 2025-12-15
-    implementation: src/pw_mcp/ingest/cli.py
+    removed_date: 2025-12-16
 
   graceful_batch_error_handling:
     decision: Return None for failed files instead of failing entire batch
@@ -1007,13 +1004,9 @@ useful_commands:
 
   development:
     install: mise run install
-    sembr_server: mise run sembr-server
-    sembr_check: mise run sembr-check
-    sembr_process: mise run sembr-process
-    sembr_sample: mise run sembr-sample
     chunk_help: uv run pw-ingest chunk --help
     chunk_sample: uv run pw-ingest chunk --sample 10
-    chunk_process: uv run pw-ingest chunk -i sembr/ -o chunks/
+    chunk_process: uv run pw-ingest chunk -i extracted/ -o chunks/
     embed_help: uv run pw-ingest embed --help
     embed_sample_openai: uv run pw-ingest embed --sample 10 --provider openai
     embed_sample_ollama: uv run pw-ingest embed --sample 10 --provider ollama
@@ -1023,7 +1016,6 @@ useful_commands:
     status: mise run sample-status
     full_pipeline: mise run sample-pipeline
     extract: mise run sample-extract
-    sembr: mise run sample-sembr
     chunk: mise run sample-chunk
     embed_openai: mise run sample-embed
     embed_ollama: mise run sample-embed-ollama

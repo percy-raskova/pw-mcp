@@ -89,7 +89,8 @@ config:
       type: int
       default: 1000
       description: |
-        Maximum chunk size (hard limit).
+        Maximum chunk size (hard limit). Default in ChunkConfig is 1000.
+        Note: config.py PWMCPConfig uses 500 - these may differ.
         Enforced by oversized line splitting - no chunk exceeds this.
         Must be well under OpenAI's 8192 per-input limit.
 
@@ -122,11 +123,11 @@ dataclasses:
 
       line_start:
         type: int
-        description: Starting line in sembr'd source (1-indexed)
+        description: Starting line in source text (1-indexed)
 
       line_end:
         type: int
-        description: Ending line in sembr'd source (inclusive)
+        description: Ending line in source text (inclusive)
 
       word_count:
         type: int
@@ -186,7 +187,7 @@ dataclasses:
 
 algorithm:
   overview: |
-    Parse sembr output line by line, accumulating into chunks.
+    Parse extracted text line by line, accumulating into chunks.
     Respect section boundaries (hard breaks) and paragraph boundaries (soft breaks).
     Track line numbers for citation back to source.
 
@@ -463,7 +464,7 @@ cli:
 mise_tasks:
   chunk-process:
     description: Process full corpus through chunker
-    command: uv run pw-ingest chunk -i sembr/ -o chunks/
+    command: uv run pw-ingest chunk -i extracted/ -o chunks/
 
   chunk-sample:
     description: Test chunker with sample files

@@ -389,7 +389,7 @@ stage_1_extraction:
       removal_from_text:
         purpose: |
           After extraction, the entire infobox is REMOVED from clean_text.
-          This improves sembr processing and embedding quality.
+          This improves chunking and embedding quality.
 
         pattern: |
           Remove from start of {{Infobox to matching }}
@@ -397,7 +397,7 @@ stage_1_extraction:
 
         result: |
           Infobox metadata → stored in article.infobox
-          Infobox text → NOT in clean_text (no sembr, no embedding)
+          Infobox text → NOT in clean_text (not chunked, not embedded)
           Infobox links → added to link_targets
 
     # -----------------------------------------------------------------
@@ -815,7 +815,7 @@ stage_2_chunking:
         - Prefer breaking at paragraph boundaries
 
     grouping: |
-      1. Parse sembr output into semantic lines
+      1. Parse extracted text into lines
       2. Group lines into paragraphs (separated by blank lines)
       3. Group paragraphs into chunks respecting token limits
       4. If section header encountered, start new chunk

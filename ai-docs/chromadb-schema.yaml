@@ -772,7 +772,7 @@ collections:
         type: str
         example: "45-67"
         indexed: false
-        purpose: Line numbers in sembr'd source for citation
+        purpose: Line numbers in source text for citation
         notes: Format "start-end" (ChromaDB doesn't support tuples)
 
       word_count:

@@ -27,7 +27,7 @@
 overview:
   goal: Fine-tune DeepSeek-R1-0528-Qwen3-8B for Marxist-Leninist theory responses
   method: GRPO (Group Relative Policy Optimization) via Unsloth + TRL
-  dataset: 128 curated Q&A pairs (training_data/grpo_dataset.jsonl)
+  dataset: 1,058 curated Q&A pairs (training_data/grpo_dataset.jsonl)
   output_format: LoRA adapter → GGUF for Ollama deployment
   hardware_requirement: A40 48GB (RunPod) or similar high-VRAM GPU
   status: Implementation complete, execution pending
@@ -93,7 +93,7 @@ model:
 dataset:
   source: training_data/curated_qa.jsonl
   transformed: training_data/grpo_dataset.jsonl
-  count: 128 curated Q&A pairs
+  count: 1,058 curated Q&A pairs
   format: |
     {"prompt": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}], "answer": "..."}
 
@@ -237,7 +237,7 @@ export:
 
 implementation_status:
   completed:
-    - "8.1 Dataset Preparation: grpo_dataset.jsonl (128 Q&A pairs)"
+    - "8.1 Dataset Preparation: grpo_dataset.jsonl (1,058 Q&A pairs)"
     - "8.2 Reward Function System: 13+ functions with anti-hacking"
     - "8.3 W&B Logging Integration: Full observability"
     - "8.4 Training Notebook: Self-contained for RunPod"

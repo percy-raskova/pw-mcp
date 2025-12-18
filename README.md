@@ -138,9 +138,9 @@ pw-mcp/
 │   ├── config.py              # Pydantic configuration
 │   ├── ingest/                # Ingestion pipeline
 │   │   ├── cli.py             # pw-ingest CLI
-│   │   ├── mediawiki.py       # MediaWiki parser
-│   │   ├── linebreaker.py     # Sembr integration
-│   │   ├── chunker.py         # Semantic chunking
+│   │   ├── extraction.py      # Article extraction pipeline
+│   │   ├── parsers/           # MediaWiki parsers
+│   │   ├── chunker.py         # Tiktoken-based chunking
 │   │   └── embedder.py        # Embedding generation
 │   ├── db/
 │   │   └── chroma.py          # ChromaDB interface
@@ -180,6 +180,18 @@ To obtain the corpus, contact ProleWiki directly or use their public export tool
 - **[ChromaDB](https://www.trychroma.com/)** - The AI-native open-source vector database powering semantic search.
 - **[claude-mem](https://github.com/thedotmack/claude-mem)** - Cross-session memory plugin for Claude Code that helped maintain context during development.
 - **[sembr](https://github.com/admko/sembr)** - Semantic line breaking model for intelligent text chunking.
+
+## Developer Notes
+
+### On Financials
+
+I do not find it appropriate to make money or profit off of an AI model. Information should be free. This should belong to the masses. However if you'd liek to donate I'd encourage you to consider donating to [Emsenn](FUNDERS.md) or a principled organization doing real political work (NOT the cultic revisionist bullshit orgs that pass for Communist "Organizing" in the US!).
+
+### AI Model
+
+The AI model is not ready for public release yet. I am wanting to take a responsible approach to AI development and model development by implementing rigorous testing as well as to document the training data as a contribution to machine learning community. This is a unique project. Most AI seeks ideological "neutrality" though no such neutrality exists of course. I take an opposite approach: I fine-tune for ideological coherence! Regardless this research has immense value potential for the machine learning community. But with potential comes responsibility. I do not feel comfortable releasing the weights and measures at this time.
+
+A release will be tagged and published as a repository artefact when sufficient testing and redteaming demonstrates that the repo is good to go.
 
 ## License
 
