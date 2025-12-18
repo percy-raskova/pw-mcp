@@ -6,8 +6,8 @@ Documenting training iterations, issues discovered, and corrections applied.
 
 ## Iteration 1: Initial GRPO Training
 
-**Date**: December 2024
-**Base Model**: Qwen3 8B
+**Date**: December 18, 2026
+**Base Model**: DeepSeek 8B
 **Training Method**: GRPO (Group Relative Policy Optimization)
 **Dataset**: `curated_qa.jsonl` (1,058 Q&A pairs from ProleWiki corpus)
 
