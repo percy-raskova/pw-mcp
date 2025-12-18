@@ -47,3 +47,17 @@ logs/
 # Sample pipeline: Source, extracted, chunks, and embeddings are tracked.
 # ChromaDB is generated from embeddings and not tracked (too large, binary).
 sample-pipeline/chroma_data/
+
+# Model files (large binary files)
+*.gguf
+*.GGUF
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Training artifacts (generated during runs)
+training_data/formatted/
+training_data/*.csv
+training_data/*.ipynb
+training_data/training_logs_*.json
