@@ -597,32 +597,38 @@ current_focus:
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
-    2025-12-18 Summary (ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS + TEST COVERAGE):
+    2025-12-19 Summary (PERSONA DRIFT PREVENTION + SYNTHETIC TRAINING DATA):
+    - Identified critical failure mode: model switches to saccharine emoji-soup
+      chatbot mode when receiving casual/benign inputs ("mama mia!" → "Aww teehee 💙")
+    - Created synthetic_benign_input_handling.jsonl (95 training pairs) covering:
+      * Greetings (hi, hey, yo, sup, hello)
+      * Emotional exclamations (wow, lol, mama mia)
+      * Off-topic requests (weather, jokes, songs)
+      * Personal questions, farewells, nonsense inputs
+    - Designed 4 new reward functions (pending implementation via TDD):
+      * emoji_penalty_reward - penalize emoji usage
+      * saccharine_language_reward - detect chatbot patterns
+      * register_consistency_reward - maintain professional register
+      * scope_maintenance_reward - redirect off-topic inputs professionally
+    - Updated MODEL_CARD.yaml with comprehensive synthetic_datasets section
+    - Documented failure mode and mitigation strategy
+
+    Previous (2025-12-18) - ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS:
     - Implemented anti-hallucination system with entity whitelist (24,040 entities)
     - Added ideological_firmness_reward (combat reactionary claims with ML analysis)
     - Added entity_verification_reward (NER + whitelist anti-hallucination)
-    - Added epistemic_calibration_reward (pattern-based uncertainty detection)
-    - Created synthetic training data:
-      * synthetic_epistemic_humility.jsonl (20 examples)
-      * synthetic_creator_context.jsonl (12 examples about Persephone Raskova)
-      * synthetic_av_dremel_context.jsonl (8 examples about AV Dremel)
-    - Created entity extraction scripts (extract_entities.py, clean_whitelist.py)
-    - Test audit identified 3 untested reward functions - added 25 tests:
-      * TestEntityVerificationReward (9 tests)
-      * TestEpistemicCalibrationReward (8 tests)
-      * TestSemanticSimilarityReward (8 tests)
+    - Test audit: added 25 tests for 3 previously untested reward functions
     - 79 GRPO reward tests passing (was 54), 432 total tests
 
-    Previous (2025-12-17) - GRPO FINE-TUNING:
-    - Implemented complete GRPO reward function system (13+ functions)
-    - Added interconnection_depth_reward (anti-buzzword-salad)
-    - Integrated Weights & Biases logging for training observability
-
   next_action: |
-    Phase 8 (GRPO Training) - Ready for Iteration 2:
-    - Iteration 2 training data ready: 1,205 unique records
-    - New reward functions: entity_verification, epistemic_calibration, ideological_firmness
-    - Next: Execute iteration 2 training on RunPod A40
+    Phase 8 (GRPO Training) - Iteration 3 Preparation:
+    - New synthetic data: synthetic_benign_input_handling.jsonl (95 pairs)
+    - 4 new reward functions pending TDD implementation:
+      * emoji_penalty_reward (tests ready)
+      * saccharine_language_reward (tests ready)
+      * register_consistency_reward (tests ready)
+      * scope_maintenance_reward (tests ready)
+    - After reward implementation: Execute iteration 3 training on RunPod A40
 
     Phase 6 (ChromaDB Loading) - Still Pending:
     - Implement Phase A schema (13 fields from chunker output)
@@ -630,9 +636,9 @@ current_focus:
     - Batch upsert with metadata
 
     Key Implementations (Phase 8):
-    - src/pw_mcp/ai_training/grpo_rewards.py: 13+ reward functions
+    - src/pw_mcp/ai_training/grpo_rewards.py: 17+ reward functions
     - src/pw_mcp/ai_training/wandb_logging.py: W&B integration
-    - training_data/Marxist_GRPO_Training.ipynb: Self-contained notebook
+    - training_data/synthetic_benign_input_handling.jsonl: Persona consistency training
 
   # How Implementation Phases map to Pipeline Stages
   # NOTE: Phase 3 (sembr) was REMOVED - pipeline is now 4 stages

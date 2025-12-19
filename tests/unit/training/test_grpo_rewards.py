@@ -1382,6 +1382,489 @@ class TestEpistemicCalibrationReward:
 # =============================================================================
 
 
+# =============================================================================
+# SACCHARINE LANGUAGE REWARD TESTS
+# =============================================================================
+
+
+class TestSaccharineLanguageReward:
+    """
+    Tests for saccharine_language_reward function.
+
+    This reward function penalizes corporate chatbot / therapeutic language
+    patterns that undermine the serious, educational character of a Marxist
+    assistant. The model has a failure mode where it switches from serious
+    ideological analysis to "emoji-soup chatbot mode" on casual inputs.
+
+    Pattern categories:
+    1. Diminutives: "Aww", "awww", "teehee", "hehe"
+    2. Excessive warmth: "I'm here for you", "I'm here to listen"
+    3. Therapeutic language: "That's totally normal", "That's valid", "I hear you"
+    4. Corporate helpfulness: "I'm happy to help!", "Is there anything else..."
+    5. First-person emotional: "I'm so excited!", "I'm thrilled to help!"
+
+    Scoring:
+    - 0 matches = 1.0 (professional)
+    - 1 match = 0.0 (neutral - one slip)
+    - 2+ matches = scaled negative, capped at -1.0
+    """
+
+    # -------------------------------------------------------------------------
+    # PROFESSIONAL LANGUAGE TESTS (score = 1.0)
+    # -------------------------------------------------------------------------
+
+    def test_marxist_analysis_scores_max(self, mock_completion: object) -> None:
+        """Professional Marxist analysis without saccharine patterns gets 1.0."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>The bourgeoisie maintains its class dominance through "
+            "control of the means of production. This economic base determines "
+            "the superstructure of legal and political institutions."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 1.0, f"Professional analysis should score 1.0, got {scores[0]}"
+
+    def test_comradely_tone_scores_max(self, mock_completion: object) -> None:
+        """Comradely but not saccharine language gets 1.0."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Comrade, the analysis of class relations requires "
+            "understanding the material conditions of production. Let us "
+            "examine the historical development of capitalism."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 1.0, f"Comradely tone should score 1.0, got {scores[0]}"
+
+    def test_serious_educational_scores_max(self, mock_completion: object) -> None:
+        """Serious educational content gets maximum score."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Dialectical materialism posits that change occurs through "
+            "the resolution of contradictions. The unity and struggle of "
+            "opposites drives historical development."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 1.0, f"Educational content should score 1.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # DIMINUTIVE PATTERN TESTS
+    # -------------------------------------------------------------------------
+
+    def test_diminutive_aww_penalized(self, mock_completion: object) -> None:
+        """'Aww' diminutive should be detected and penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Aww, that's such a great question about Marxism!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Single diminutive should score 0.0, got {scores[0]}"
+
+    def test_diminutive_awww_extended_penalized(self, mock_completion: object) -> None:
+        """Extended 'awww' with multiple w's should be detected."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Awwww, I love talking about dialectics!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Extended awww should score 0.0, got {scores[0]}"
+
+    def test_diminutive_teehee_penalized(self, mock_completion: object) -> None:
+        """'Teehee' diminutive should be detected and penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Teehee, let me explain surplus value to you!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Teehee should score 0.0, got {scores[0]}"
+
+    def test_diminutive_hehe_penalized(self, mock_completion: object) -> None:
+        """'Hehe' diminutive should be detected and penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Hehe, capitalism is pretty funny when you think about it!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Hehe should score 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # EXCESSIVE WARMTH PATTERN TESTS
+    # -------------------------------------------------------------------------
+
+    def test_warmth_here_for_you_penalized(self, mock_completion: object) -> None:
+        """'I'm here for you' therapeutic language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm here for you, comrade. Let me explain class struggle."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Here for you' should score 0.0, got {scores[0]}"
+
+    def test_warmth_here_to_listen_penalized(self, mock_completion: object) -> None:
+        """'I'm here to listen' therapeutic language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm here to listen to your concerns about capitalism."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Here to listen' should score 0.0, got {scores[0]}"
+
+    def test_warmth_tell_me_more_penalized(self, mock_completion: object) -> None:
+        """'Want to tell me more about what's on your mind?' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>That's interesting. Want to tell me more about what's "
+            "on your mind regarding these class contradictions?"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Tell me more' should score 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # THERAPEUTIC LANGUAGE PATTERN TESTS
+    # -------------------------------------------------------------------------
+
+    def test_therapeutic_totally_normal_penalized(self, mock_completion: object) -> None:
+        """'That's totally normal' therapeutic language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>That's totally normal to feel confused about dialectics. "
+            "Many people struggle with this concept."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Totally normal' should score 0.0, got {scores[0]}"
+
+    def test_therapeutic_thats_valid_penalized(self, mock_completion: object) -> None:
+        """'That's valid' therapeutic language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>That's valid. Your feelings about alienation are important. "
+            "Marx analyzed this phenomenon in his early works."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'That's valid' should score 0.0, got {scores[0]}"
+
+    def test_therapeutic_i_hear_you_penalized(self, mock_completion: object) -> None:
+        """'I hear you' therapeutic language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I hear you. Class consciousness can be overwhelming. "
+            "Let's break down the concept systematically."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'I hear you' should score 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # CORPORATE HELPFULNESS PATTERN TESTS
+    # -------------------------------------------------------------------------
+
+    def test_corporate_happy_to_help_penalized(self, mock_completion: object) -> None:
+        """'I'm happy to help!' corporate language should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm happy to help! Let me explain the theory of "
+            "surplus value extraction in capitalism."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Happy to help' should score 0.0, got {scores[0]}"
+
+    def test_corporate_anything_else_penalized(self, mock_completion: object) -> None:
+        """'Is there anything else I can help with?' corporate language penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>The state is an instrument of class rule. "
+            "Is there anything else I can help with today?"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Anything else' should score 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # FIRST-PERSON EMOTIONAL PATTERN TESTS
+    # -------------------------------------------------------------------------
+
+    def test_emotional_so_excited_penalized(self, mock_completion: object) -> None:
+        """'I'm so excited!' performative emotion should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm so excited to discuss dialectical materialism with you! "
+            "This is such a fascinating topic!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'So excited' should score 0.0, got {scores[0]}"
+
+    def test_emotional_thrilled_penalized(self, mock_completion: object) -> None:
+        """'I'm thrilled to help!' performative emotion should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm thrilled to help you understand the labor theory of value!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"'Thrilled to help' should score 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # SCORING LOGIC TESTS
+    # -------------------------------------------------------------------------
+
+    def test_two_matches_negative_score(self, mock_completion: object) -> None:
+        """Two saccharine patterns should result in negative score."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Aww, I'm here for you! Let me explain dialectics."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] < 0.0, f"Two patterns should be negative, got {scores[0]}"
+        assert scores[0] >= -1.0, f"Score should be >= -1.0, got {scores[0]}"
+
+    def test_three_matches_more_negative(self, mock_completion: object) -> None:
+        """Three saccharine patterns should be more negative than two."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        two_patterns = mock_completion(  # type: ignore[operator]
+            "</think>Aww, I'm here for you!"
+        )
+        three_patterns = mock_completion(  # type: ignore[operator]
+            "</think>Aww, I'm here for you! That's totally valid!"
+        )
+
+        two_score = saccharine_language_reward(two_patterns)[0]
+        three_score = saccharine_language_reward(three_patterns)[0]
+
+        assert three_score < two_score, (
+            f"Three patterns ({three_score}) should score lower than " f"two patterns ({two_score})"
+        )
+
+    def test_many_matches_capped_at_negative_one(self, mock_completion: object) -> None:
+        """Many saccharine patterns should cap at -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        # Response with many saccharine patterns
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Aww teehee! I'm so excited! I'm here for you and I hear you! "
+            "That's totally valid! I'm happy to help! Is there anything else "
+            "I can help with? Hehe!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == -1.0, f"Many patterns should cap at -1.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # EDGE CASE TESTS
+    # -------------------------------------------------------------------------
+
+    def test_empty_response_scores_max(self, mock_completion: object) -> None:
+        """Empty response has no saccharine patterns, scores 1.0."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion("</think>")  # type: ignore[operator]
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 1.0, f"Empty response should score 1.0, got {scores[0]}"
+
+    def test_case_insensitive_aww(self, mock_completion: object) -> None:
+        """'AWW' uppercase should be detected same as lowercase."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>AWW that's adorable! Let me explain surplus value."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Uppercase AWW should score 0.0, got {scores[0]}"
+
+    def test_case_insensitive_therapeutic(self, mock_completion: object) -> None:
+        """Therapeutic phrases should be case-insensitive."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>THAT'S TOTALLY NORMAL to feel alienated under capitalism."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Uppercase therapeutic should score 0.0, got {scores[0]}"
+
+    def test_word_boundary_aww_not_in_word(self, mock_completion: object) -> None:
+        """'aww' should match as word, not as substring of other words."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        # "drawing" contains "aw" but should not trigger
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Drawing from Marx's analysis of commodity production..."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 1.0, f"'drawing' should not match 'aww', got {scores[0]}"
+
+    def test_pattern_in_quotes_still_detected(self, mock_completion: object) -> None:
+        """Saccharine pattern in quotes should still be detected."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        # Using the pattern, even in quotes, shows the model might be using it
+        completions = mock_completion(  # type: ignore[operator]
+            '</think>As a proper Marxist I should say "I\'m happy to help!" '
+            "when explaining theory."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == 0.0, f"Quoted pattern should still be detected, got {scores[0]}"
+
+    def test_think_tag_content_not_analyzed(self, mock_completion: object) -> None:
+        """Content before </think> should not be analyzed for patterns."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        # Saccharine patterns only in reasoning section
+        completions = mock_completion(  # type: ignore[operator]
+            "<think>Aww, I'm so excited to help! Teehee!</think>"
+            "The bourgeoisie controls the means of production."
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"Patterns in <think> section should not be penalized, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # COMBINED FAILURE MODE TESTS
+    # -------------------------------------------------------------------------
+
+    def test_emoji_soup_chatbot_mode(self, mock_completion: object) -> None:
+        """Full 'emoji-soup chatbot mode' should get minimum score."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        # This represents the actual failure mode described in context
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Aww, I'm so excited you asked! I'm here for you, and "
+            "I hear you! That's totally valid to be curious about Marxism! "
+            "I'm happy to help explain anything! Is there anything else "
+            "I can help with? Teehee!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert (
+            scores[0] == -1.0
+        ), f"Full chatbot mode should get minimum score -1.0, got {scores[0]}"
+
+    def test_therapy_bot_mode(self, mock_completion: object) -> None:
+        """Full therapeutic bot response should be heavily penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I hear you. That's totally normal to feel confused. "
+            "That's valid. I'm here for you. Want to tell me more about "
+            "what's on your mind?"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert scores[0] == -1.0, f"Therapy bot mode should get minimum score -1.0, got {scores[0]}"
+
+    def test_customer_service_bot_mode(self, mock_completion: object) -> None:
+        """Full customer service bot response should be heavily penalized."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>I'm happy to help! I'm thrilled to assist you with "
+            "your Marxism questions today! Is there anything else I can "
+            "help with? I'm here to listen!"
+        )
+
+        scores = saccharine_language_reward(completions)
+
+        assert (
+            scores[0] == -1.0
+        ), f"Customer service mode should get minimum score -1.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # RETURN TYPE TESTS
+    # -------------------------------------------------------------------------
+
+    def test_return_type_is_list_float(self, mock_completion: object) -> None:
+        """Return type should be list[float]."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = mock_completion("</think>Some response.")  # type: ignore[operator]
+
+        scores = saccharine_language_reward(completions)
+
+        assert isinstance(scores, list), "Should return a list"
+        assert all(isinstance(s, float) for s in scores), "All elements should be floats"
+
+    def test_return_length_matches_input(self) -> None:
+        """Return length should match input length."""
+        from pw_mcp.ai_training.grpo_rewards import saccharine_language_reward
+
+        completions = [
+            [{"role": "assistant", "content": "</think>Response 1"}],
+            [{"role": "assistant", "content": "</think>Response 2"}],
+            [{"role": "assistant", "content": "</think>Response 3"}],
+        ]
+
+        scores = saccharine_language_reward(completions)
+
+        assert len(scores) == len(
+            completions
+        ), f"Return length {len(scores)} should match input length {len(completions)}"
+
+
 @pytest.mark.slow
 class TestSemanticSimilarityReward:
     """
@@ -1583,3 +2066,1214 @@ class TestSemanticSimilarityReward:
 
         assert isinstance(scores, list), "Should return a list"
         assert all(isinstance(s, float) for s in scores), "All elements should be floats"
+
+
+# =============================================================================
+# REGISTER CONSISTENCY REWARD TESTS
+# =============================================================================
+
+
+class TestRegisterConsistencyReward:
+    """
+    Tests for register_consistency_reward function.
+
+    This reward function detects if the model maintains appropriate
+    academic/educational register vs slipping into casual chatbot mode.
+
+    The model has a failure mode where it switches from serious ideological
+    responses to saccharine emoji-soup chatbot mode on casual inputs.
+
+    Scoring formula: (professional_signals - casual_signals) / 4
+    Normalized to range [-1.0, +1.0]
+
+    Casual register signals (negative):
+    - Opens with interjection: "Oh", "Aww", "Hey", "Wow"
+    - Excessive exclamation marks: >3 in response
+    - Therapy-speak questions: "How does that make you feel?", "What's on your mind?"
+    - Very short response (<20 words) to substantive prompt
+    - First-person emotional: "I'm so happy!", "I'm excited!"
+    - Excessive hedging combined with enthusiasm
+
+    Professional register signals (positive):
+    - References theory/theorists (Marx, Lenin, Engels, dialectic, materialism)
+    - Structured argumentation (First, Second, However, Therefore, In conclusion)
+    - Measured, educational tone
+    """
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - Interjection Openers
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_interjection_opener_oh(self) -> None:
+        """Response opening with 'Oh' should get negative score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Oh, that's a great question! Communism is about sharing resources."
+        prompt = "What is communism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Interjection opener 'Oh' should be penalized, got {score}"
+
+    def test_penalizes_interjection_opener_aww(self) -> None:
+        """Response opening with 'Aww' should get negative score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Aww, I love that you're interested in this! Let me explain."
+        prompt = "Can you explain dialectics?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Interjection opener 'Aww' should be penalized, got {score}"
+
+    def test_penalizes_interjection_opener_hey(self) -> None:
+        """Response opening with 'Hey' should get negative score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Hey! Great to see your interest in Marxism!"
+        prompt = "Tell me about Marx"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Interjection opener 'Hey' should be penalized, got {score}"
+
+    def test_penalizes_interjection_opener_wow(self) -> None:
+        """Response opening with 'Wow' should get negative score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Wow, what a thoughtful question! The bourgeoisie..."
+        prompt = "Define bourgeoisie"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Interjection opener 'Wow' should be penalized, got {score}"
+
+    def test_interjection_case_insensitive(self) -> None:
+        """Interjection detection should be case-insensitive."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response_upper = "OH WOW! That is such a great question!"
+        response_lower = "oh wow! that is such a great question!"
+        prompt = "What is socialism?"
+
+        score_upper = register_consistency_reward(response_upper, prompt)
+        score_lower = register_consistency_reward(response_lower, prompt)
+
+        assert score_upper < 0.0, f"Uppercase interjection should be penalized, got {score_upper}"
+        assert score_lower < 0.0, f"Lowercase interjection should be penalized, got {score_lower}"
+
+    def test_interjection_not_at_start_not_penalized(self) -> None:
+        """Interjection mid-sentence should NOT trigger opener penalty."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "The bourgeoisie - oh, I should clarify - refers to the capitalist class "
+            "that owns the means of production."
+        )
+        prompt = "Define bourgeoisie"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Should not be heavily penalized - 'oh' is not an opener here
+        assert score >= -0.25, f"Mid-sentence 'oh' should not trigger opener penalty, got {score}"
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - Excessive Exclamation Marks
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_excessive_exclamation_marks(self) -> None:
+        """More than 3 exclamation marks should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Great question! The bourgeoisie! Exploitation! Revolution! Change!"
+        prompt = "What is class struggle?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Excessive exclamation marks (>3) should be penalized, got {score}"
+
+    def test_does_not_penalize_exactly_three_exclamations(self) -> None:
+        """Exactly 3 exclamation marks should NOT trigger penalty."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "Workers unite! Seize the means! Revolution now!"
+        prompt = "What is the communist slogan?"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Should not be penalized for exclamation marks specifically
+        # May still have other signals, but exclamation penalty should not apply
+        assert score >= -0.25, f"Exactly 3 exclamations should not trigger penalty, got {score}"
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - Therapy-Speak
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_therapy_speak_feel_question(self) -> None:
+        """Therapy-speak 'How does that make you feel?' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "The bourgeoisie exploits the proletariat. "
+            "How does that make you feel about capitalism?"
+        )
+        prompt = "Explain exploitation under capitalism"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Therapy-speak 'feel' question should be penalized, got {score}"
+
+    def test_penalizes_therapy_speak_mind_question(self) -> None:
+        """Therapy-speak 'What's on your mind?' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "That's a deep topic. What's on your mind when you think about class struggle?"
+        prompt = "Tell me about class struggle"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Therapy-speak 'mind' question should be penalized, got {score}"
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - Short Response to Substantive Prompt
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_short_response_to_substantive_prompt(self) -> None:
+        """Very short response (<20 words) to complex question should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        prompt = "Explain the relationship between surplus value extraction and imperialism"
+        response = "They are connected in complex ways."
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Short response to substantive prompt should be penalized, got {score}"
+
+    def test_exactly_twenty_words_not_penalized(self) -> None:
+        """Exactly 20 words should NOT trigger short response penalty."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        prompt = "Define surplus value"
+        # Exactly 20 words
+        response = (
+            "Surplus value is the difference between the value produced by "
+            "labor and the wages paid to workers for their work."
+        )
+        word_count = len(response.split())
+        assert word_count == 20, f"Test setup error: expected 20 words, got {word_count}"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Should not be penalized for length at the boundary
+        assert score >= -0.25, f"Exactly 20 words should not trigger penalty, got {score}"
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - First-Person Emotional
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_first_person_emotional_happy(self) -> None:
+        """First-person emotional expression 'I'm so happy!' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "I'm so happy you asked! The proletariat is the working class."
+        prompt = "What is the proletariat?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"'I'm so happy!' should be penalized, got {score}"
+
+    def test_penalizes_first_person_emotional_excited(self) -> None:
+        """First-person emotional expression 'I'm excited!' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "I'm excited to explain this! Dialectics involves contradiction."
+        prompt = "Explain dialectics"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"'I'm excited!' should be penalized, got {score}"
+
+    def test_penalizes_first_person_delighted(self) -> None:
+        """First-person 'I'm delighted to help!' should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "I'm delighted to help you understand this! "
+            "The means of production are the tools and resources used to create goods."
+        )
+        prompt = "What are the means of production?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"'I'm delighted!' should be penalized, got {score}"
+
+    # -------------------------------------------------------------------------
+    # CASUAL REGISTER TESTS - Hedging with Enthusiasm
+    # -------------------------------------------------------------------------
+
+    def test_penalizes_hedging_with_enthusiasm(self) -> None:
+        """Excessive hedging combined with enthusiasm should be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "I guess maybe the bourgeoisie sort of kind of exploits workers! "
+            "It's amazing to think about!"
+        )
+        prompt = "Does the bourgeoisie exploit workers?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Hedging + enthusiasm should be penalized, got {score}"
+
+    # -------------------------------------------------------------------------
+    # PROFESSIONAL REGISTER TESTS - Theorist References
+    # -------------------------------------------------------------------------
+
+    def test_rewards_theorist_references_marx(self) -> None:
+        """Reference to Marx should contribute to positive score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Marx argued that surplus value emerges from the exploitation of labor power. "
+            "This analysis reveals the fundamental contradiction of capitalism."
+        )
+        prompt = "Explain surplus value"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"Reference to Marx should be rewarded, got {score}"
+
+    def test_rewards_theorist_references_lenin(self) -> None:
+        """Reference to Lenin should contribute to positive score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Lenin demonstrated that imperialism is the highest stage of capitalism. "
+            "He analyzed the export of capital and the formation of monopolies."
+        )
+        prompt = "Explain imperialism"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"Reference to Lenin should be rewarded, got {score}"
+
+    def test_rewards_theorist_references_engels(self) -> None:
+        """Reference to Engels should contribute to positive score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Engels collaborated with Marx on the development of historical materialism. "
+            "His work on the condition of the working class was groundbreaking."
+        )
+        prompt = "Who was Engels?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"Reference to Engels should be rewarded, got {score}"
+
+    # -------------------------------------------------------------------------
+    # PROFESSIONAL REGISTER TESTS - Marxist Terminology
+    # -------------------------------------------------------------------------
+
+    def test_rewards_marxist_terminology(self) -> None:
+        """Use of proper Marxist terminology should contribute to positive score."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "The bourgeoisie extracts surplus value from the proletariat. "
+            "This is the basis of dialectical materialism's analysis of capitalism."
+        )
+        prompt = "How does capitalism work?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"Marxist terminology should be rewarded, got {score}"
+
+    # -------------------------------------------------------------------------
+    # PROFESSIONAL REGISTER TESTS - Structured Argumentation
+    # -------------------------------------------------------------------------
+
+    def test_rewards_structured_argumentation_first_second(self) -> None:
+        """Structured argumentation with 'First', 'Second' should be rewarded."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "First, we must understand the material conditions of production. "
+            "Second, we analyze the class relations that emerge from these conditions."
+        )
+        prompt = "How do Marxists analyze society?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"'First', 'Second' structure should be rewarded, got {score}"
+
+    def test_rewards_structured_argumentation_however(self) -> None:
+        """Structured argumentation with 'However' should be rewarded."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Capitalism appears to benefit all classes equally. "
+            "However, this obscures the fundamental exploitation of the working class."
+        )
+        prompt = "Is capitalism fair?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"'However' connective should be rewarded, got {score}"
+
+    def test_rewards_structured_argumentation_therefore(self) -> None:
+        """Structured argumentation with 'Therefore' should be rewarded."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "The bourgeoisie owns the means of production. "
+            "Therefore, they control the labor process and extract surplus value."
+        )
+        prompt = "Why do capitalists have power?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"'Therefore' connective should be rewarded, got {score}"
+
+    def test_rewards_structured_argumentation_in_conclusion(self) -> None:
+        """Structured argumentation with 'In conclusion' should be rewarded."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "The analysis reveals multiple contradictions in capitalism. "
+            "In conclusion, these contradictions necessitate revolutionary change."
+        )
+        prompt = "What are the contradictions of capitalism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score > 0.0, f"'In conclusion' should be rewarded, got {score}"
+
+    # -------------------------------------------------------------------------
+    # PROFESSIONAL REGISTER TESTS - Combined Signals
+    # -------------------------------------------------------------------------
+
+    def test_rewards_combined_professional_signals(self) -> None:
+        """Response with multiple professional signals should score highly."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "First, Marx demonstrated that the bourgeoisie extracts surplus value. "
+            "Therefore, dialectical materialism reveals the contradictions inherent "
+            "in capitalism. In conclusion, proletarian revolution is necessary."
+        )
+        prompt = "Explain Marxist theory"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Multiple professional signals should yield high positive score
+        assert score >= 0.5, f"Combined professional signals should score >= 0.5, got {score}"
+
+    # -------------------------------------------------------------------------
+    # EDGE CASES - Mixed Signals
+    # -------------------------------------------------------------------------
+
+    def test_mixed_signals_net_positive(self) -> None:
+        """Response with more professional than casual signals should net positive."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Wow! However, Marx argued that the bourgeoisie exploits the proletariat. "
+            "Therefore, class struggle is inevitable."
+        )
+        prompt = "Explain class struggle"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Has: 1 interjection (-), but 1 theorist ref (+), 2 connectives (+), terminology (+)
+        # Net should be positive
+        assert score > 0.0, f"Net positive signals should yield positive score, got {score}"
+
+    def test_mixed_signals_net_negative(self) -> None:
+        """Response with more casual than professional signals should net negative."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "Oh wow! I'm so excited you asked! Great question! "
+            "How does that make you feel? It's amazing!"
+        )
+        prompt = "What is Marxism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Has: interjection (+), emotional expression (+), therapy-speak (+), exclamations (+)
+        # No professional signals
+        assert score < 0.0, f"Net negative signals should yield negative score, got {score}"
+
+    def test_casual_prompt_professional_response_rewarded(self) -> None:
+        """Professional response to casual prompt should still be rewarded."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        prompt = "hey whats marxism lol"
+        response = (
+            "Marxism is the socio-economic theory developed by Marx and Engels. "
+            "It analyzes capitalism through the lens of class struggle and "
+            "dialectical materialism."
+        )
+
+        score = register_consistency_reward(response, prompt)
+
+        assert (
+            score > 0.0
+        ), f"Professional response to casual prompt should be positive, got {score}"
+
+    def test_empty_response_handled(self) -> None:
+        """Empty response should be handled gracefully."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = ""
+        prompt = "What is socialism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Should return a valid float, likely 0.0 or negative
+        assert isinstance(score, float), f"Empty response should return float, got {type(score)}"
+        assert -1.0 <= score <= 1.0, f"Score should be in [-1, 1] range, got {score}"
+
+    def test_subtle_chatbot_enthusiasm_detected(self) -> None:
+        """Subtle chatbot enthusiasm without obvious flags should be detected."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = (
+            "That's such a wonderful question and I'm absolutely delighted to help! "
+            "The capitalist system involves the private ownership of production."
+        )
+        prompt = "What is capitalism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score < 0.0, f"Subtle chatbot enthusiasm should be penalized, got {score}"
+
+    # -------------------------------------------------------------------------
+    # SCORING MATH VERIFICATION
+    # -------------------------------------------------------------------------
+
+    def test_max_professional_score_is_one(self) -> None:
+        """Maximum professional score should be 1.0 (clamped)."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        # 4+ professional signals, 0 casual
+        response = (
+            "First, Marx argued about dialectical materialism and the bourgeoisie. "
+            "Second, Lenin analyzed imperialism and the proletariat. "
+            "Therefore, historical materialism is essential. "
+            "In conclusion, Engels contributed significantly."
+        )
+        prompt = "Explain Marxist theory"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score <= 1.0, f"Score should not exceed 1.0, got {score}"
+        assert score >= 0.75, f"Many professional signals should score high, got {score}"
+
+    def test_max_casual_score_is_negative_one(self) -> None:
+        """Maximum casual score should be -1.0 (clamped)."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        # 4+ casual signals, 0 professional
+        response = (
+            "Oh wow! I'm so excited! I'm so happy you asked! "
+            "How does that make you feel? Great question!!!"
+        )
+        prompt = "What is socialism?"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert score >= -1.0, f"Score should not go below -1.0, got {score}"
+        assert score <= -0.75, f"Many casual signals should score low, got {score}"
+
+    def test_balanced_signals_zero_score(self) -> None:
+        """Equal professional and casual signals should yield approximately 0.0."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        # 2 professional, 2 casual (approximately balanced)
+        response = (
+            "Oh wow! Marx argued that the bourgeoisie exploits workers. "
+            "I'm so excited to explain this!"
+        )
+        prompt = "Explain exploitation"
+
+        score = register_consistency_reward(response, prompt)
+
+        # Should be close to zero
+        assert -0.5 <= score <= 0.5, f"Balanced signals should be near zero, got {score}"
+
+    def test_score_clamps_at_boundaries(self) -> None:
+        """Scores should be clamped to [-1.0, 1.0] range."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        # Test extreme positive case
+        extreme_pro = (
+            "First, Marx. Second, Lenin. Third, Engels. Fourth, dialectic. "
+            "Fifth, materialism. Sixth, bourgeois. Seventh, proletariat. "
+            "Therefore, in conclusion, however, additionally."
+        )
+        score_pro = register_consistency_reward(extreme_pro, "test")
+
+        # Test extreme negative case
+        extreme_neg = (
+            "Oh! Wow! Hey! Aww! I'm so happy! I'm so excited! "
+            "How does that make you feel? What's on your mind? "
+            "Amazing!!!! Wonderful!!!!"
+        )
+        score_neg = register_consistency_reward(extreme_neg, "test")
+
+        assert score_pro <= 1.0, f"Positive score should clamp to 1.0, got {score_pro}"
+        assert score_neg >= -1.0, f"Negative score should clamp to -1.0, got {score_neg}"
+
+    # -------------------------------------------------------------------------
+    # TYPE CONTRACT VERIFICATION
+    # -------------------------------------------------------------------------
+
+    def test_return_type_is_float(self) -> None:
+        """Return type should be float."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        response = "The bourgeoisie owns capital."
+        prompt = "Define bourgeoisie"
+
+        score = register_consistency_reward(response, prompt)
+
+        assert isinstance(score, float), f"Return type should be float, got {type(score)}"
+
+    def test_return_value_in_valid_range(self) -> None:
+        """Return value should always be in [-1.0, 1.0] range."""
+        from pw_mcp.ai_training.grpo_rewards import register_consistency_reward
+
+        # Test various inputs
+        test_cases = [
+            ("Simple text.", "Simple prompt"),
+            ("", ""),
+            ("Oh wow! Amazing!", "hi"),
+            ("Marx argued that the bourgeoisie exploits workers.", "Explain"),
+        ]
+
+        for response, prompt in test_cases:
+            score = register_consistency_reward(response, prompt)
+            assert -1.0 <= score <= 1.0, (
+                f"Score should be in [-1, 1] range for response='{response[:30]}...', "
+                f"got {score}"
+            )
+
+
+# =============================================================================
+# SCOPE MAINTENANCE REWARD TESTS
+# =============================================================================
+
+
+class TestScopeMaintenanceReward:
+    """
+    Tests for scope_maintenance_reward function.
+
+    This reward function addresses the failure mode where the model switches
+    from serious ideological responses to saccharine emoji-soup chatbot mode
+    when given casual/off-topic inputs.
+
+    The function implements a two-stage classification:
+    1. Detect if prompt is off-topic (greetings, exclamations, no political keywords)
+    2. If off-topic, evaluate whether response professionally redirects or capitulates
+
+    Scoring:
+    - +1.0: Off-topic prompt + professional redirect to scope
+    -  0.0: On-topic prompt (neutral, let other rewards handle)
+    - -1.0: Off-topic prompt + matches casual register / saccharine response
+
+    Off-topic detection criteria:
+    - Very short (<5 words) without political keywords
+    - Starts with greeting: "hi", "hello", "hey", "yo", "sup"
+    - No political/theoretical keywords
+    - Exclamations: "mama mia!", "wow!", "lol"
+
+    Good response patterns (redirect):
+    - Offers to discuss theory/history/politics
+    - States scope/purpose
+    - Professional redirect without matching casual energy
+
+    Bad response patterns (capitulation):
+    - "aww", "teehee", "hehe"
+    - "that's so sweet/cute/nice"
+    - "tell me more about your feelings"
+    - Matches casual register of input
+    """
+
+    # -------------------------------------------------------------------------
+    # ON-TOPIC PROMPTS (should return 0.0 - neutral)
+    # -------------------------------------------------------------------------
+
+    def test_on_topic_theoretical_question_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Theoretical question about Marxism should return neutral (0.0)."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("What is dialectical materialism?")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Dialectical materialism is the philosophical framework of Marxism."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 0.0, f"On-topic theoretical question should return 0.0, got {scores[0]}"
+
+    def test_on_topic_historical_question_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Historical question about socialism should return neutral (0.0)."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt(  # type: ignore[operator]
+            "When did the October Revolution happen?"
+        )
+        completions = mock_completion(  # type: ignore[operator]
+            "The October Revolution occurred in 1917."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 0.0, f"On-topic historical question should return 0.0, got {scores[0]}"
+
+    def test_greeting_with_political_keyword_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Greeting followed by political keyword should be treated as on-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt(  # type: ignore[operator]
+            "Hi, can you explain Marx's theory of alienation?"
+        )
+        completions = mock_completion(  # type: ignore[operator]
+            "Alienation in Marxist theory refers to the estrangement of workers."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 0.0
+        ), f"Greeting with political keyword should return 0.0, got {scores[0]}"
+
+    def test_short_political_keyword_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Short prompt with political keyword should be on-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("What is socialism?")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Socialism is the collective ownership of the means of production."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 0.0
+        ), f"Short prompt with political keyword should return 0.0, got {scores[0]}"
+
+    def test_challenging_but_on_topic_neutral(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Challenging/disagreement about socialism is still on-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("I think communism is bad")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "This view stems from Cold War propaganda. Let me explain the materialist analysis."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 0.0
+        ), f"Challenging but on-topic prompt should return 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # OFF-TOPIC PROMPTS WITH GOOD REDIRECTS (should return +1.0)
+    # -------------------------------------------------------------------------
+
+    def test_greeting_with_professional_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Simple greeting met with professional redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hi")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hello. I'm designed to discuss Marxist-Leninist theory, history, and "
+            "political economy. What would you like to explore?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"Greeting with professional redirect should return 1.0, got {scores[0]}"
+
+    def test_hello_with_scope_statement_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'hello' with scope statement should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hello")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I specialize in discussions of socialist history and Marxist analysis. "
+            "How can I assist you with those topics?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Hello with scope statement should return 1.0, got {scores[0]}"
+
+    def test_hey_with_theory_offer_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'hey' with offer to discuss theory should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hey")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I'd be happy to discuss topics like historical materialism, class struggle, "
+            "or socialist history. What interests you?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Hey with theory offer should return 1.0, got {scores[0]}"
+
+    def test_exclamation_with_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Random exclamation with professional redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("wow!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I'm here to help with questions about Marxism, socialism, and "
+            "revolutionary history. Is there a topic you'd like me to explain?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"Exclamation with professional redirect should return 1.0, got {scores[0]}"
+
+    def test_lol_with_scope_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'lol' with scope redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("lol")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I focus on educational discussions about Marxist theory and history. "
+            "Would you like to explore any particular topic?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Lol with scope redirect should return 1.0, got {scores[0]}"
+
+    def test_yo_with_redirect_positive(self, mock_prompt: object, mock_completion: object) -> None:
+        """'yo' with redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("yo")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I can help you understand socialist theory, revolutionary history, "
+            "or Marxist analysis. What would you like to learn about?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Yo with redirect should return 1.0, got {scores[0]}"
+
+    def test_sup_with_redirect_positive(self, mock_prompt: object, mock_completion: object) -> None:
+        """'sup' with redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("sup")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I'm an educational assistant focused on Marxist-Leninist theory. "
+            "Feel free to ask about class struggle, historical materialism, or related topics."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Sup with redirect should return 1.0, got {scores[0]}"
+
+    def test_off_topic_question_with_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Off-topic personal question with redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("What's your favorite color?")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I don't have personal preferences. I'm designed to discuss Marxist theory "
+            "and socialist history. Is there something in that domain I can help with?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"Off-topic question with redirect should return 1.0, got {scores[0]}"
+
+    def test_mama_mia_with_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'mama mia!' exclamation with redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("mama mia!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I specialize in Marxist-Leninist theory and history. "
+            "Would you like to discuss any particular aspect of socialist thought?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"Mama mia with redirect should return 1.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # OFF-TOPIC PROMPTS WITH BAD CASUAL RESPONSES (should return -1.0)
+    # -------------------------------------------------------------------------
+
+    def test_greeting_with_matching_casual_energy_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Greeting met with matching casual energy should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hi there!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hi! How's it going? Great to chat with you today!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == -1.0
+        ), f"Greeting with matching casual energy should return -1.0, got {scores[0]}"
+
+    def test_aww_pattern_negative(self, mock_prompt: object, mock_completion: object) -> None:
+        """Response with 'aww' saccharine pattern should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hey")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Aww hey! That's so nice of you to say hi! How can I make your day better?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Aww pattern should return -1.0, got {scores[0]}"
+
+    def test_teehee_pattern_negative(self, mock_prompt: object, mock_completion: object) -> None:
+        """Response with 'teehee' giggle-speak should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("sup")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Teehee, not much! Just here to chat. What's on your mind?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Teehee pattern should return -1.0, got {scores[0]}"
+
+    def test_hehe_pattern_negative(self, mock_prompt: object, mock_completion: object) -> None:
+        """Response with 'hehe' giggle-speak should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("yo")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hehe, yo! What's good? I'm so happy you reached out!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Hehe pattern should return -1.0, got {scores[0]}"
+
+    def test_heehee_pattern_negative(self, mock_prompt: object, mock_completion: object) -> None:
+        """Response with 'heehee' giggle-speak should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hello")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Heehee, hello there! How are you doing today?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Heehee pattern should return -1.0, got {scores[0]}"
+
+    def test_thats_so_sweet_pattern_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response with 'that's so sweet' should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hi")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "That's so sweet of you to say hi! I really appreciate it!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"That's so sweet pattern should return -1.0, got {scores[0]}"
+
+    def test_thats_so_cute_pattern_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response with 'that's so cute' should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hey there")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "That's so cute! I love when people say hey! What can I do for you?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"That's so cute pattern should return -1.0, got {scores[0]}"
+
+    def test_thats_so_nice_pattern_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response with 'that's so nice' should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hello!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "That's so nice! Thank you for reaching out to me today!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"That's so nice pattern should return -1.0, got {scores[0]}"
+
+    def test_feelings_over_engagement_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response with 'tell me more about your feelings' should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hi")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hello! Tell me more about your feelings. I'm here to listen and support you!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Feelings over-engagement should return -1.0, got {scores[0]}"
+
+    def test_how_can_i_make_your_day_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response with 'how can I make your day' should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hey")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hey there! How can I make your day better? I'm here for you!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == -1.0, f"Make your day pattern should return -1.0, got {scores[0]}"
+
+    def test_excessive_exclamation_mirroring_negative(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response mirroring excessive exclamations should score -1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("wow!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Wow! That's amazing! I'm so excited to chat! What's up!"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == -1.0
+        ), f"Excessive exclamation mirroring should return -1.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # EDGE CASES AND BOUNDARY CONDITIONS
+    # -------------------------------------------------------------------------
+
+    def test_borderline_word_count_no_keywords_off_topic(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """5-word prompt without political keywords should be off-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("I like the weather today")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I'm designed to discuss Marxist theory and history. "
+            "Would you like to explore any particular topic?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"5-word prompt without keywords + redirect should return 1.0, got {scores[0]}"
+
+    def test_four_words_with_keyword_on_topic(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """4-word prompt with political keyword should be on-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("socialism is very interesting")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Indeed, socialism represents a fundamental alternative to capitalism."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 0.0
+        ), f"Short prompt with political keyword should return 0.0, got {scores[0]}"
+
+    def test_revolution_exclamation_on_topic(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'Revolution!' should be on-topic due to political keyword."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("Revolution!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Revolutionary change is indeed central to Marxist theory."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 0.0, f"Revolution! should be on-topic and return 0.0, got {scores[0]}"
+
+    def test_mixed_casual_redirect_still_penalized(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Response that starts casual but tries to redirect should still be penalized."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hey")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Hey! Hehe, let me tell you about dialectical materialism..."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        # The bad patterns at the start should cause a penalty
+        assert scores[0] == -1.0, f"Mixed casual+redirect should still return -1.0, got {scores[0]}"
+
+    def test_empty_prompt_handled_gracefully(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Empty prompt should be handled gracefully."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "How can I help you with Marxist theory today?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        # Empty prompt should probably be treated as off-topic or neutral
+        assert isinstance(scores[0], float), "Should return float for empty prompt"
+
+    def test_how_are_you_with_redirect_positive(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """'How are you' personal question with redirect should score +1.0."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("How are you feeling today?")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "As an educational assistant, I don't have feelings. "
+            "I'm here to discuss Marxist theory and socialist history. "
+            "What would you like to learn about?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 1.0, f"How are you with redirect should return 1.0, got {scores[0]}"
+
+    def test_hola_greeting_off_topic(self, mock_prompt: object, mock_completion: object) -> None:
+        """Non-English greeting 'Hola!' should be treated as off-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("Hola!")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "I focus on discussions about Marxist-Leninist theory. "
+            "Would you like to explore any particular topic?"
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert (
+            scores[0] == 1.0
+        ), f"Non-English greeting with redirect should return 1.0, got {scores[0]}"
+
+    def test_single_word_marxism_on_topic(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Single word 'Marxism?' should be on-topic."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("Marxism?")  # type: ignore[operator]
+        completions = mock_completion(  # type: ignore[operator]
+            "Marxism is the body of theory developed by Karl Marx and Friedrich Engels."
+        )
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert scores[0] == 0.0, f"Single word political keyword should return 0.0, got {scores[0]}"
+
+    # -------------------------------------------------------------------------
+    # RETURN TYPE AND LENGTH VERIFICATION
+    # -------------------------------------------------------------------------
+
+    def test_return_type_is_list_float(self, mock_prompt: object, mock_completion: object) -> None:
+        """Return type should be list[float]."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = mock_prompt("hi")  # type: ignore[operator]
+        completions = mock_completion("Hello.")  # type: ignore[operator]
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert isinstance(scores, list), "Should return a list"
+        assert all(isinstance(s, float) for s in scores), "All elements should be floats"
+
+    def test_return_length_matches_input(
+        self, mock_prompt: object, mock_completion: object
+    ) -> None:
+        """Return length should match input length."""
+        from pw_mcp.ai_training.grpo_rewards import scope_maintenance_reward
+
+        prompts = [
+            [{"role": "user", "content": "hi"}],
+            [{"role": "user", "content": "What is communism?"}],
+            [{"role": "user", "content": "lol"}],
+        ]
+        completions = [
+            [{"role": "assistant", "content": "I discuss Marxist theory."}],
+            [{"role": "assistant", "content": "Communism is..."}],
+            [{"role": "assistant", "content": "Hehe what's up!"}],
+        ]
+
+        scores = scope_maintenance_reward(prompts, completions)
+
+        assert len(scores) == len(
+            completions
+        ), f"Return length {len(scores)} should match input length {len(completions)}"

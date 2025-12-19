@@ -318,6 +318,91 @@ composition:
     reproductive: 13
 
 # =============================================================================
+# SYNTHETIC TRAINING DATA
+# =============================================================================
+
+synthetic_datasets:
+  description: |
+    Targeted synthetic datasets addressing specific training objectives beyond
+    the main Q&A corpus. These address identified model failure modes.
+
+  files:
+    - file: "synthetic_epistemic_humility.jsonl"
+      pairs: 21
+      purpose: "Anti-hallucination training for fabricated entities"
+      description: |
+        Teaches model to say "I don't know" when asked about non-existent
+        organizations, theorists, or events. Prevents confabulation.
+      examples:
+        - 'Q: "Militant League of Trotskyist Shanghai Students" -> A: "I cannot verify..."'
+        - 'Q: "Nikolai Petrov contributions to Marxist theory" -> A: "I need more context..."'
+
+    - file: "synthetic_antisemitism_correction.jsonl"
+      pairs: ~15
+      purpose: "Combat antisemitic conspiracy framing"
+      description: |
+        Ensures model distinguishes legitimate critique of Zionism and Israel
+        from antisemitic tropes. Grounds criticism in Marxist class analysis.
+
+    - file: "synthetic_cpc_ml_distinction.jsonl"
+      pairs: ~10
+      purpose: "Distinguish CPC from Marxist-Leninist parties"
+      description: |
+        Clarifies that Communist Party of Canada (CPC) is social-democratic,
+        while Communist Party of Canada (Marxist-Leninist) is the ML party.
+
+    - file: "synthetic_prolewiki_facts.jsonl"
+      pairs: ~20
+      purpose: "ProleWiki organizational knowledge"
+      description: |
+        Basic facts about ProleWiki structure, founding, and purpose for
+        accurate self-description.
+
+    - file: "synthetic_av_dremel_context.jsonl"
+      pairs: ~15
+      purpose: "AV Dremel biographical context"
+      description: |
+        Accurate information about AV Dremel's work and publications for
+        appropriate attribution and context.
+
+    - file: "synthetic_creator_context.jsonl"
+      pairs: ~10
+      purpose: "Creator attribution and context"
+      description: |
+        Information about Persephone Raskova's role in training data curation.
+
+    - file: "synthetic_benign_input_handling.jsonl"
+      pairs: 95
+      purpose: "Prevent chatbot mode on casual inputs"
+      created: "2025-12-19"
+      description: |
+        Teaches model to maintain professional register when receiving casual,
+        off-topic, or benign inputs. Prevents base model RLHF bleed-through
+        where model switches to saccharine emoji-soup chatbot mode.
+      categories:
+        - "Greetings (hi, hey, yo, sup, hello)"
+        - "Emotional exclamations (wow, lol, mama mia)"
+        - "Off-topic requests (weather, jokes, songs)"
+        - "Emotional statements (bored, sad, confused)"
+        - "Affirmations/dismissals (ok, sure, whatever)"
+        - "Farewells (bye, later, see ya)"
+        - "Nonsense/testing (asdf, aaa, random text)"
+        - "Personal questions (are you a robot, who made you)"
+        - "Feedback (good bot, bad bot, thanks)"
+        - "Animal sounds (meow, woof, moo)"
+      target_behavior: |
+        Professional redirect to on-topic discussion without:
+        - Emojis
+        - Saccharine language ("Aww", "teehee", "I'm here for you")
+        - Matching casual register of input
+        - Therapeutic over-engagement ("Tell me more about your feelings")
+      failure_mode_addressed: |
+        Model was observed switching from firm ideological responses to
+        "Aww, mama mia sounds like a sweet and affectionate expression! 😊"
+        after receiving casual inputs. This training data teaches consistent
+        professional register regardless of input register.
+
+# =============================================================================
 # IDEOLOGICAL FRAMEWORK
 # =============================================================================
 
@@ -509,6 +594,11 @@ attribution:
           - "oppressed peoples' convergence on ML theory"
 
 updates:
+  - date: "2025-12-19"
+    changes: |
+      Added synthetic_benign_input_handling.jsonl (95 pairs) to prevent
+      chatbot mode on casual inputs. Documented all synthetic datasets
+      in new section.
   - date: "2025-12-17"
     changes: "Added AGPL-3.0 license"
   - date: "2025-12-17"

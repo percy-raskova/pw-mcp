@@ -161,13 +161,13 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-19: synthetic_benign_input_handling.jsonl (95 pairs) - prevent chatbot mode on casual inputs"
+      - "2025-12-19: Identified persona drift failure mode - model switches to emoji soup on benign inputs"
+      - "2025-12-19: Designed 4 new reward functions for register consistency (pending implementation)"
       - "2025-12-18: Test audit + 25 new tests (79 total GRPO reward tests)"
       - "2025-12-18: Anti-hallucination system (entity whitelist + 3 new reward functions)"
       - "2025-12-18: ideological_firmness_reward - combat reactionary claims with ML analysis"
       - "2025-12-18: entity_verification_reward - NER + 24,040 entity whitelist"
-      - "2025-12-18: epistemic_calibration_reward - pattern-based uncertainty detection"
-      - "2025-12-18: Synthetic training data (epistemic humility, creator/contributor context)"
-      - "2025-12-17: PHASE 8 IN_PROGRESS - GRPO reward system (13+ functions)"
       - "2025-12-17: Added interconnection_depth_reward (anti-buzzword-salad)"
       - "2025-12-17: Added W&B logging integration (wandb_logging.py)"
       - "2025-12-16: MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking"
@@ -422,8 +422,9 @@ files:
         - synthetic_epistemic_humility.jsonl (20 anti-hallucination examples)
         - synthetic_creator_context.jsonl (12 examples about Persephone Raskova)
         - synthetic_av_dremel_context.jsonl (8 examples about AV Dremel)
+        - synthetic_benign_input_handling.jsonl (95 pairs - prevent chatbot mode)
         - entity_whitelist_clean.json (24,040 verified entities from corpus)
-        - MANIFEST.yaml (dataset tracking and statistics)
+        - MODEL_CARD.yaml (dataset documentation with synthetic data section)
     use_when:
       - implementing or modifying GRPO reward functions
       - adding new anti-hacking measures
