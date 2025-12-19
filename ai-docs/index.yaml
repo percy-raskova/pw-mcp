@@ -161,12 +161,12 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
+      - "2025-12-18: Test audit + 25 new tests (79 total GRPO reward tests)"
       - "2025-12-18: Anti-hallucination system (entity whitelist + 3 new reward functions)"
       - "2025-12-18: ideological_firmness_reward - combat reactionary claims with ML analysis"
       - "2025-12-18: entity_verification_reward - NER + 24,040 entity whitelist"
       - "2025-12-18: epistemic_calibration_reward - pattern-based uncertainty detection"
       - "2025-12-18: Synthetic training data (epistemic humility, creator/contributor context)"
-      - "2025-12-18: Entity whitelist extracted from ProleWiki corpus (24,040 entities)"
       - "2025-12-17: PHASE 8 IN_PROGRESS - GRPO reward system (13+ functions)"
       - "2025-12-17: Added interconnection_depth_reward (anti-buzzword-salad)"
       - "2025-12-17: Added W&B logging integration (wandb_logging.py)"
@@ -412,7 +412,7 @@ files:
       - FIRMNESS_PATTERNS (21 firm Marxist response patterns)
       - CLASS_ANALYSIS_MARKERS (13 substantive class analysis terms)
     test_files:
-      - tests/unit/training/test_grpo_rewards.py (54 tests)
+      - tests/unit/training/test_grpo_rewards.py (79 tests)
       - tests/unit/training/test_wandb_logging.py (17 tests)
     training_data:
       location: training_data/

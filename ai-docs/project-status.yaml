@@ -597,7 +597,7 @@ current_focus:
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
-    2025-12-18 Summary (ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS):
+    2025-12-18 Summary (ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS + TEST COVERAGE):
     - Implemented anti-hallucination system with entity whitelist (24,040 entities)
     - Added ideological_firmness_reward (combat reactionary claims with ML analysis)
     - Added entity_verification_reward (NER + whitelist anti-hallucination)
@@ -607,7 +607,11 @@ current_focus:
       * synthetic_creator_context.jsonl (12 examples about Persephone Raskova)
       * synthetic_av_dremel_context.jsonl (8 examples about AV Dremel)
     - Created entity extraction scripts (extract_entities.py, clean_whitelist.py)
-    - 54 GRPO reward tests passing (11 new ideological firmness tests)
+    - Test audit identified 3 untested reward functions - added 25 tests:
+      * TestEntityVerificationReward (9 tests)
+      * TestEpistemicCalibrationReward (8 tests)
+      * TestSemanticSimilarityReward (8 tests)
+    - 79 GRPO reward tests passing (was 54), 432 total tests
 
     Previous (2025-12-17) - GRPO FINE-TUNING:
     - Implemented complete GRPO reward function system (13+ functions)
@@ -663,9 +667,9 @@ current_focus:
     embed_cli: 10 passing
     embed_slow: 4 passing
     # Training tests
-    grpo_rewards: 54 passing  # Multi-layer + anti-hallucination + ideological firmness
+    grpo_rewards: 79 passing  # Multi-layer + anti-hallucination + ideological firmness (25 new)
     wandb_logging: 17 passing  # W&B integration
-    total: 407 passing  # Updated 2025-12-18
+    total: 432 passing  # Updated 2025-12-18
 
 # =============================================================================
 # KEY DECISIONS
