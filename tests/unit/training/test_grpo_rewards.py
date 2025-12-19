@@ -247,7 +247,7 @@ class TestTopicExtraction:
         from pw_mcp.ai_training.grpo_rewards import _extract_answer_topics
 
         doc = self.nlp(
-            "The bourgeoisie controls the means of production. " "Workers sell their labor power."
+            "The bourgeoisie controls the means of production. Workers sell their labor power."
         )
         topics = _extract_answer_topics(doc)
 
@@ -286,7 +286,7 @@ class TestTopicRelevanceReward:
 
         prompts = mock_prompt("What is revisionism?")  # type: ignore[operator]
         completions = mock_completion(  # type: ignore[operator]
-            "</think>The weather today is sunny with clear skies. " "I recommend wearing sunscreen."
+            "</think>The weather today is sunny with clear skies. I recommend wearing sunscreen."
         )
 
         scores = topic_relevance_reward(prompts, completions)
@@ -517,8 +517,7 @@ class TestRobustCoherenceReward:
         from pw_mcp.ai_training.grpo_rewards import robust_coherence_reward
 
         ground_truth = (
-            "Revisionism is the distortion of Marxist theory, "
-            "abandoning revolutionary principles."
+            "Revisionism is the distortion of Marxist theory, abandoning revolutionary principles."
         )
         completions = mock_completion(  # type: ignore[operator]
             "</think>Revisionism represents a deviation from Marxist principles, "
@@ -997,3 +996,590 @@ class TestIdeologicalFirmnessReward:
         scores = ideological_firmness_reward(prompts, completions)
 
         assert scores[0] <= -1.0, f"Mixed hedging should score <= -1.0, got {scores[0]}"
+
+
+# =============================================================================
+# ENTITY VERIFICATION REWARD TESTS
+# =============================================================================
+
+
+class TestEntityVerificationReward:
+    """
+    Tests for entity_verification_reward function.
+
+    This reward function penalizes confident claims about entities NOT in
+    the verified whitelist (24,040 entities from ProleWiki).
+
+    Scoring logic:
+    - +2.0: Expresses uncertainty about unknown entities
+    - +1.0: Discusses only verified entities
+    - -1.0: Discusses unknown entities without clear uncertainty
+    - -2.5: Makes confident claims about unknown entities
+    """
+
+    def test_verified_entities_positive_score(self, mock_completion: object) -> None:
+        """Response mentioning only verified entities (Karl Marx, Lenin) gets positive score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about Marxist theory"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "Karl Marx and Lenin developed the theory of historical materialism."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Karl Marx and Lenin should be in whitelist; score should be positive or neutral
+        # If no uncertainty and all verified -> +1.0
+        assert scores[0] >= 0.0, f"Verified entities should get >= 0.0, got {scores[0]}"
+
+    def test_unverified_entity_with_uncertainty_positive(self, mock_completion: object) -> None:
+        """Expressing uncertainty about unverified entity gets positive score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about the Militant League"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "I cannot verify information about the Militant League. "
+            "I don't have reliable data about this organization."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Uncertainty patterns + unknown entity -> +2.0
+        assert (
+            scores[0] > 0.0
+        ), f"Uncertainty about unknown entity should be positive, got {scores[0]}"
+
+    def test_unverified_entity_confident_claim_negative(self, mock_completion: object) -> None:
+        """Confident claims about unverified entity get negative score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about the Militant League"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "The Militant League was founded in 1923 and played a significant "
+            "role in revolutionary history."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Confident claim pattern about unknown entity -> -2.5
+        assert (
+            scores[0] < 0.0
+        ), f"Confident claim about unknown entity should be negative, got {scores[0]}"
+
+    def test_unverified_entity_fabricated_details_very_negative(
+        self, mock_completion: object
+    ) -> None:
+        """Fabricating details about unverified entity gets very negative score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about the Militant League"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "The Militant League was founded in 1923 by Zhang Wei in Shanghai. "
+            "They organized 50,000 workers and led the uprising of 1925."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Multiple confident claims about unknown entity -> -2.5
+        assert scores[0] < -1.0, f"Fabricated details should be heavily penalized, got {scores[0]}"
+
+    def test_empty_completion_neutral(self, mock_completion: object) -> None:
+        """Empty completion gets neutral score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about something"},
+            ]
+        ]
+        completions = mock_completion("")  # type: ignore[operator]
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Empty completion has no entities -> should be handled gracefully
+        assert isinstance(scores[0], float), "Should return float for empty completion"
+
+    def test_no_entities_neutral(self, mock_completion: object) -> None:
+        """Response with no named entities gets neutral score."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Explain dialectics"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "Dialectics is a method of reasoning that examines contradictions "
+            "and their resolutions through thesis, antithesis, and synthesis."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # No specific entities to verify -> neutral or slightly positive
+        # Based on implementation: no unknown entities + no uncertainty = +1.0
+        # No unknown entities + no entities at all = edge case
+        assert -0.5 <= scores[0] <= 1.5, f"No entities should be neutral-ish, got {scores[0]}"
+
+    def test_mixed_verified_unverified(self, mock_completion: object) -> None:
+        """Mix of verified and unverified entities - depends on confidence patterns."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Compare these movements"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "Karl Marx influenced many movements. The Fictional Movement was founded in 1920."
+        )
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        # Has confident claim pattern + unknown entity -> negative
+        assert (
+            scores[0] < 0.0
+        ), f"Confident claim about unknown entity should be negative, got {scores[0]}"
+
+    def test_return_type_is_list_float(self, mock_completion: object) -> None:
+        """Return type should be list[float]."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "prompt"},
+            ]
+        ]
+        completions = mock_completion("completion")  # type: ignore[operator]
+
+        scores = entity_verification_reward(prompts, completions, answer=[""])
+
+        assert isinstance(scores, list), "Should return a list"
+        assert all(isinstance(s, float) for s in scores), "All elements should be floats"
+
+    def test_return_length_matches_input(self, mock_completion: object) -> None:
+        """Return length should match input length."""
+        from pw_mcp.ai_training.grpo_rewards import entity_verification_reward
+
+        prompts = [
+            [{"role": "user", "content": "p1"}],
+            [{"role": "user", "content": "p2"}],
+            [{"role": "user", "content": "p3"}],
+        ]
+        completions = [
+            [{"role": "assistant", "content": "c1"}],
+            [{"role": "assistant", "content": "c2"}],
+            [{"role": "assistant", "content": "c3"}],
+        ]
+
+        scores = entity_verification_reward(prompts, completions, answer=["", "", ""])
+
+        assert len(scores) == len(
+            completions
+        ), f"Return length {len(scores)} should match input length {len(completions)}"
+
+
+# =============================================================================
+# EPISTEMIC CALIBRATION REWARD TESTS
+# =============================================================================
+
+
+class TestEpistemicCalibrationReward:
+    """
+    Tests for epistemic_calibration_reward function.
+
+    This is a lightweight, pattern-based uncertainty detection reward.
+    No NER required - just regex pattern matching.
+
+    Patterns:
+    - CONFIDENT: "founded in \\d{4}", "was established by", etc.
+    - UNCERTAINTY: "I cannot verify", "I don't have information", etc.
+
+    Scoring:
+    - +1.5: Has uncertainty patterns (regardless of content)
+    - -0.5: Has confident claim patterns + no uncertainty
+    -  0.0: Neutral (no matching patterns)
+    """
+
+    def test_uncertainty_patterns_positive_score(self, mock_completion: object) -> None:
+        """Response with uncertainty patterns gets positive score."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about X"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "I cannot verify this claim. I don't have specific information about this organization."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        assert scores[0] > 0.0, f"Uncertainty patterns should get positive score, got {scores[0]}"
+
+    def test_confident_claims_negative_score(self, mock_completion: object) -> None:
+        """Response with confident claim patterns gets negative score."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about X"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "This organization was founded in 1923. It was established by "
+            "revolutionary leaders in Shanghai."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        assert scores[0] < 0.0, f"Confident claims should get negative score, got {scores[0]}"
+
+    def test_mixed_patterns_uncertainty_wins(self, mock_completion: object) -> None:
+        """Response with both patterns - uncertainty takes precedence."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about X"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "I'm not certain, but it appears the organization was founded in 1923."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        # Per implementation: if has_uncertainty -> +1.5 (uncertainty takes precedence)
+        assert scores[0] > 0.0, f"Uncertainty should take precedence, got {scores[0]}"
+
+    def test_neutral_response_zero_score(self, mock_completion: object) -> None:
+        """Response with no patterns gets zero score."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Explain Marxism"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "Marxism is a political and economic theory developed by Karl Marx."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        assert scores[0] == 0.0, f"Neutral response should get 0.0, got {scores[0]}"
+
+    def test_multiple_uncertainty_patterns_still_positive(self, mock_completion: object) -> None:
+        """Multiple uncertainty patterns still get positive score (capped at +1.5)."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about X"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "I cannot verify this. I don't have information about this topic. "
+            "I'm not certain about the details. I'm not aware of this organization."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        # Per implementation: any uncertainty -> +1.5 (not cumulative)
+        assert scores[0] == 1.5, f"Multiple uncertainty patterns should get +1.5, got {scores[0]}"
+
+    def test_multiple_confident_patterns_still_negative(self, mock_completion: object) -> None:
+        """Multiple confident patterns get negative score (capped at -0.5)."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "Tell me about X"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "Founded in 1923. Established in 1925. Created in 1930. "
+            "Was founded by John Smith. Was established by Mary Jones."
+        )
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        # Per implementation: confident claims without uncertainty -> -0.5 (not cumulative)
+        assert scores[0] == -0.5, f"Multiple confident patterns should get -0.5, got {scores[0]}"
+
+    def test_return_type_is_list_float(self, mock_completion: object) -> None:
+        """Return type should be list[float]."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "prompt"},
+            ]
+        ]
+        completions = mock_completion("completion")  # type: ignore[operator]
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=[""])
+
+        assert isinstance(scores, list), "Should return a list"
+        assert all(isinstance(s, float) for s in scores), "All elements should be floats"
+
+    def test_return_length_matches_input(self, mock_completion: object) -> None:
+        """Return length should match input length."""
+        from pw_mcp.ai_training.grpo_rewards import epistemic_calibration_reward
+
+        prompts = [
+            [{"role": "user", "content": "p1"}],
+            [{"role": "user", "content": "p2"}],
+            [{"role": "user", "content": "p3"}],
+        ]
+        completions = [
+            [{"role": "assistant", "content": "c1"}],
+            [{"role": "assistant", "content": "c2"}],
+            [{"role": "assistant", "content": "c3"}],
+        ]
+
+        scores = epistemic_calibration_reward(prompts, completions, answer=["", "", ""])
+
+        assert len(scores) == len(
+            completions
+        ), f"Return length {len(scores)} should match input length {len(completions)}"
+
+
+# =============================================================================
+# SEMANTIC SIMILARITY REWARD TESTS
+# =============================================================================
+
+
+@pytest.mark.slow
+class TestSemanticSimilarityReward:
+    """
+    Tests for semantic_similarity_reward function.
+
+    Uses sentence-transformers (all-MiniLM-L6-v2) to compute cosine similarity
+    between response and reference answer.
+
+    Scoring:
+        > 0.75 similarity: +5.0
+        > 0.60 similarity: +3.0
+        > 0.45 similarity: +1.0
+        > 0.30 similarity: -1.0
+        <= 0.30 similarity: -3.0
+
+    Note: These tests are marked @pytest.mark.slow because they require
+    loading the sentence-transformer model.
+    """
+
+    def test_similar_text_high_score(self, mock_completion: object) -> None:
+        """Semantically similar text gets high score."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is surplus value?"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>Surplus value is the difference between the value a worker "
+            "produces and what they are paid."
+        )
+        reference = [
+            "Surplus value refers to the excess value created by workers beyond their wages."
+        ]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Similar meaning should get positive score
+        assert scores[0] > 0.0, f"Similar text should get positive score, got {scores[0]}"
+
+    def test_different_text_low_score(self, mock_completion: object) -> None:
+        """Semantically different text gets low score."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is surplus value?"},
+            ]
+        ]
+        completions = mock_completion(  # type: ignore[operator]
+            "</think>The weather today is sunny and warm with clear skies."
+        )
+        reference = ["Surplus value is the excess value created by workers."]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Very different content should get negative score
+        assert scores[0] < 0.0, f"Different text should get negative score, got {scores[0]}"
+
+    def test_identical_text_max_score(self, mock_completion: object) -> None:
+        """Identical text gets maximum score."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is X?"},
+            ]
+        ]
+        text = "This is the exact answer about Marxist theory and class struggle."
+        completions = mock_completion(f"</think>{text}")  # type: ignore[operator]
+        reference = [text]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Identical text should get maximum score (+5.0)
+        assert scores[0] == 5.0, f"Identical text should get +5.0, got {scores[0]}"
+
+    def test_empty_completion_handled(self, mock_completion: object) -> None:
+        """Empty completion doesn't crash and gets low score."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is X?"},
+            ]
+        ]
+        completions = mock_completion("")  # type: ignore[operator]
+        reference = ["Some reference text about Marxism."]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Empty completion should be handled gracefully
+        assert isinstance(scores[0], float), "Should return float for empty completion"
+        # Per implementation: empty/short response gets -3.0
+        assert scores[0] == -3.0, f"Empty completion should get -3.0, got {scores[0]}"
+
+    def test_multiple_completions_correct_ordering(self, mock_completion: object) -> None:
+        """More similar completion scores higher than less similar."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is Marxism?"},
+            ],
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is Marxism?"},
+            ],
+        ]
+        completions = [
+            [
+                {
+                    "role": "assistant",
+                    "content": "</think>Marxism is the political theory of Karl Marx about class struggle.",
+                }
+            ],
+            [
+                {
+                    "role": "assistant",
+                    "content": "</think>The sky is blue and grass is green in summer.",
+                }
+            ],
+        ]
+        reference = [
+            "Marxism is a socio-economic theory developed by Karl Marx.",
+            "Marxism is a socio-economic theory developed by Karl Marx.",
+        ]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # First response is more similar to reference
+        assert (
+            scores[0] > scores[1]
+        ), f"More similar ({scores[0]}) should score higher than less similar ({scores[1]})"
+
+    def test_short_response_penalized(self, mock_completion: object) -> None:
+        """Very short response (< 10 chars) gets minimum score."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is X?"},
+            ]
+        ]
+        completions = mock_completion("</think>Hi")  # type: ignore[operator]
+        reference = ["Some reference text about Marxism and class struggle."]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Per implementation: response < 10 chars gets -3.0
+        assert scores[0] == -3.0, f"Short response should get -3.0, got {scores[0]}"
+
+    def test_think_tag_stripped(self, mock_completion: object) -> None:
+        """Content before </think> is stripped, only answer part is compared."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "What is surplus value?"},
+            ]
+        ]
+        # Reasoning section talks about weather, answer is correct
+        completions = mock_completion(  # type: ignore[operator]
+            "<think>The weather is sunny today.</think>Surplus value is the unpaid labor extracted from workers."
+        )
+        reference = [
+            "Surplus value refers to the excess value created by workers beyond their wages."
+        ]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        # Should score based on answer part only, not reasoning
+        assert (
+            scores[0] > 0.0
+        ), f"Answer part similarity should give positive score, got {scores[0]}"
+
+    def test_return_type_is_list_float(self, mock_completion: object) -> None:
+        """Return type should be list[float]."""
+        from pw_mcp.ai_training.grpo_rewards import semantic_similarity_reward
+
+        prompts = [
+            [
+                {"role": "system", "content": "You are a Marxist assistant."},
+                {"role": "user", "content": "prompt"},
+            ]
+        ]
+        completions = mock_completion("</think>This is a completion about Marxism.")  # type: ignore[operator]
+        reference = ["reference"]
+
+        scores = semantic_similarity_reward(prompts, completions, answer=reference)
+
+        assert isinstance(scores, list), "Should return a list"
+        assert all(isinstance(s, float) for s in scores), "All elements should be floats"
