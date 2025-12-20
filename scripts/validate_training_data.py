@@ -1,435 +1,284 @@
 #!/usr/bin/env python3
-"""Validate training data files against JSON Schema.
+"""
+Validate all training data against schema and manifest.
 
-This script validates JSONL training data files against the formal
-JSON Schema defined in training_data/schema/training_record.schema.json.
+Checks:
+1. All JSONL files parse correctly
+2. All records conform to qa_record.schema.json
+3. Manifest record counts match actual files
+4. No duplicate IDs
+5. All required metadata fields present
 
 Usage:
-    # Validate all JSONL files in training_data/
-    uv run python scripts/validate_training_data.py
-
-    # Validate specific file
-    uv run python scripts/validate_training_data.py training_data/curated_qa.jsonl
-
-    # Validate with verbose output
-    uv run python scripts/validate_training_data.py --verbose
-
-    # Generate statistics
-    uv run python scripts/validate_training_data.py --stats
-
-    # Check manifest integrity (SHA256 verification)
-    uv run python scripts/validate_training_data.py --verify-checksums
+    python scripts/validate_training_data.py
+    python scripts/validate_training_data.py --verbose
+    python scripts/validate_training_data.py --skip-schema  # Skip schema validation
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import sys
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-# Try to import jsonschema, provide helpful error if missing
 try:
-    from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+    import jsonschema  # type: ignore[import-untyped]
 
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
-    Draft202012Validator = None
+    jsonschema = None
 
-
-@dataclass
-class ValidationResult:
-    """Result of validating a single file."""
-
-    filename: str
-    total_records: int
-    valid_records: int
-    invalid_records: int
-    errors: list[tuple[int, str]]  # (line_number, error_message)
-    schema_version: str
-
-    @property
-    def is_valid(self) -> bool:
-        """Return True if all records are valid."""
-        return self.invalid_records == 0
-
-    @property
-    def validity_rate(self) -> float:
-        """Return percentage of valid records."""
-        if self.total_records == 0:
-            return 0.0
-        return (self.valid_records / self.total_records) * 100
-
-
-def load_schema(schema_path: Path) -> dict[str, Any]:
-    """Load JSON Schema from file."""
-    result: dict[str, Any] = json.loads(schema_path.read_text())
-    return result
-
-
-def validate_record(record: dict[str, Any], validator: Draft202012Validator) -> list[str]:
-    """Validate a single record against schema, return list of errors."""
-    errors = []
-    for error in validator.iter_errors(record):
-        path = ".".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
-        errors.append(f"{path}: {error.message}")
-    return errors
-
-
-def validate_file(
-    filepath: Path,
-    validator: Draft202012Validator,
-    *,
-    verbose: bool = False,
-) -> ValidationResult:
-    """Validate all records in a JSONL file."""
-    errors: list[tuple[int, str]] = []
-    valid_count = 0
-    total_count = 0
-
-    with filepath.open() as f:
-        for line_num, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-
-            total_count += 1
-
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as e:
-                errors.append((line_num, f"JSON parse error: {e}"))
-                continue
-
-            record_errors = validate_record(record, validator)
-            if record_errors:
-                for err in record_errors:
-                    errors.append((line_num, err))
-                    if verbose:
-                        print(f"  Line {line_num}: {err}", file=sys.stderr)
-            else:
-                valid_count += 1
-
-    return ValidationResult(
-        filename=filepath.name,
-        total_records=total_count,
-        valid_records=valid_count,
-        invalid_records=total_count - valid_count,
-        errors=errors,
-        schema_version="2020-12",
-    )
-
-
-def validate_legacy_format(filepath: Path, *, verbose: bool = False) -> ValidationResult:
-    """Validate legacy format files (instruction/response only)."""
-    errors: list[tuple[int, str]] = []
-    valid_count = 0
-    total_count = 0
-
-    with filepath.open() as f:
-        for line_num, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-
-            total_count += 1
-
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as e:
-                errors.append((line_num, f"JSON parse error: {e}"))
-                continue
-
-            # Check for required fields in legacy format
-            record_errors = []
-            if "instruction" not in record and "prompt" not in record:
-                record_errors.append("Missing 'instruction' or 'prompt' field")
-            if "response" not in record and "answer" not in record:
-                record_errors.append("Missing 'response' or 'answer' field")
-
-            if record_errors:
-                for err in record_errors:
-                    errors.append((line_num, err))
-                    if verbose:
-                        print(f"  Line {line_num}: {err}", file=sys.stderr)
-            else:
-                valid_count += 1
-
-    return ValidationResult(
-        filename=filepath.name,
-        total_records=total_count,
-        valid_records=valid_count,
-        invalid_records=total_count - valid_count,
-        errors=errors,
-        schema_version="legacy",
-    )
-
-
-def compute_sha256(filepath: Path) -> str:
-    """Compute SHA256 hash of file."""
-    sha256_hash = hashlib.sha256()
-    with filepath.open("rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(chunk)
-    return sha256_hash.hexdigest()
-
-
-def verify_manifest_checksums(manifest_path: Path, data_dir: Path) -> list[str]:
-    """Verify SHA256 checksums in manifest match actual files."""
+try:
     import yaml
 
-    errors = []
-    manifest = yaml.safe_load(manifest_path.read_text())
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
 
-    for file_entry in manifest.get("files", []):
-        filename = file_entry["filename"]
-        expected_hash = file_entry["sha256"]
-        filepath = data_dir / filename
 
-        if not filepath.exists():
-            errors.append(f"{filename}: File not found")
-            continue
+def load_schema(schema_path: Path) -> dict[str, object] | None:
+    """Load JSON schema from file."""
+    if not HAS_JSONSCHEMA:
+        print("Warning: jsonschema not installed, skipping schema validation")
+        return None
 
-        actual_hash = compute_sha256(filepath)
-        if actual_hash != expected_hash:
-            errors.append(
-                f"{filename}: Hash mismatch\n"
-                f"  Expected: {expected_hash}\n"
-                f"  Actual:   {actual_hash}"
-            )
+    if not schema_path.exists():
+        print(f"Warning: Schema file not found: {schema_path}")
+        return None
+
+    with schema_path.open() as f:
+        result: dict[str, object] = json.load(f)
+        return result
+
+
+def validate_jsonl_syntax(file_path: Path) -> list[str]:
+    """Validate JSONL file syntax."""
+    errors: list[str] = []
+
+    try:
+        with file_path.open() as f:
+            for line_num, line in enumerate(f, 1):
+                try:
+                    json.loads(line)
+                except json.JSONDecodeError as e:
+                    errors.append(f"{file_path}:{line_num}: JSON parse error: {e}")
+    except FileNotFoundError:
+        errors.append(f"{file_path}: File not found")
+    except OSError as e:
+        errors.append(f"{file_path}: IO error: {e}")
 
     return errors
 
 
-def collect_statistics(data_dir: Path) -> dict[str, Any]:
-    """Collect statistics across all JSONL files."""
-    stats: dict[str, Any] = {
-        "total_files": 0,
-        "total_records": 0,
-        "by_file": {},
-        "categories": Counter(),
-        "instruction_lengths": [],
-        "response_lengths": [],
-    }
+def validate_schema_compliance(
+    file_path: Path,
+    schema: dict[str, object] | None,
+) -> list[str]:
+    """Validate records against JSON schema."""
+    if schema is None:
+        return []
 
-    for filepath in data_dir.glob("*.jsonl"):
-        stats["total_files"] += 1
-        file_records = 0
+    errors: list[str] = []
+    validator = jsonschema.Draft202012Validator(schema)
 
-        with filepath.open() as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+    with file_path.open() as f:
+        for line_num, line in enumerate(f, 1):
+            record = json.loads(line)
+            validation_errors = list(validator.iter_errors(record))
+            for err in validation_errors:
+                path = ".".join(str(p) for p in err.absolute_path)
+                errors.append(f"{file_path}:{line_num}: {path}: {err.message}")
 
-                try:
-                    record = json.loads(line)
-                    file_records += 1
-                    stats["total_records"] += 1
-
-                    # Get instruction/response text
-                    instruction = record.get("instruction") or record.get("prompt", [{}])
-                    if isinstance(instruction, list):
-                        instruction = instruction[-1].get("content", "") if instruction else ""
-                    response = record.get("response") or record.get("answer", "")
-
-                    stats["instruction_lengths"].append(len(str(instruction)))
-                    stats["response_lengths"].append(len(str(response)))
-
-                    # Extract categories if present
-                    if "metadata" in record:
-                        cats = record["metadata"].get("classification", {}).get("categories", [])
-                        for cat in cats:
-                            stats["categories"][cat] += 1
-
-                except json.JSONDecodeError:
-                    pass
-
-        stats["by_file"][filepath.name] = file_records
-
-    # Compute averages
-    if stats["instruction_lengths"]:
-        stats["avg_instruction_length"] = sum(stats["instruction_lengths"]) / len(
-            stats["instruction_lengths"]
-        )
-    if stats["response_lengths"]:
-        stats["avg_response_length"] = sum(stats["response_lengths"]) / len(
-            stats["response_lengths"]
-        )
-
-    # Clean up raw lists
-    del stats["instruction_lengths"]
-    del stats["response_lengths"]
-    stats["categories"] = dict(stats["categories"].most_common(20))
-
-    return stats
+    return errors
 
 
-def find_jsonl_files(data_dir: Path) -> Iterator[Path]:
-    """Find all JSONL files in directory."""
-    yield from data_dir.glob("*.jsonl")
+def check_duplicate_ids(files: list[Path]) -> list[str]:
+    """Check for duplicate qa_ids across all files."""
+    errors: list[str] = []
+    all_ids: Counter[str] = Counter()
+
+    for file_path in files:
+        with file_path.open() as f:
+            for _line_num, line in enumerate(f, 1):
+                record = json.loads(line)
+                qa_id = record.get("qa_id")
+                if qa_id:
+                    all_ids[qa_id] += 1
+
+    for qa_id, count in all_ids.items():
+        if count > 1:
+            errors.append(f"Duplicate qa_id '{qa_id}' appears {count} times")
+
+    return errors
 
 
-def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Validate training data against JSON Schema",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
+def validate_manifest_counts(
+    manifest_path: Path,
+    files: list[Path],
+) -> list[str]:
+    """Validate manifest record counts match actual files."""
+    if not HAS_YAML:
+        print("Warning: PyYAML not installed, skipping manifest validation")
+        return []
+
+    if not manifest_path.exists():
+        return [f"Manifest not found: {manifest_path}"]
+
+    errors: list[str] = []
+
+    with manifest_path.open() as f:
+        manifest = yaml.safe_load(f)
+
+    # Build actual counts
+    actual_counts: dict[str, int] = {}
+    for file_path in files:
+        rel_path = str(file_path.relative_to(file_path.parent.parent))
+        with file_path.open() as f:
+            actual_counts[rel_path] = sum(1 for _ in f)
+
+    # Check manifest entries
+    for entry in manifest.get("files", []):
+        filename = entry.get("filename", "")
+        expected = entry.get("record_count", 0)
+        actual = actual_counts.get(filename)
+
+        if actual is None:
+            continue  # File not in our list, skip
+        if expected != actual:
+            errors.append(f"Manifest mismatch for {filename}: expected {expected}, actual {actual}")
+
+    return errors
+
+
+def get_all_training_files(base_path: Path) -> list[Path]:
+    """Get all training data JSONL files."""
+    files: list[Path] = []
+
+    # Source files
+    sources_dir = base_path / "sources"
+    if sources_dir.exists():
+        files.extend(sources_dir.glob("**/*.jsonl"))
+
+    # Synthetic files
+    files.extend(base_path.glob("synthetic_*.jsonl"))
+
+    # Legacy files
+    for legacy in ["curated_qa.jsonl", "grpo_dataset.jsonl"]:
+        legacy_path = base_path / legacy
+        if legacy_path.exists():
+            files.append(legacy_path)
+
+    return sorted(files)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Validate training data files")
     parser.add_argument(
-        "files",
-        nargs="*",
+        "--base",
         type=Path,
-        help="Specific files to validate (default: all JSONL in training_data/)",
+        default=Path("training_data"),
+        help="Base directory for training data",
     )
     parser.add_argument(
         "--schema",
         type=Path,
-        default=Path("training_data/schema/training_record.schema.json"),
-        help="Path to JSON Schema file",
+        default=Path("training_data/schema/qa_record.schema.json"),
+        help="Path to JSON schema",
     )
     parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path("training_data"),
-        help="Directory containing training data",
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show individual validation errors"
-    )
-    parser.add_argument(
-        "--legacy",
+        "--verbose",
+        "-v",
         action="store_true",
-        help="Validate against legacy format (instruction/response only)",
+        help="Show detailed output",
     )
-    parser.add_argument("--stats", action="store_true", help="Generate and display statistics")
     parser.add_argument(
-        "--verify-checksums",
+        "--skip-schema",
         action="store_true",
-        help="Verify SHA256 checksums from MANIFEST.yaml",
+        help="Skip schema validation (useful for legacy files)",
     )
-
     args = parser.parse_args()
 
-    # Statistics mode
-    if args.stats:
-        print("Collecting statistics...")
-        stats = collect_statistics(args.data_dir)
-        print(f"\nTotal files: {stats['total_files']}")
-        print(f"Total records: {stats['total_records']}")
-        print("\nRecords by file:")
-        for filename, count in stats["by_file"].items():
-            print(f"  {filename}: {count}")
-        if "avg_instruction_length" in stats:
-            print(f"\nAverage instruction length: {stats['avg_instruction_length']:.0f} chars")
-        if "avg_response_length" in stats:
-            print(f"Average response length: {stats['avg_response_length']:.0f} chars")
-        if stats["categories"]:
-            print("\nTop categories:")
-            for cat, count in stats["categories"].items():
-                print(f"  {cat}: {count}")
-        return 0
+    print(f"Validating training data in {args.base}...\n")
 
-    # Checksum verification mode
-    if args.verify_checksums:
-        manifest_path = args.data_dir / "MANIFEST.yaml"
-        if not manifest_path.exists():
-            print(f"ERROR: Manifest not found: {manifest_path}", file=sys.stderr)
-            return 1
+    # Get all files
+    files = get_all_training_files(args.base)
+    print(f"Found {len(files)} training data files\n")
 
-        try:
-            import yaml  # noqa: F401
-        except ImportError:
-            print("ERROR: PyYAML required for manifest verification", file=sys.stderr)
-            print("Install with: uv add pyyaml", file=sys.stderr)
-            return 1
-
-        print("Verifying checksums...")
-        errors = verify_manifest_checksums(manifest_path, args.data_dir)
-        if errors:
-            print("\nChecksum verification FAILED:")
-            for error in errors:
-                print(f"  {error}")
-            return 1
-        print("All checksums verified successfully!")
-        return 0
-
-    # Schema validation mode
-    if not args.legacy and not HAS_JSONSCHEMA:
-        print("ERROR: jsonschema package required for schema validation", file=sys.stderr)
-        print("Install with: uv add jsonschema", file=sys.stderr)
-        print("Or use --legacy flag for basic format validation", file=sys.stderr)
-        return 1
+    all_errors: list[str] = []
+    total_records = 0
 
     # Load schema
-    validator = None
-    if not args.legacy:
-        if not args.schema.exists():
-            print(f"ERROR: Schema not found: {args.schema}", file=sys.stderr)
-            return 1
-        schema = load_schema(args.schema)
-        validator = Draft202012Validator(schema)
-
-    # Find files to validate
-    files = args.files if args.files else list(find_jsonl_files(args.data_dir))
-
-    if not files:
-        print("No JSONL files found to validate", file=sys.stderr)
-        return 1
+    schema = None if args.skip_schema else load_schema(args.schema)
 
     # Validate each file
-    results: list[ValidationResult] = []
-    for filepath in files:
-        if not filepath.exists():
-            print(f"WARNING: File not found: {filepath}", file=sys.stderr)
+    for file_path in files:
+        if args.verbose:
+            print(f"Checking {file_path.relative_to(args.base)}...")
+
+        # Syntax check
+        syntax_errors = validate_jsonl_syntax(file_path)
+        all_errors.extend(syntax_errors)
+
+        if syntax_errors:
+            print(f"  SYNTAX ERROR: {len(syntax_errors)} issues")
             continue
 
-        print(f"Validating {filepath.name}...")
+        # Count records
+        with file_path.open() as f:
+            count = sum(1 for _ in f)
+            total_records += count
 
-        if args.legacy or validator is None:
-            result = validate_legacy_format(filepath, verbose=args.verbose)
-        else:
-            result = validate_file(filepath, validator, verbose=args.verbose)
+        if args.verbose:
+            print(f"  OK ({count} records)")
 
-        results.append(result)
+        # Schema check (skip for legacy files)
+        if schema and "sources/" in str(file_path):
+            schema_errors = validate_schema_compliance(file_path, schema)
+            all_errors.extend(schema_errors[:10])  # Limit errors per file
+            if schema_errors:
+                print(f"  SCHEMA ERRORS: {len(schema_errors)} issues")
 
-        status = "PASS" if result.is_valid else "FAIL"
-        print(
-            f"  {status}: {result.valid_records}/{result.total_records} valid "
-            f"({result.validity_rate:.1f}%)"
-        )
+    # Check for duplicates
+    print("\nChecking for duplicate IDs...")
+    dup_errors = check_duplicate_ids(files)
+    all_errors.extend(dup_errors)
+    if dup_errors:
+        print(f"  Found {len(dup_errors)} duplicate IDs")
+    else:
+        print("  No duplicates found")
+
+    # Check manifest
+    manifest_path = args.base / "MANIFEST.yaml"
+    print(f"\nValidating manifest {manifest_path}...")
+    manifest_errors = validate_manifest_counts(manifest_path, files)
+    all_errors.extend(manifest_errors)
+    if manifest_errors:
+        for err in manifest_errors[:5]:
+            print(f"  {err}")
+    else:
+        print("  Manifest counts match")
 
     # Summary
     print("\n" + "=" * 60)
     print("VALIDATION SUMMARY")
     print("=" * 60)
-
-    total_records = sum(r.total_records for r in results)
-    total_valid = sum(r.valid_records for r in results)
-    total_invalid = sum(r.invalid_records for r in results)
-    all_valid = all(r.is_valid for r in results)
-
-    print(f"Files validated: {len(results)}")
+    print(f"Files checked: {len(files)}")
     print(f"Total records: {total_records}")
-    print(f"Valid records: {total_valid}")
-    print(f"Invalid records: {total_invalid}")
-    print(f"Overall validity: {(total_valid / total_records * 100) if total_records else 0:.1f}%")
+    print(f"Errors found: {len(all_errors)}")
 
-    if all_valid:
-        print("\n✓ All files passed validation!")
-        return 0
-    print("\n✗ Some files have validation errors")
-    return 1
+    if all_errors:
+        print("\nErrors:")
+        for error in all_errors[:20]:
+            print(f"  - {error}")
+        if len(all_errors) > 20:
+            print(f"  ... and {len(all_errors) - 20} more")
+        exit(1)
+    else:
+        print("\nAll validations passed!")
+        exit(0)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

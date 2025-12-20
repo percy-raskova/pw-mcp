@@ -356,3 +356,46 @@ description = "Clean build artifacts"
 run = """
 rm -rf .venv .mypy_cache .ruff_cache .pytest_cache dist build *.egg-info
 """
+
+# =============================================================================
+# TRAINING DATA MANAGEMENT
+# =============================================================================
+
+[tasks.training-validate]
+description = "Validate all training data files against schema"
+run = "uv run python scripts/validate_training_data.py"
+
+[tasks.training-generate-grpo]
+description = "Generate GRPO dataset from source files"
+run = "uv run python scripts/generate_grpo.py"
+
+[tasks.training-generate-grpo-output]
+description = "Generate GRPO dataset to specific output file"
+run = "uv run python scripts/generate_grpo.py --output training_data/grpo_dataset.jsonl"
+
+[tasks.training-split-dry-run]
+description = "Dry-run split of curated_qa.jsonl (shows what would be created)"
+run = "uv run python scripts/split_curated_qa.py --dry-run"
+
+[tasks.training-split]
+description = "Split curated_qa.jsonl into source files"
+run = "uv run python scripts/split_curated_qa.py"
+
+[tasks.training-status]
+description = "Show training data status"
+run = """
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║                  TRAINING DATA STATUS                        ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+SOURCE_FILES=$(find training_data/sources -name "*.jsonl" 2>/dev/null | wc -l)
+SOURCE_RECORDS=$(cat training_data/sources/**/*.jsonl 2>/dev/null | wc -l)
+SYNTHETIC_FILES=$(find training_data -maxdepth 1 -name "synthetic_*.jsonl" 2>/dev/null | wc -l)
+SYNTHETIC_RECORDS=$(cat training_data/synthetic_*.jsonl 2>/dev/null | wc -l)
+UNCATEGORIZED=$(wc -l < training_data/sources/uncategorized/uncategorized.jsonl 2>/dev/null || echo 0)
+printf "║ %-30s %10s ║\n" "Source files:" "$SOURCE_FILES"
+printf "║ %-30s %10s ║\n" "Source records:" "$SOURCE_RECORDS"
+printf "║ %-30s %10s ║\n" "Synthetic files:" "$SYNTHETIC_FILES"
+printf "║ %-30s %10s ║\n" "Synthetic records:" "$SYNTHETIC_RECORDS"
+printf "║ %-30s %10s ║\n" "Uncategorized (needs review):" "$UNCATEGORIZED"
+echo "╚══════════════════════════════════════════════════════════════╝"
+"""

@@ -42,12 +42,16 @@ dataset:
 # =============================================================================
 
 files:
+  # ===========================================================================
+  # LEGACY FILES (Archived - replaced by granular source files)
+  # ===========================================================================
+
   - filename: "curated_qa.jsonl"
     record_count: 1058
     sha256: "636c8bccdfcd301b6cdcb422a75e3bfb5015d6e80a26638c7906677959a1a383"
     purpose: |
       Original curated Q&A pairs derived from ProleWiki corpus.
-      Core theoretical content on revisionism, imperialism, dialectics, etc.
+      ARCHIVED: Split into granular source files in sources/ directory.
     source_type: "curated"
     iteration_added: 1
     categories:
@@ -56,19 +60,21 @@ files:
       - dialectics
       - surplus-value
       - historical-materialism
-    schema_compliant: false  # Legacy format, needs migration
+    schema_compliant: false
     human_reviewed: true
-    include_in_training: true
+    include_in_training: false  # Replaced by source files
+    archived: true
+    archived_date: "2025-12-19"
     notes: |
-      Legacy format without full metadata. Migration to new schema pending.
-      Content is high quality and human-reviewed.
+      ARCHIVED: Content split into 47 granular source files.
+      Use sources/**/*.jsonl instead.
 
   - filename: "grpo_dataset.jsonl"
     record_count: 1058
     sha256: "65738aeafa9ce9f9d34d9893b93b41008a7c3f780cfb55d7c92dcea4589a1775"
     purpose: |
       GRPO-formatted version of curated_qa.jsonl with system prompts.
-      Ready for direct use with TRL GRPOTrainer.
+      DELETED: Now generated on-demand by scripts/generate_grpo.py
     source_type: "curated"
     iteration_added: 1
     categories:
@@ -76,12 +82,634 @@ files:
       - imperialism
       - dialectics
       - surplus-value
-    schema_compliant: false  # Different format (prompt/answer vs instruction/response)
+    schema_compliant: false
+    human_reviewed: true
+    include_in_training: false  # Replaced by script generation
+    archived: true
+    archived_date: "2025-12-19"
+    notes: |
+      DELETED: Use `uv run python scripts/generate_grpo.py` to regenerate.
+      Static file removed to ensure GRPO format stays in sync with sources.
+
+  # ===========================================================================
+  # GRANULAR SOURCE FILES (sources/**/*.jsonl)
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Anti-Colonial Sources
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/anti_colonial/anti_imperialism.jsonl"
+    record_count: 14
+    sha256: "7a87edb3333a9bbad2450e7b158c10cb17da68bb51a4c79b11902f17a7e07e78"
+    purpose: General anti-imperialism theory and analysis
+    source_type: "curated"
+    iteration_added: 3
+    categories: [anti-imperialism, colonialism]
+    schema_compliant: true
     human_reviewed: true
     include_in_training: true
+
+  - filename: "sources/anti_colonial/butler.jsonl"
+    record_count: 3
+    sha256: "6f74fef86d20b4c3bdaa8762750516caa491da23ab77eb03281942ae3ab94321"
+    purpose: Smedley Butler - War is a Racket
+    source_type: "curated"
+    author: "Smedley Butler"
+    work: "War is a Racket"
+    iteration_added: 3
+    categories: [anti-imperialism, us-military]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/dunbar_ortiz.jsonl"
+    record_count: 22
+    sha256: "be9910b997a15a15fb7795fbde2d71a740f51e8fa4e81fbf765bb265f57b87d9"
+    purpose: Roxanne Dunbar-Ortiz - An Indigenous Peoples' History
+    source_type: "curated"
+    author: "Roxanne Dunbar-Ortiz"
+    work: "An Indigenous Peoples' History of the United States"
+    iteration_added: 3
+    categories: [indigenous-history, settler-colonialism, us-history]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/fanon.jsonl"
+    record_count: 39
+    sha256: "27fd8ff14dc1d6806330075a4651b1e57c8b6f32bc8184fbbcebea4801ebf3c5"
+    purpose: Frantz Fanon - Wretched of the Earth, Black Skin White Masks
+    source_type: "curated"
+    author: "Frantz Fanon"
+    work: "The Wretched of the Earth"
+    iteration_added: 3
+    categories: [anti-colonial, psychology, algeria]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/nkrumah.jsonl"
+    record_count: 7
+    sha256: "da81f3b340f4b334aab0c62336e748c05061ebcca127e3b63cc8b1ee09627587"
+    purpose: Kwame Nkrumah - Neo-Colonialism
+    source_type: "curated"
+    author: "Kwame Nkrumah"
+    work: "Neo-Colonialism: The Last Stage of Imperialism"
+    iteration_added: 3
+    categories: [neo-colonialism, africa, pan-africanism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/palestine.jsonl"
+    record_count: 30
+    sha256: "6550d5136f4d51beb9ec35128bcf645afa338cbe949400b4428229b55b1aabf2"
+    purpose: Palestinian liberation and anti-Zionism analysis
+    source_type: "curated"
+    iteration_added: 3
+    categories: [palestine, anti-zionism, settler-colonialism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/rodney.jsonl"
+    record_count: 2
+    sha256: "265446eb642b47e84b847bbb7998bf92a4b6f6ae8a5c53103a8ef6fc5e66d2f1"
+    purpose: Walter Rodney - How Europe Underdeveloped Africa
+    source_type: "curated"
+    author: "Walter Rodney"
+    work: "How Europe Underdeveloped Africa"
+    iteration_added: 3
+    categories: [africa, underdevelopment, colonialism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/anti_colonial/sankara.jsonl"
+    record_count: 24
+    sha256: "87034e03780c266f944194d7be39304d044411749b5e1233869a3edbfccd31b8"
+    purpose: Thomas Sankara speeches and writings
+    source_type: "curated"
+    author: "Thomas Sankara"
+    work: "Thomas Sankara Speaks"
+    iteration_added: 3
+    categories: [africa, burkina-faso, pan-africanism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Disability Studies
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/disability_studies/cohen_psychiatric.jsonl"
+    record_count: 8
+    sha256: "9c03dc461819d64455320dce07267033c3340591e44cce198a9c879ac6b4b81c"
+    purpose: Bruce Cohen - Psychiatric Hegemony
+    source_type: "curated"
+    author: "Bruce Cohen"
+    work: "Psychiatric Hegemony: A Marxist Theory of Mental Illness"
+    iteration_added: 3
+    categories: [disability-studies, psychiatry, social-control]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/disability_studies/disability_history.jsonl"
+    record_count: 55
+    sha256: "c424c043d429346b98ef577fdef1efdc1bb19c4ceb27676b1e0848f5ad5af496"
+    purpose: Disability history and theory (US focus)
+    source_type: "curated"
+    iteration_added: 3
+    categories: [disability-studies, us-history, eugenics]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Feminist Marxism
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/feminist_marxism/assata_shakur.jsonl"
+    record_count: 9
+    sha256: "5d4e819ad15472ec9bd1e8a600853ccc4cfc228aad75ea3ba6651f69bdf06f97"
+    purpose: Assata Shakur autobiography and analysis
+    source_type: "curated"
+    author: "Assata Shakur"
+    work: "Assata: An Autobiography"
+    iteration_added: 3
+    categories: [black-liberation, bla, feminism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/feminist_marxism/feinberg.jsonl"
+    record_count: 24
+    sha256: "004669858f893b7dbfa08984c7c7b27422d120aff179e54ac640d1e6060c89df"
+    purpose: Leslie Feinberg - Transgender Warriors, Rainbow Solidarity
+    source_type: "curated"
+    author: "Leslie Feinberg"
+    work: "Transgender Warriors"
+    iteration_added: 3
+    categories: [transgender, lgbtq, feminism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/feminist_marxism/lgbt_essay.jsonl"
+    record_count: 2
+    sha256: "20207136968e1e6ba9e60f96ccc9894bb16959b8c941ec46b03acf6bfd53525a"
+    purpose: LGBT Marxist analysis essays
+    source_type: "curated"
+    iteration_added: 3
+    categories: [lgbtq, feminism, materialism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Foundational
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/foundational/einstein.jsonl"
+    record_count: 1
+    sha256: "cd4b25f0fdfd48af5f9c32be9ed8e68b92b1580e468e57a01b698cc946f1443c"
+    purpose: Albert Einstein - Why Socialism?
+    source_type: "curated"
+    author: "Albert Einstein"
+    work: "Why Socialism?"
+    iteration_added: 3
+    categories: [socialism, economics]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/foundational/zetkin_fascism.jsonl"
+    record_count: 5
+    sha256: "a559cce18b945dc23ff0543ee5bd839dcbc4913c3b3ff73e80f7cfd05ca805c8"
+    purpose: Clara Zetkin - The Struggle Against Fascism
+    source_type: "curated"
+    author: "Clara Zetkin"
+    work: "The Struggle Against Fascism"
+    iteration_added: 3
+    categories: [fascism, comintern, women]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Historical Interviews
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/historical_interviews/stalin_interviews.jsonl"
+    record_count: 6
+    sha256: "cb8051187913377f5d0f782aafd922dfc22288ff27ee27cc1c0ed08ab693044e"
+    purpose: Stalin interviews with foreign journalists
+    source_type: "curated"
+    author: "Joseph Stalin"
+    iteration_added: 3
+    categories: [soviet-history, interviews, stalin]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Historiography
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/historiography/immerwahr.jsonl"
+    record_count: 12
+    sha256: "7b865f14f1b3fd996a2ed357592f0cd23bbaf897cbbd8c2989ccf984cf927265"
+    purpose: Daniel Immerwahr - How to Hide an Empire
+    source_type: "curated"
+    author: "Daniel Immerwahr"
+    work: "How to Hide an Empire"
+    iteration_added: 3
+    categories: [us-imperialism, territories, historiography]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/historiography/korea.jsonl"
+    record_count: 1
+    sha256: "06ddcecf9f11c3ecbc1ffc42262daf4e39300a76f45b12c0ead91d2fdf413624"
+    purpose: Korean War and DPRK historiography
+    source_type: "curated"
+    iteration_added: 3
+    categories: [korea, dprk, historiography]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/historiography/losurdo.jsonl"
+    record_count: 28
+    sha256: "42c88aa3e26b8deb4117eb0bd249904f1dcbf75a39139889ef0ad6cc3e4e68d5"
+    purpose: "Domenico Losurdo - Liberalism: A Counter-History"
+    source_type: "curated"
+    author: "Domenico Losurdo"
+    work: "Liberalism: A Counter-History"
+    iteration_added: 3
+    categories: [liberalism, historiography, slavery]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/historiography/pappe.jsonl"
+    record_count: 17
+    sha256: "ab2ba13b4c9b0e6379cd1b08a419e4646458542973826f18d974065ea35e5f90"
+    purpose: Ilan Pappé - Ten Myths About Israel
+    source_type: "curated"
+    author: "Ilan Pappé"
+    work: "Ten Myths About Israel"
+    iteration_added: 3
+    categories: [palestine, israel, historiography]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/historiography/sousa.jsonl"
+    record_count: 4
+    sha256: "17c03941ffa6ec6ee69a22378071b0e34b29d49d662fa004b875932d29b944d8"
+    purpose: Mario Sousa - Lies Concerning Soviet History
+    source_type: "curated"
+    author: "Mario Sousa"
+    work: "Lies Concerning the History of the Soviet Union"
+    iteration_added: 3
+    categories: [soviet-history, historiography, anti-communism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/historiography/soviet_history.jsonl"
+    record_count: 8
+    sha256: "ac34ee8b01d7b4deefa26306ab096465e5e6185cf90a422019a64e563d3621bf"
+    purpose: General Soviet historiography
+    source_type: "curated"
+    iteration_added: 3
+    categories: [soviet-history, historiography]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Original Essays (AV Dremel and Persephone Raskova)
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/original_essays/av_dremel_covid.jsonl"
+    record_count: 11
+    sha256: "c1147b24581da76e6b9e20adad712742d79ab457fec105b628a9ae5ca59388fe"
+    purpose: AV Dremel - COVID biology/politics essays
+    source_type: "curated"
+    author: "AV Dremel"
+    iteration_added: 3
+    categories: [covid, biology, public-health]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+    notes: Original contribution from AV Dremel with permission.
+
+  - filename: "sources/original_essays/av_dremel_fascism.jsonl"
+    record_count: 13
+    sha256: "f9ea3baf0f7716e7da1ac8ec59fb006342d8b6012b3f00deaaaa88e3dc1b3931"
+    purpose: AV Dremel - Fascism analysis essays
+    source_type: "curated"
+    author: "AV Dremel"
+    iteration_added: 3
+    categories: [fascism, fascist-creep, ideology]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+    notes: Original contribution from AV Dremel with permission.
+
+  - filename: "sources/original_essays/av_dremel_queer.jsonl"
+    record_count: 33
+    sha256: "a1336d7305465959c5d8953edabcabf62ffb2b8f3220a42f9b61411237bcd9eb"
+    purpose: AV Dremel - Queer liberation essays
+    source_type: "curated"
+    author: "AV Dremel"
+    iteration_added: 3
+    categories: [lgbtq, queer-liberation, feminism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+    notes: Original contribution from AV Dremel with permission.
+
+  - filename: "sources/original_essays/organizational_theory.jsonl"
+    record_count: 2
+    sha256: "6459b541652613e6b93a0ca5ceedd85513485834894520afd622c8d804a2e37b"
+    purpose: Organizational theory and practice
+    source_type: "curated"
+    iteration_added: 3
+    categories: [organization, party-building]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/original_essays/persephone_labor_aristocracy.jsonl"
+    record_count: 29
+    sha256: "8fda8c89d67d401338641cb71fd7cfba1fb76c479d4ba68867b7453308d66349"
+    purpose: Persephone Raskova - Labor aristocracy theory
+    source_type: "curated"
+    author: "Persephone Raskova"
+    iteration_added: 3
+    categories: [labor-aristocracy, imperialism, unequal-exchange]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+    notes: Original contribution from Persephone Raskova.
+
+  - filename: "sources/original_essays/persephone_political_economy.jsonl"
+    record_count: 2
+    sha256: "dfccd76e033976c966aa8f8fff464609d6cd905a830db945b9dded4737bbc24b"
+    purpose: Persephone Raskova - Political economy essays
+    source_type: "curated"
+    author: "Persephone Raskova"
+    iteration_added: 3
+    categories: [political-economy, imperialism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+    notes: Original contribution from Persephone Raskova.
+
+  - filename: "sources/original_essays/us_left_critique.jsonl"
+    record_count: 8
+    sha256: "8fc958ea280eef2e873b02f7fe37f2b5517c7916f09c11994c06bdb1e1716fc4"
+    purpose: Critique of US left organizations and movements
+    source_type: "curated"
+    iteration_added: 3
+    categories: [us-left, organization, critique]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Primary Theory (Marx, Lenin, Mao, etc.)
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/primary_theory/china_analysis.jsonl"
+    record_count: 1
+    sha256: "fd925a5e77c7c80e65186980b4bddde275f01827bb0db3c3c0b06c4ea80ea67e"
+    purpose: Contemporary China analysis
+    source_type: "curated"
+    iteration_added: 3
+    categories: [china, socialism, contemporary]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/class_analysis.jsonl"
+    record_count: 43
+    sha256: "e3bf64693777348f3169f5565b5268222864ffd0c1937c842291de93005a5a3f"
+    purpose: Class structure and class analysis
+    source_type: "curated"
+    iteration_added: 3
+    categories: [class-analysis, marxism, political-economy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/cultural_revolution.jsonl"
+    record_count: 2
+    sha256: "719306f508ab5e3044c36928851f3738dc9b28dd672a7896575fead3afcaaa47"
+    purpose: Great Proletarian Cultural Revolution analysis
+    source_type: "curated"
+    iteration_added: 3
+    categories: [gpcr, maoist-theory, china]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/dialectics.jsonl"
+    record_count: 8
+    sha256: "2b14cdbf7a2e2f5bd6a7b90b23f45f93d9920a2f45305de61c30611a2a340872"
+    purpose: Dialectical materialism theory
+    source_type: "curated"
+    iteration_added: 3
+    categories: [dialectics, philosophy, materialism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/historical_materialism.jsonl"
+    record_count: 16
+    sha256: "8c47ae987215ef10383ac74963650f2a1c9c8c287d584f633eed4cf9eff11df6"
+    purpose: Historical materialism theory
+    source_type: "curated"
+    iteration_added: 3
+    categories: [historical-materialism, philosophy, marxism]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/imperialism_theory.jsonl"
+    record_count: 4
+    sha256: "67eada93941135e023e893349b38e4413b40cc7a383197aafc1f54edb89661a0"
+    purpose: Imperialism theory (Lenin, etc.)
+    source_type: "curated"
+    iteration_added: 3
+    categories: [imperialism, leninism, political-economy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/lenin_revisionism.jsonl"
+    record_count: 10
+    sha256: "6642e276979129cf1f61b60eb3a421b421556d5b9ac60328af4089e31e3f9453"
+    purpose: Lenin - Marxism and Revisionism
+    source_type: "curated"
+    author: "Vladimir Lenin"
+    work: "Marxism and Revisionism"
+    iteration_added: 3
+    categories: [revisionism, leninism, second-international]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/mao.jsonl"
+    record_count: 6
+    sha256: "b2f87f67ebf4f3130f022e8bbde7ec8194c0dbec8ba0bd47005f816b92741a51"
+    purpose: Mao Zedong - On Practice, On Contradiction, etc.
+    source_type: "curated"
+    author: "Mao Zedong"
+    iteration_added: 3
+    categories: [maoist-theory, philosophy, china]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/marx_capital.jsonl"
+    record_count: 64
+    sha256: "e2fdc14134cdc76d0d2235f8c8f66b5b8dfb5e8a5c3b38ae68acd6e5f5f88404"
+    purpose: Marx - Capital, surplus value, political economy
+    source_type: "curated"
+    author: "Karl Marx"
+    work: "Capital"
+    iteration_added: 3
+    categories: [capital, surplus-value, political-economy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/primary_theory/state_theory.jsonl"
+    record_count: 3
+    sha256: "0d7e1c9661d8b925b5a5364ed7f844e00127099602a3c713dcf2d737ca5f6f9b"
+    purpose: Marxist state theory
+    source_type: "curated"
+    iteration_added: 3
+    categories: [state-theory, dictatorship-of-proletariat]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Revolutionary Strategy
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/revolutionary_strategy/che_guevara.jsonl"
+    record_count: 18
+    sha256: "47fe1fca1e28254113d4c0a0f80d9afc6a60ca687374c1109e595adbeb591900"
+    purpose: Che Guevara - Guerrilla warfare, revolutionary theory
+    source_type: "curated"
+    author: "Che Guevara"
+    iteration_added: 3
+    categories: [guerrilla-warfare, cuba, latin-america]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/george_jackson.jsonl"
+    record_count: 29
+    sha256: "5974da5135c47358f9c75e4c41b3e35da0099ff19ba6e3f06bf471f198948488"
+    purpose: George Jackson - Blood in My Eye, Soledad Brother
+    source_type: "curated"
+    author: "George Jackson"
+    work: "Blood in My Eye"
+    iteration_added: 3
+    categories: [black-liberation, prison-abolition, revolutionary-theory]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/iranian_fedai.jsonl"
+    record_count: 4
+    sha256: "afed5f400bb9fef502d05d343d07d2c1bc274242f89c4d3e9f4db5e1dea32000"
+    purpose: Iranian Fedai guerrilla movement history
+    source_type: "curated"
+    iteration_added: 3
+    categories: [iran, guerrilla-warfare, middle-east]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/org_practice.jsonl"
+    record_count: 38
+    sha256: "2b700f432c0f7c56ef78cc7789f9163ee2bac3e424db69976647702855f252f7"
+    purpose: Organizational practice and party building
+    source_type: "curated"
+    iteration_added: 3
+    categories: [organization, party-building, strategy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/pflp.jsonl"
+    record_count: 20
+    sha256: "4fbac379fc5331138721565285ca7b3e81ea315f0b178dcfea3ae3d8e8b69c14"
+    purpose: PFLP - Strategy for Liberation of Palestine
+    source_type: "curated"
+    author: "PFLP"
+    work: "Strategy for the Liberation of Palestine"
+    iteration_added: 3
+    categories: [palestine, armed-struggle, strategy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/rev_violence.jsonl"
+    record_count: 8
+    sha256: "8ff1faa0b4b4cdf9696ae3d5a727124837981b192a464c802504abeea0ca5cbf"
+    purpose: Revolutionary violence theory and ethics
+    source_type: "curated"
+    iteration_added: 3
+    categories: [revolutionary-violence, ethics, strategy]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  - filename: "sources/revolutionary_strategy/victor_serge.jsonl"
+    record_count: 20
+    sha256: "112b31fa801b2d91df8fa39b0ef4c49091bd3daf461ba3501f3d9cba7a2a0ecf"
+    purpose: Victor Serge - What Everyone Should Know About Repression
+    source_type: "curated"
+    author: "Victor Serge"
+    work: "What Everyone Should Know About Repression"
+    iteration_added: 3
+    categories: [security, counter-intelligence, organization]
+    schema_compliant: true
+    human_reviewed: true
+    include_in_training: true
+
+  # ---------------------------------------------------------------------------
+  # Uncategorized (needs manual review)
+  # ---------------------------------------------------------------------------
+
+  - filename: "sources/uncategorized/uncategorized.jsonl"
+    record_count: 345
+    sha256: "bb9474c36b94feea225b9147b2e1b8d9f4b55f70663dc60afd1e35716862f392"
+    purpose: |
+      Records not automatically categorized by split script.
+      Requires manual review and redistribution to appropriate source files.
+    source_type: "curated"
+    iteration_added: 3
+    categories: [uncategorized]
+    schema_compliant: true
+    human_reviewed: false
+    include_in_training: true
+    needs_manual_review: true
     notes: |
-      Same content as curated_qa.jsonl but in GRPO prompt format.
-      Used for iteration 1 training.
+      345 records that didn't match keyword patterns in split_curated_qa.py.
+      Should be manually reviewed and moved to appropriate source files.
 
   - filename: "synthetic_antisemitism_correction.jsonl"
     record_count: 61
@@ -240,37 +868,98 @@ files:
 # =============================================================================
 
 statistics:
-  total_records: 2263  # 1058 + 1058 + 61 + 34 + 12 + 20 + 12 + 8 (grpo_dataset is duplicate content)
-  total_unique_records: 1205  # 1058 + 61 + 34 + 12 + 20 + 12 + 8
-  total_files: 8
+  total_records: 1352  # 1058 source + 147 synthetic + 147 benign = 1352
+  total_unique_records: 1352
+  total_files: 55  # 47 source files + 8 synthetic files
+
+  source_files:
+    total: 47
+    categorized: 46  # Properly attributed
+    uncategorized: 1  # 345 records needing manual review
+    total_records: 1058
 
   by_source_type:
-    curated: 1058
+    curated: 1058  # Split across 47 source files
     synthetic: 147  # 61 + 34 + 12 + 20 + 12 + 8
 
   by_iteration:
     "1": 1058
-    "2": 147  # 61 + 34 + 12 + 20 + 12 + 8
+    "2": 147
+    "3": 0  # Source file split (same content, new organization)
 
   by_category:
-    revisionism: ~200
-    imperialism: ~150
-    dialectics: ~100
-    anti-zionism: 20
-    epistemic-humility: 20
-    cultural-revolution: 15
-    palestinian-liberation: 15
-    prolewiki: 12
-    creator-context: 12
-    settler-colonialism: 12
-    historical-figures: 12
-    soviet-history: 10
-    contributor-context: 8
+    # Anti-colonial (141 records)
+    anti-imperialism: 14
+    fanon: 39
+    palestine: 30
+    sankara: 24
+    dunbar-ortiz: 22
+    nkrumah: 7
+    butler: 3
+    rodney: 2
+
+    # Primary theory (157 records)
+    marx-capital: 64
+    class-analysis: 43
+    historical-materialism: 16
+    lenin-revisionism: 10
+    dialectics: 8
+    mao: 6
+    imperialism-theory: 4
+    state-theory: 3
+    cultural-revolution: 2
+    china-analysis: 1
+
+    # Disability studies (63 records)
+    disability-history: 55
+    cohen-psychiatric: 8
+
+    # Original essays (98 records)
+    av-dremel-queer: 33
+    persephone-labor-aristocracy: 29
+    av-dremel-fascism: 13
+    av-dremel-covid: 11
+    us-left-critique: 8
+    organizational-theory: 2
+    persephone-political-economy: 2
+
+    # Revolutionary strategy (137 records)
+    org-practice: 38
+    george-jackson: 29
+    pflp: 20
+    victor-serge: 20
+    che-guevara: 18
+    rev-violence: 8
+    iranian-fedai: 4
+
+    # Historiography (70 records)
+    losurdo: 28
+    pappe: 17
+    immerwahr: 12
+    soviet-history: 8
+    sousa: 4
+    korea: 1
+
+    # Feminist marxism (35 records)
+    feinberg: 24
+    assata-shakur: 9
+    lgbt-essay: 2
+
+    # Foundational (6 records)
+    zetkin-fascism: 5
+    einstein: 1
+
+    # Historical interviews (6 records)
+    stalin-interviews: 6
+
+    # Uncategorized (345 records)
+    uncategorized: 345
 
   avg_instruction_length: ~80  # characters, estimated
   avg_response_length: ~800  # characters, estimated
   human_verified_count: 1078  # 1058 + 12 + 8 (creator/contributor facts user-provided)
   synthetic_unverified_count: 127
+  needs_manual_review: 345  # Uncategorized records
 
 # =============================================================================
 # PROVENANCE
@@ -336,7 +1025,7 @@ training_iterations:
 
 known_issues:
   - id: "ISSUE-001"
-    severity: "medium"
+    severity: "resolved"
     description: |
       Legacy files (curated_qa.jsonl, grpo_dataset.jsonl) use old format
       without full metadata. Need migration to new schema.
@@ -344,8 +1033,10 @@ known_issues:
       - "curated_qa.jsonl"
       - "grpo_dataset.jsonl"
     discovered_date: "2025-12-18"
-    resolved_date: null
-    resolution: null
+    resolved_date: "2025-12-19"
+    resolution: |
+      Split curated_qa.jsonl into 47 granular source files with full qa_record schema.
+      Archived original file and replaced grpo_dataset.jsonl with generate_grpo.py script.
 
   - id: "ISSUE-002"
     severity: "low"
@@ -368,6 +1059,17 @@ known_issues:
       - "synthetic_antisemitism_correction.jsonl"
       - "synthetic_cpc_ml_distinction.jsonl"
     discovered_date: "2025-12-18"
+    resolved_date: null
+    resolution: null
+
+  - id: "ISSUE-004"
+    severity: "medium"
+    description: |
+      345 records in sources/uncategorized/uncategorized.jsonl did not match
+      keyword patterns and need manual review and redistribution.
+    affected_files:
+      - "sources/uncategorized/uncategorized.jsonl"
+    discovered_date: "2025-12-19"
     resolved_date: null
     resolution: null
 
@@ -399,3 +1101,20 @@ changelog:
       - "Created MANIFEST.yaml"
       - "Created ai-docs/training-schema.yaml reference"
       - "Created TRAINING_DIARY.md for iteration tracking"
+
+  - date: "2025-12-19"
+    version: "0.3.0"
+    changes:
+      - "Split curated_qa.jsonl into 47 granular author-attributed source files"
+      - "Created sources/ directory with 10 category subdirectories"
+      - "Migrated 713 records to attributed source files"
+      - "345 records remain in uncategorized for manual review"
+      - "Created qa_record.schema.json aligned with ChromaDB pw_schema"
+      - "Added qa_schema section to ai-docs/chromadb.yaml"
+      - "Created scripts/split_curated_qa.py for dataset splitting"
+      - "Created scripts/generate_grpo.py for on-demand GRPO generation"
+      - "Created scripts/validate_training_data.py for validation"
+      - "Archived curated_qa.jsonl (replaced by source files)"
+      - "Removed static grpo_dataset.jsonl (replaced by script)"
+      - "Added author/work attribution to source file entries"
+      - "Updated statistics with per-category record counts"

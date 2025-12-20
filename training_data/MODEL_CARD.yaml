@@ -1,15 +1,18 @@
 # Model Card: Marxist-Leninist Political Theory Training Dataset
-# Version: 1.0
-# Last Updated: 2025-12-17
+# Version: 2.0
+# Last Updated: 2025-12-19
 
 metadata:
   name: "ML Political Theory Q&A Dataset"
-  version: "1.0.0"
+  version: "2.0.0"
   created: "2025-12-17"
+  last_updated: "2025-12-19"
   format: "JSONL (instruction/response pairs)"
   total_pairs: 1058
+  source_files: 47
   language: "English"
   license: "AGPL-3.0-only"
+  schema: "schema/qa_record.schema.json"
 
 # =============================================================================
 # DATASET DESCRIPTION
@@ -48,6 +51,28 @@ composition:
   format_schema:
     instruction: "Question or prompt (string)"
     response: "Detailed answer grounded in source material (string)"
+
+  # ==========================================================================
+  # SOURCE FILE ORGANIZATION (v2.0)
+  # ==========================================================================
+  # As of 2025-12-19, training data split into granular author-attributed files
+  # organized in sources/ directory by category. See MANIFEST.yaml for details.
+  #
+  # Directory structure:
+  #   sources/
+  #   ├── anti_colonial/     (8 files, 141 records)
+  #   ├── disability_studies/ (2 files, 63 records)
+  #   ├── feminist_marxism/  (3 files, 35 records)
+  #   ├── foundational/      (2 files, 6 records)
+  #   ├── historical_interviews/ (1 file, 6 records)
+  #   ├── historiography/    (6 files, 70 records)
+  #   ├── original_essays/   (7 files, 98 records)
+  #   ├── primary_theory/    (10 files, 157 records)
+  #   ├── revolutionary_strategy/ (7 files, 137 records)
+  #   └── uncategorized/     (1 file, 345 records - needs manual review)
+  #
+  # Each file uses qa_record.schema.json with full provenance metadata.
+  # ==========================================================================
 
   source_distribution:
     primary_theory:
@@ -595,10 +620,18 @@ attribution:
 
 updates:
   - date: "2025-12-19"
+    version: "2.0.0"
     changes: |
-      Added synthetic_benign_input_handling.jsonl (95 pairs) to prevent
-      chatbot mode on casual inputs. Documented all synthetic datasets
-      in new section.
+      MAJOR: Split curated_qa.jsonl into 47 granular author-attributed source files.
+      - Created sources/ directory with 10 category subdirectories
+      - 713 records assigned to specific author/source files
+      - 345 records in uncategorized pending manual review
+      - Created qa_record.schema.json aligned with ChromaDB pw_schema
+      - Added scripts/generate_grpo.py for on-demand GRPO generation
+      - Added scripts/validate_training_data.py for dataset validation
+      - Archived curated_qa.jsonl (replaced by source files)
+      - Removed static grpo_dataset.jsonl (replaced by script)
+      - Added synthetic_benign_input_handling.jsonl (95 pairs)
   - date: "2025-12-17"
     changes: "Added AGPL-3.0 license"
   - date: "2025-12-17"

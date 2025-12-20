@@ -509,6 +509,103 @@ pw_schema:
       notes: requires graph computation pass
 
 # =============================================================================
+# Q&A TRAINING RECORD SCHEMA (aligned with pw_schema)
+# =============================================================================
+# JSON Schema: training_data/schema/qa_record.schema.json
+# Purpose: Training data for GRPO fine-tuning, linked to RAG corpus
+
+qa_schema:
+  description: |
+    Q&A training records share field semantics with pw_schema chunk metadata.
+    This enables bidirectional linking: Q&A records can reference source chunks,
+    and training provenance is traceable back to the ProleWiki corpus.
+
+  id_format:
+    pattern: "{namespace}/{title}#{index}"
+    examples:
+      - "Library/Lenin_Revisionism#001"
+      - "Library/Jackson_Blood_My_Eye#015"
+      - "Training/Synthetic_Antisemitism#042"
+    notes: same format as pw_schema.chunk_metadata.chunk_id
+
+  shared_fields:
+    # These fields have identical semantics to pw_schema.chunk_metadata
+    namespace:
+      values: ["Main", "Library", "Essays", "ProleWiki", "Training"]
+      notes: Training namespace added for synthetic data
+    categories:
+      type: list[str]
+      purpose: topic tags (should align with ProleWiki categories)
+    is_stub:
+      type: bool
+      purpose: source marked as incomplete
+    citation_needed_count:
+      type: int
+      purpose: number of claims needing citation
+    has_blockquote:
+      type: bool
+      purpose: contains primary source quotation
+    line_range:
+      type: str
+      format: "start-end"
+      purpose: precise citation back to source file
+
+  training_specific_fields:
+    source:
+      author: primary author of source material
+      work: full title of source work
+      chunk_ids: list of ChromaDB chunk IDs this Q&A was derived from
+      section: section within the source work
+    classification:
+      tradition: ["ML", "MLM", "general", "contested"]
+      subtradition: specific tendency (Hoxhaist, Third-Worldist, etc.)
+      historical_period: Russian Revolution, Cultural Revolution, etc.
+      geographic_focus: Soviet Union, China, Palestine, etc.
+    quality:
+      human_verified: bool
+      confidence: ["high", "medium", "low"]
+      notes: quality issues or caveats
+    provenance:
+      created_date: ISO 8601 date
+      created_by: ["human", "claude-opus", "claude-sonnet", "other-llm", "automated"]
+      version: record version number
+    training:
+      iteration: which training iteration added this record
+      correction_for: failure modes this corrects (hallucination, both-sidesing, etc.)
+      difficulty: ["basic", "intermediate", "advanced", "adversarial"]
+      response_style: ["educational", "firm-rejection", "theoretical", etc.]
+
+  example_record:
+    code: |
+      {
+        "qa_id": "Library/Lenin_Revisionism#001",
+        "instruction": "What is revisionism in the Marxist sense?",
+        "response": "Revisionism refers to attempts to revise...",
+        "source": {
+          "namespace": "Library",
+          "article_title": "Marxism and Revisionism",
+          "author": "Vladimir Lenin",
+          "chunk_ids": ["Library/Lenin_Revisionism#14", "Library/Lenin_Revisionism#15"],
+          "line_range": "45-52"
+        },
+        "classification": {
+          "categories": ["revisionism", "marxist-theory", "leninism"],
+          "tradition": "ML",
+          "historical_period": "Second International"
+        },
+        "quality": {
+          "has_blockquote": true,
+          "human_verified": true,
+          "confidence": "high"
+        },
+        "provenance": {
+          "created_date": "2025-12-17",
+          "created_by": "claude-opus",
+          "version": 1
+        }
+      }
+
+# =============================================================================
 # INTERLINKING PATTERNS (WIKI-STYLE)
 # =============================================================================
 
