@@ -590,13 +590,29 @@ current_focus:
   completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5, 8.1, 8.2, 8.3, 8.4]
   removed: [3.1, 3.2, 3.3, 3.4]  # sembr phases removed 2025-12-16
   next_tasks:
-    - 6.1 - Phase A Schema Implementation (ChromaDB)
+    - 6.1 - Phase B Implementation (fix library_work extraction gap)
+    - 6.2 - Phase A Schema Implementation (ChromaDB)
     - 8.5 - Training Execution (RunPod A40)
   references:
+    - ai-docs/phase-b-implementation.yaml  # NEW: Phase B planning
     - ai-docs/chromadb-schema.yaml
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
+    2025-12-20 Summary (PHASE B PLANNING SESSION):
+    - CRITICAL DISCOVERY: parse_library_work() exists but is NEVER CALLED
+      in extraction pipeline. This is incomplete Phase A work.
+    - Documented four-layer fix needed:
+      1. types.py: Add library_work field to ArticleData
+      2. extraction.py: Call parse_library_work()
+      3. CLI: Serialize infobox + library_work to metadata JSON
+      4. chunker.py: Add Phase B fields to JSONL output
+    - Created ai-docs/phase-b-implementation.yaml with full gap analysis
+    - Confirmed 539 tests across 17 files (baseline verified)
+    - Key insight: No re-embedding needed! Only re-extract + re-chunk + re-load
+    - Methodology: Refactoring with targeted tests (not TDD)
+    - Phase B fields: library_work_author, infobox_type, political_orientation
+
     2025-12-19 Summary (PERSONA DRIFT PREVENTION + SYNTHETIC TRAINING DATA):
     - Identified critical failure mode: model switches to saccharine emoji-soup
       chatbot mode when receiving casual/benign inputs ("mama mia!" → "Aww teehee 💙")

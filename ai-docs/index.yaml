@@ -17,6 +17,31 @@ files:
       - writing query/search logic
       - optimizing performance
 
+  phase-b-implementation.yaml:
+    status: PLANNING - ready for implementation
+    purpose: Phase B schema implementation guide (library_work_author, infobox_type, political_orientation)
+    topics:
+      - Gap analysis (library_work parser orphaned)
+      - Test baseline (539 tests across 17 files)
+      - Four-layer fix (types → extraction → CLI → chunker)
+      - Training data integration strategy
+      - Risk assessment and mitigations
+    sections:
+      summary: Executive summary and key discovery
+      gap_analysis: Data flow diagram showing where metadata is lost
+      existing_code: Inventory of parsers, dataclasses, functions
+      test_baseline: Test coverage for Phase B-relevant code
+      implementation: Phased implementation plan (B1-B4)
+      phase_b_fields: Field reference with sources and values
+      training_data_integration: Provenance chain and validation rewards
+      risks: Risk assessment with mitigations
+    use_when:
+      - implementing Phase B schema changes
+      - understanding the library_work extraction gap
+      - planning re-ingestion workflow
+      - integrating training data validation
+    created: 2025-12-20
+
   chromadb-schema.yaml:
     status: Phase A (MVP) IMPLEMENTED - using OpenAI embeddings
     purpose: Concrete ChromaDB schema definition for ProleWiki (phased rollout)

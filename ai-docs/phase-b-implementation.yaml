@@ -1,0 +1,467 @@
+# Phase B Implementation Guide
+# Status: PLANNING - ready for implementation
+# Created: 2025-12-20
+# Purpose: Document Phase B schema implementation for ChromaDB enrichment
+#
+# This document captures discoveries from the 2025-12-20 planning session
+# and provides a concrete implementation roadmap.
+
+# =============================================================================
+# EXECUTIVE SUMMARY
+# =============================================================================
+
+summary:
+  goal: |
+    Add Phase B metadata fields (library_work_author, infobox_type,
+    political_orientation) to ChromaDB chunks for richer RAG queries
+    and training data validation.
+
+  key_discovery: |
+    The library_work parser EXISTS but is NEVER CALLED in the extraction
+    pipeline. This is incomplete Phase A work that must be fixed before
+    Phase B serialization can work.
+
+  methodology: Refactoring with targeted tests (not TDD)
+
+  cost_savings: |
+    No re-embedding required! Embeddings are computed from text content,
+    not metadata. Phase B only requires re-extract + re-chunk + re-load.
+
+# =============================================================================
+# GAP ANALYSIS
+# =============================================================================
+
+gap_analysis:
+  description: |
+    The pipeline has a data flow gap where extracted metadata is lost
+    before reaching ChromaDB.
+
+  current_state:
+    extraction:
+      parse_infobox: CALLED - InfoboxData extracted
+      parse_library_work: NOT CALLED - LibraryWorkData never extracted
+      ArticleData.library_work: FIELD MISSING - not in dataclass
+
+    serialization:
+      metadata_json_includes_infobox: NO - extracted but not serialized
+      metadata_json_includes_library_work: NO - not extracted
+
+    chunking:
+      ChunkedArticle.infobox: FIELD EXISTS - but always None
+      ChunkedArticle.library_work: FIELD EXISTS - but always None
+
+    jsonl_output:
+      library_work_author: NOT PRESENT
+      infobox_type: NOT PRESENT
+      political_orientation: NOT PRESENT
+      current_fields: 13  # Phase A only
+
+  data_flow_diagram: |
+    CURRENT PIPELINE (broken):
+
+    MediaWiki ──► extract_article() ──► ArticleData ──► metadata.json ──► chunker ──► JSONL
+                       │                    │                                           │
+                       │                    ├─ infobox: InfoboxData ✓                   │
+                       │                    │  (extracted but NOT serialized)           │
+                       │                    │                                           │
+                       │                    └─ library_work: MISSING                    │
+                       │                       (parser exists but never called!)        │
+                       │                                                                │
+                       └─ parse_library_work() exists                                   │
+                          in library_work.py                                            │
+                          but is never invoked                                          │
+                                                                                        │
+                                                                         ┌──────────────┘
+                                                                         │
+                                                                 13 fields (Phase A)
+                                                                 NO library_work_author
+                                                                 NO infobox_type
+                                                                 NO political_orientation
+
+# =============================================================================
+# EXISTING CODE INVENTORY
+# =============================================================================
+
+existing_code:
+  parsers:
+    infobox:
+      file: src/pw_mcp/ingest/parsers/infobox.py
+      function: parse_infobox()
+      status: IMPLEMENTED and CALLED
+      output: InfoboxData with .type, .fields, .extracted_links
+
+    library_work:
+      file: src/pw_mcp/ingest/parsers/library_work.py
+      function: parse_library_work()
+      lines: 173-265
+      status: IMPLEMENTED but NOT CALLED
+      output: LibraryWorkData with .author, .work_type, .title, etc.
+
+  dataclasses:
+    InfoboxData:
+      file: src/pw_mcp/ingest/parsers/types.py
+      lines: 121-137
+      fields:
+        - type: InfoboxType  # politician, country, library_work, etc.
+        - fields: dict[str, str | list[str] | None]
+        - remaining_text: str
+        - extracted_links: list[str]
+        - raw_fields: dict[str, str]
+
+    LibraryWorkData:
+      file: src/pw_mcp/ingest/parsers/types.py
+      lines: 140-177
+      fields:
+        - title: str
+        - author: str | None
+        - authors: list[str]
+        - work_type: str | None  # Book, Speech, Article, etc.
+        - publisher: str | None
+        - published_date: str | None
+        - source_url: str | None
+        - translator: str | None
+        - original_language: str | None
+        - spoken_on: str | None  # for speeches
+        - remaining_text: str
+
+    ArticleData:
+      file: src/pw_mcp/ingest/parsers/types.py
+      lines: 180-212
+      current_fields:
+        - clean_text: str
+        - infobox: InfoboxData | None
+        - citations: list[Citation]
+        - internal_links: list[Link]
+        - categories: list[str]
+        - sections: list[str]
+        - namespace: str
+        - reference_count: int
+        - is_stub: bool
+        - citation_needed_count: int
+        - has_blockquote: bool
+      missing_field: "library_work: LibraryWorkData | None"
+
+    ChunkedArticle:
+      file: src/pw_mcp/ingest/chunker.py
+      lines: 109-136
+      note: Already has infobox and library_work fields!
+      fields:
+        - article_title: str
+        - namespace: str
+        - chunks: list[Chunk]
+        - categories: list[str]
+        - internal_links: list[str]
+        - infobox: dict | None  # EXISTS but always None
+        - library_work: dict | None  # EXISTS but always None
+        - is_stub: bool
+        - citation_needed_count: int
+        - has_blockquote: bool
+
+  extraction:
+    file: src/pw_mcp/ingest/extraction.py
+    function: extract_article()
+    lines: 355-432
+    calls:
+      - parse_infobox: YES (line ~388)
+      - parse_library_work: NO (never called)
+
+  chunker:
+    file: src/pw_mcp/ingest/chunker.py
+    write_chunks_jsonl:
+      lines: 928-969
+      current_fields: 13
+      note: Does NOT serialize infobox or library_work fields
+
+# =============================================================================
+# TEST BASELINE
+# =============================================================================
+
+test_baseline:
+  total_tests: 539
+  test_files: 17
+
+  relevant_tests:
+    library_work_parser:
+      file: tests/unit/extraction/test_library_work_parser.py
+      tests: 25
+      status: All passing
+      coverage: |
+        - Template detection (Book, Article, Speech, Song lyrics)
+        - Field extraction (author, title, publisher, dates, URLs)
+        - Multiple authors handling
+        - Translator/original_language
+        - Template removal from text
+
+    infobox_parser:
+      file: tests/unit/extraction/test_infobox_parser.py
+      tests: 25
+      status: All passing
+      coverage: |
+        - Type detection (politician, country, party, etc.)
+        - Field extraction (name, birth_date, political_orientation)
+        - Multi-value fields (<br> splitting)
+        - Link extraction from values
+        - Unicode handling
+
+    chunk_metadata:
+      file: tests/unit/chunking/test_chunk_metadata.py
+      tests: 22
+      status: All passing
+      coverage: |
+        - ChunkedArticle creation with infobox/library_work fields
+        - Metadata attachment
+        - JSONL output format (tests current 13 fields)
+        - Chunk ID generation
+
+    integration_pipeline:
+      file: tests/integration/test_extraction_pipeline.py
+      tests: 22
+      status: All passing
+      note: Does NOT test library_work flow through pipeline
+
+  test_fixtures:
+    library_work:
+      directory: tests/fixtures/mediawiki/library_work/
+      files:
+        - book_full.txt
+        - article.txt
+        - speech.txt
+        - song_lyrics.txt
+        - translated.txt
+        - multiple_authors.txt
+        - multiline.txt
+
+    chunking_metadata:
+      directory: tests/fixtures/chunking/metadata/
+      files:
+        - article_main.json  # with infobox
+        - article_library.json  # with library_work
+        - article_minimal.json
+
+  gaps:
+    - No test for library_work flowing through full pipeline
+    - No test for infobox serialization to metadata JSON
+    - No test for Phase B fields in JSONL output
+
+# =============================================================================
+# IMPLEMENTATION PLAN
+# =============================================================================
+
+implementation:
+  methodology: |
+    Refactoring with targeted tests. The parsers work, we're just
+    connecting existing pieces. Add 2-3 new assertion tests for
+    the new output behavior.
+
+  phases:
+    phase_b1:
+      name: Fix Extraction Gap
+      changes:
+        - file: src/pw_mcp/ingest/parsers/types.py
+          change: Add library_work field to ArticleData dataclass
+          line: ~212
+          code: "library_work: LibraryWorkData | None = None"
+
+        - file: src/pw_mcp/ingest/extraction.py
+          change: Call parse_library_work() in extract_article()
+          line: ~390 (after infobox parsing)
+          code: |
+            # After infobox extraction
+            library_work = parse_library_work(text)
+            # Use library_work.remaining_text if library_work exists
+
+        - file: src/pw_mcp/ingest/cli.py
+          change: Serialize infobox and library_work to metadata JSON
+          location: _run_extract_process() metadata dict
+          code: |
+            metadata = {
+                # ... existing fields ...
+                "infobox": asdict(article_data.infobox) if article_data.infobox else None,
+                "library_work": asdict(article_data.library_work) if article_data.library_work else None,
+            }
+
+      tests:
+        - test_extraction_includes_library_work()
+        - test_metadata_json_contains_infobox()
+        - test_metadata_json_contains_library_work()
+
+    phase_b2:
+      name: Update Chunker Serialization
+      changes:
+        - file: src/pw_mcp/ingest/chunker.py
+          change: Add Phase B fields to write_chunks_jsonl()
+          location: lines 950-968
+          code: |
+            # After existing record fields
+            record["library_work_author"] = (
+                article.library_work.get("author")
+                if article.library_work else None
+            )
+            record["infobox_type"] = (
+                article.infobox.get("type")
+                if article.infobox else None
+            )
+            record["political_orientation"] = (
+                article.infobox.get("fields", {}).get("political_orientation")
+                if article.infobox else None
+            )
+
+      tests:
+        - test_chunks_jsonl_includes_library_work_author()
+        - test_chunks_jsonl_includes_infobox_type()
+        - test_chunks_jsonl_includes_political_orientation()
+
+    phase_b3:
+      name: Corpus Re-ingestion
+      steps:
+        - Re-run extraction (capture library_work data)
+        - Re-run chunking (serialize new fields)
+        - SKIP embedding (reuse existing .npy files)
+        - Re-load to ChromaDB (upsert with enriched metadata)
+
+    phase_b4:
+      name: Training Data Integration (Optional)
+      steps:
+        - Add chunk_ids to training records for provenance
+        - Implement validation reward function
+        - Cross-check source.author against library_work_author
+
+# =============================================================================
+# PHASE B FIELDS REFERENCE
+# =============================================================================
+
+phase_b_fields:
+  tier_1_high_value:
+    library_work_author:
+      source: LibraryWorkData.author
+      type: str | None
+      example: "Vladimir Lenin"
+      rag_value: Enable "works by X" semantic search
+      training_value: Validate source.author attribution
+
+    infobox_type:
+      source: InfoboxData.type
+      type: str | None
+      values: [politician, country, political_party, person, revolutionary,
+               essay, philosopher, company, settlement, military_person,
+               organization, guerilla_organization, youtuber, military_conflict,
+               book, religion, website, transcript, library_work]
+      rag_value: Filter by entity type
+      training_value: Entity classification
+
+    political_orientation:
+      source: InfoboxData.fields.get("political_orientation")
+      type: str | list[str] | None
+      example: '["Marxism-Leninism", "Islamic socialism"]'
+      rag_value: Ideological filtering (HIGHLY valuable for ProleWiki!)
+      training_value: Validate classification.tradition
+
+  tier_2_medium_value:
+    library_work_type:
+      source: LibraryWorkData.work_type
+      type: str | None
+      values: [Book, Speech, Article, Essay, Research paper, Pamphlet, Letter]
+
+    library_work_title:
+      source: LibraryWorkData.title
+      type: str
+      note: May differ from article_title
+
+    library_work_published_year:
+      source: LibraryWorkData.published_date (parsed)
+      type: int | None
+
+  tier_3_lower_priority:
+    birth_year: InfoboxData.fields.get("birth_year")
+    death_year: InfoboxData.fields.get("death_year")
+    nationality: InfoboxData.fields.get("nationality")
+    source_file: Path to source file (debugging)
+    has_foreword: Boolean flag
+
+# =============================================================================
+# TRAINING DATA INTEGRATION
+# =============================================================================
+
+training_data_integration:
+  current_state: |
+    Training data in training_data/sources/ is organized by author
+    at the FILE level. This is manual annotation.
+
+  phase_b_enables:
+    provenance_chain: |
+      Training Q&A → source.chunk_ids → ChromaDB chunks → library_work_author
+
+      This creates a verifiable chain from training example to primary source.
+
+    validation_reward: |
+      def author_attribution_reward(qa_record, chromadb_client):
+          """Validate Q&A author claim against chunk metadata."""
+          claimed_author = qa_record.get("source", {}).get("author")
+          chunk_ids = qa_record.get("source", {}).get("chunk_ids", [])
+
+          if not chunk_ids:
+              return 0.0  # No chunk link, can't validate
+
+          chunks = chromadb_client.get(ids=chunk_ids)
+          chunk_authors = [m.get("library_work_author") for m in chunks["metadatas"]]
+
+          if claimed_author in chunk_authors:
+              return 1.0  # Valid attribution
+          return -0.5  # Misattribution penalty
+
+    ideological_validation: |
+      Cross-check classification.tradition against political_orientation
+      to catch inconsistencies in training data.
+
+  hybrid_approach: |
+    ChromaDB Phase B (automated): Extract what's automatable, accept gaps
+    Training data (human-curated): User manually annotates source.author
+
+    These are parallel efforts, not sequential dependencies.
+
+# =============================================================================
+# RISK ASSESSMENT
+# =============================================================================
+
+risks:
+  low:
+    - types.py changes: Additive field, non-breaking
+    - chunker.py changes: Additive fields, existing tests still pass
+    - ChromaDB schema: Schemaless, accepts new fields automatically
+
+  medium:
+    - CLI metadata serialization: Need to handle dataclass → dict properly
+    - Library namespace coverage: Not all articles have library_work templates
+    - Infobox field names: May vary (political_orientation vs political_line)
+
+  mitigations:
+    - Use dataclasses.asdict() for safe serialization
+    - Handle None gracefully throughout pipeline
+    - Check multiple field name variants for political_orientation
+
+# =============================================================================
+# COMMANDS
+# =============================================================================
+
+commands:
+  run_baseline_tests: pytest -m unit  # Should pass ~540 tests
+  run_extraction_tests: pytest tests/unit/extraction/ -v
+  run_chunking_tests: pytest tests/unit/chunking/ -v
+  run_integration_tests: pytest tests/integration/ -v
+
+  sample_pipeline_with_phase_b:
+    extract: mise run sample-extract
+    chunk: mise run sample-chunk
+    # embed: SKIP - reuse existing embeddings
+    load: mise run sample-load  # when implemented
+
+# =============================================================================
+# RELATED DOCUMENTATION
+# =============================================================================
+
+related_docs:
+  - chromadb-schema.yaml: Full Phase A/B/C/D schema definitions
+  - chromadb.yaml: ChromaDB operations and query patterns
+  - pipeline.yaml: Full pipeline architecture
+  - project-status.yaml: Overall project progress
+  - reward-modeling.yaml: GRPO reward functions (for training integration)
