@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,31 @@ from pw_mcp.ingest.chunker.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_year(date_str: str | None) -> int | None:
+    """Extract year from a date string.
+
+    Handles formats like:
+    - "1917" (just year)
+    - "1917-10-25" (ISO format)
+    - "October 25, 1917" (human readable)
+
+    Args:
+        date_str: Date string to parse, or None.
+
+    Returns:
+        Year as integer, or None if extraction fails.
+    """
+    if not date_str:
+        return None
+
+    # Try to find a 4-digit year pattern
+    match = re.search(r"\b(1[0-9]{3}|20[0-9]{2})\b", date_str)
+    if match:
+        return int(match.group(1))
+
+    return None
 
 
 def generate_chunk_id(namespace: str, title: str, index: int) -> str:
@@ -187,12 +213,22 @@ def write_chunks_jsonl(
                 "library_work_author": (
                     article.library_work.get("author") if article.library_work else None
                 ),
+                "library_work_type": (
+                    article.library_work.get("work_type") if article.library_work else None
+                ),
+                "library_work_published_year": (
+                    _extract_year(article.library_work.get("published_date"))
+                    if article.library_work
+                    else None
+                ),
                 "infobox_type": (article.infobox.get("type") if article.infobox else None),
                 "political_orientation": (
                     article.infobox.get("fields", {}).get("political_orientation")
                     if article.infobox
                     else None
                 ),
+                "primary_category": (article.categories[0] if article.categories else None),
+                "category_count": len(article.categories),
             }
 
             # Write as single line JSON

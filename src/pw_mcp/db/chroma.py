@@ -55,22 +55,33 @@ def serialize_metadata(chunk: dict[str, Any]) -> dict[str, Any]:
     """Convert chunk dict to ChromaDB-compatible metadata.
 
     ChromaDB metadata constraints:
-    - No None values (use empty string)
+    - No None values (use empty string for strings, -1 for optional ints)
     - Lists must be JSON strings
     - Supported types: str, int, float, bool
     """
     return {
+        # Core identifier fields
         "article_title": chunk["article_title"],
         "namespace": chunk["namespace"],
         "section": chunk.get("section") or "",  # None → ""
         "chunk_index": chunk["chunk_index"],
         "line_range": chunk["line_range"],
         "word_count": chunk["word_count"],
+        # Array fields stored as JSON strings
         "categories": json.dumps(chunk.get("categories", [])),
         "internal_links": json.dumps(chunk.get("internal_links", [])),
+        # Quality flags
         "is_stub": chunk.get("is_stub", False),
         "citation_needed_count": chunk.get("citation_needed_count", 0),
         "has_blockquote": chunk.get("has_blockquote", False),
+        # Phase B: Enriched metadata for MCP filtering
+        "library_work_author": chunk.get("library_work_author") or "",
+        "library_work_type": chunk.get("library_work_type") or "",
+        "library_work_published_year": chunk.get("library_work_published_year") or -1,
+        "infobox_type": chunk.get("infobox_type") or "",
+        "political_orientation": chunk.get("political_orientation") or "",
+        "primary_category": chunk.get("primary_category") or "",
+        "category_count": chunk.get("category_count", 0),
     }
 
 
@@ -85,17 +96,35 @@ def deserialize_metadata(
         metadata: ChromaDB metadata mapping (may contain str, int, float, bool, None).
 
     Returns:
-        Dict with deserialized categories and internal_links as lists.
+        Dict with deserialized categories, internal_links, and Phase B fields.
     """
     result: dict[str, Any] = dict(metadata)
+
     # Restore None for empty section
     if result.get("section") == "":
         result["section"] = None
+
     # Parse JSON arrays
     if "categories" in result and isinstance(result["categories"], str):
         result["categories"] = json.loads(result["categories"])
     if "internal_links" in result and isinstance(result["internal_links"], str):
         result["internal_links"] = json.loads(result["internal_links"])
+
+    # Restore None for empty Phase B string fields
+    for field_name in [
+        "library_work_author",
+        "library_work_type",
+        "infobox_type",
+        "political_orientation",
+        "primary_category",
+    ]:
+        if result.get(field_name) == "":
+            result[field_name] = None
+
+    # Restore None for -1 in published_year
+    if result.get("library_work_published_year") == -1:
+        result["library_work_published_year"] = None
+
     return result
 
 

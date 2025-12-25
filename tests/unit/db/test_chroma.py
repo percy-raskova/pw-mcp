@@ -104,6 +104,69 @@ class TestSerializeMetadata:
         assert result["citation_needed_count"] == 2
         assert result["has_blockquote"] is True
 
+    def test_phase_b_fields_serialization(self) -> None:
+        """Test Phase B enriched metadata fields serialization."""
+        chunk = {
+            "article_title": "State and Revolution",
+            "namespace": "Library",
+            "section": "Chapter 1",
+            "chunk_index": 0,
+            "line_range": "1-50",
+            "word_count": 350,
+            "categories": ["Marxism-Leninism"],
+            "internal_links": [],
+            "is_stub": False,
+            "citation_needed_count": 0,
+            "has_blockquote": False,
+            "library_work_author": "Vladimir Lenin",
+            "library_work_type": "Book",
+            "library_work_published_year": 1917,
+            "infobox_type": None,
+            "political_orientation": None,
+            "primary_category": "Marxism-Leninism",
+            "category_count": 1,
+        }
+
+        result = serialize_metadata(chunk)
+
+        assert result["library_work_author"] == "Vladimir Lenin"
+        assert result["library_work_type"] == "Book"
+        assert result["library_work_published_year"] == 1917
+        assert result["infobox_type"] == ""  # None → ""
+        assert result["political_orientation"] == ""  # None → ""
+        assert result["primary_category"] == "Marxism-Leninism"
+        assert result["category_count"] == 1
+
+    def test_phase_b_fields_none_handling(self) -> None:
+        """Test that None Phase B fields are converted to ChromaDB-safe values."""
+        chunk = {
+            "article_title": "Test",
+            "namespace": "Main",
+            "section": None,
+            "chunk_index": 0,
+            "line_range": "1-1",
+            "word_count": 10,
+            "categories": [],
+            "internal_links": [],
+            "is_stub": False,
+            "citation_needed_count": 0,
+            "has_blockquote": False,
+            # All Phase B fields are None or missing
+        }
+
+        result = serialize_metadata(chunk)
+
+        # String fields should become empty string
+        assert result["library_work_author"] == ""
+        assert result["library_work_type"] == ""
+        assert result["infobox_type"] == ""
+        assert result["political_orientation"] == ""
+        assert result["primary_category"] == ""
+        # Integer field should become -1
+        assert result["library_work_published_year"] == -1
+        # Count field should default to 0
+        assert result["category_count"] == 0
+
     def test_none_section_becomes_empty_string(self) -> None:
         """Test that None section is converted to empty string."""
         chunk = {
@@ -181,6 +244,61 @@ class TestDeserializeMetadata:
         result = deserialize_metadata(metadata)
         assert result["section"] is None
 
+    def test_phase_b_fields_deserialization(self) -> None:
+        """Test Phase B fields are properly deserialized."""
+        metadata = {
+            "article_title": "State and Revolution",
+            "namespace": "Library",
+            "section": "Chapter 1",
+            "chunk_index": 0,
+            "line_range": "1-50",
+            "word_count": 350,
+            "categories": '["Marxism-Leninism"]',
+            "internal_links": "[]",
+            "is_stub": False,
+            "citation_needed_count": 0,
+            "has_blockquote": False,
+            "library_work_author": "Vladimir Lenin",
+            "library_work_type": "Book",
+            "library_work_published_year": 1917,
+            "infobox_type": "",
+            "political_orientation": "",
+            "primary_category": "Marxism-Leninism",
+            "category_count": 1,
+        }
+
+        result = deserialize_metadata(metadata)
+
+        assert result["library_work_author"] == "Vladimir Lenin"
+        assert result["library_work_type"] == "Book"
+        assert result["library_work_published_year"] == 1917
+        assert result["infobox_type"] is None  # "" → None
+        assert result["political_orientation"] is None  # "" → None
+        assert result["primary_category"] == "Marxism-Leninism"
+        assert result["category_count"] == 1
+
+    def test_phase_b_fields_empty_to_none(self) -> None:
+        """Test that empty Phase B string fields become None."""
+        metadata = {
+            "library_work_author": "",
+            "library_work_type": "",
+            "library_work_published_year": -1,
+            "infobox_type": "",
+            "political_orientation": "",
+            "primary_category": "",
+            "categories": "[]",
+            "internal_links": "[]",
+        }
+
+        result = deserialize_metadata(metadata)
+
+        assert result["library_work_author"] is None
+        assert result["library_work_type"] is None
+        assert result["library_work_published_year"] is None  # -1 → None
+        assert result["infobox_type"] is None
+        assert result["political_orientation"] is None
+        assert result["primary_category"] is None
+
     def test_roundtrip_serialization(self) -> None:
         """Test that serialize + deserialize preserves data."""
         original = {
@@ -205,6 +323,42 @@ class TestDeserializeMetadata:
         assert deserialized["section"] == original["section"]
         assert deserialized["categories"] == original["categories"]
         assert deserialized["internal_links"] == original["internal_links"]
+
+    def test_roundtrip_phase_b_fields(self) -> None:
+        """Test that Phase B fields survive serialize + deserialize roundtrip."""
+        original = {
+            "article_title": "What Is To Be Done?",
+            "namespace": "Library",
+            "section": "Introduction",
+            "chunk_index": 0,
+            "line_range": "1-100",
+            "word_count": 800,
+            "categories": ["Marxism-Leninism", "Party building"],
+            "internal_links": ["RSDLP", "Iskra"],
+            "is_stub": False,
+            "citation_needed_count": 0,
+            "has_blockquote": True,
+            "library_work_author": "Vladimir Lenin",
+            "library_work_type": "Pamphlet",
+            "library_work_published_year": 1902,
+            "infobox_type": None,
+            "political_orientation": None,
+            "primary_category": "Marxism-Leninism",
+            "category_count": 2,
+        }
+
+        serialized = serialize_metadata(original)
+        deserialized = deserialize_metadata(serialized)
+
+        assert deserialized["library_work_author"] == original["library_work_author"]
+        assert deserialized["library_work_type"] == original["library_work_type"]
+        assert (
+            deserialized["library_work_published_year"] == original["library_work_published_year"]
+        )
+        assert deserialized["infobox_type"] is None
+        assert deserialized["political_orientation"] is None
+        assert deserialized["primary_category"] == original["primary_category"]
+        assert deserialized["category_count"] == original["category_count"]
 
 
 # =============================================================================

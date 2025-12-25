@@ -620,7 +620,9 @@ def _run_extract_process(args: argparse.Namespace) -> int:
                 source_text = input_file.read_text(encoding="utf-8")
 
                 # Extract article data
-                article_data = extract_article(source_text, str(input_file))
+                # Use relative path (namespace/filename) for proper namespace detection
+                relative_path = f"{namespace}/{input_file.name}"
+                article_data = extract_article(source_text, relative_path)
 
                 # Write clean text
                 text_output = output_dir / namespace / input_file.name
@@ -1626,7 +1628,8 @@ def _run_repair_process(args: argparse.Namespace) -> int:
             else:
                 try:
                     source_text = source_path.read_text(encoding="utf-8")
-                    article_data = extract_article(source_text, str(source_path))
+                    # Use relative path for proper namespace detection
+                    article_data = extract_article(source_text, str(relative))
                     extracted_path.write_text(article_data.clean_text, encoding="utf-8")
                     print(f"  Reprocessed: {relative} ({len(article_data.clean_text)} chars)")
                 except Exception as e:

@@ -619,3 +619,108 @@ class TestJsonlOutput:
         assert record["infobox_type"] is None
         assert "political_orientation" in record
         assert record["political_orientation"] is None
+        # Verify new Phase B fields
+        assert "library_work_type" in record
+        assert record["library_work_type"] is None
+        assert "library_work_published_year" in record
+        assert record["library_work_published_year"] is None
+        assert "primary_category" in record
+        assert record["primary_category"] is None
+        assert "category_count" in record
+        assert record["category_count"] == 0
+
+    @pytest.mark.unit
+    def test_jsonl_includes_extended_phase_b_fields(self, tmp_path: Path) -> None:
+        """JSONL records should include extended Phase B metadata fields."""
+        chunks = [
+            Chunk(
+                text="Test content about dialectical materialism.",
+                chunk_index=0,
+                section="Chapter 1",
+                line_start=1,
+                line_end=10,
+                word_count=5,
+                estimated_tokens=6,
+            )
+        ]
+        article = ChunkedArticle(
+            article_title="State and Revolution",
+            namespace="Library",
+            chunks=chunks,
+            categories=["Marxism-Leninism", "Theory", "State theory"],
+            internal_links=["Karl Marx", "Friedrich Engels"],
+            infobox=None,
+            library_work={
+                "author": "Vladimir Lenin",
+                "title": "State and Revolution",
+                "work_type": "Book",
+                "published_date": "1917",
+            },
+            is_stub=False,
+            citation_needed_count=0,
+            has_blockquote=False,
+        )
+
+        output_path = tmp_path / "extended_phase_b.jsonl"
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
+
+        line = output_path.read_text().strip()
+        record = json.loads(line)
+
+        # Verify extended Phase B fields
+        assert record["library_work_type"] == "Book"
+        assert record["library_work_published_year"] == 1917
+        assert record["primary_category"] == "Marxism-Leninism"
+        assert record["category_count"] == 3
+
+
+# =============================================================================
+# YEAR EXTRACTION TESTS
+# =============================================================================
+
+
+class TestExtractYear:
+    """Tests for _extract_year helper function."""
+
+    @pytest.mark.unit
+    def test_extract_year_from_year_only(self) -> None:
+        """Should extract year from simple year string."""
+        from pw_mcp.ingest.chunker.jsonl_writer import _extract_year
+
+        assert _extract_year("1917") == 1917
+        assert _extract_year("1848") == 1848
+        assert _extract_year("2024") == 2024
+
+    @pytest.mark.unit
+    def test_extract_year_from_iso_date(self) -> None:
+        """Should extract year from ISO date format."""
+        from pw_mcp.ingest.chunker.jsonl_writer import _extract_year
+
+        assert _extract_year("1917-10-25") == 1917
+        assert _extract_year("1848-02-21") == 1848
+
+    @pytest.mark.unit
+    def test_extract_year_from_human_readable(self) -> None:
+        """Should extract year from human-readable date formats."""
+        from pw_mcp.ingest.chunker.jsonl_writer import _extract_year
+
+        assert _extract_year("October 25, 1917") == 1917
+        assert _extract_year("February 21, 1848") == 1848
+        assert _extract_year("21 February 1848") == 1848
+
+    @pytest.mark.unit
+    def test_extract_year_none_for_empty(self) -> None:
+        """Should return None for empty or None input."""
+        from pw_mcp.ingest.chunker.jsonl_writer import _extract_year
+
+        assert _extract_year(None) is None
+        assert _extract_year("") is None
+
+    @pytest.mark.unit
+    def test_extract_year_none_for_invalid(self) -> None:
+        """Should return None for strings without valid year."""
+        from pw_mcp.ingest.chunker.jsonl_writer import _extract_year
+
+        assert _extract_year("unknown") is None
+        assert _extract_year("circa 15th century") is None
