@@ -35,6 +35,7 @@ import random
 import sys
 import time
 import traceback
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -236,6 +237,12 @@ def _create_parser() -> argparse.ArgumentParser:
         default=50,
         help="Token overlap between chunks for RAG context continuity (default: 50)",
     )
+    chunk_parser.add_argument(
+        "--min-words",
+        type=int,
+        default=10,
+        help="Minimum word count per chunk; smaller chunks filtered out (default: 10)",
+    )
 
     # =========================================================================
     # EMBED SUBCOMMAND
@@ -357,6 +364,125 @@ def _create_parser() -> argparse.ArgumentParser:
         "--reset",
         action="store_true",
         help="Delete existing collection before loading (fresh start)",
+    )
+
+    # =========================================================================
+    # DIAGNOSE SUBCOMMAND
+    # =========================================================================
+    diagnose_parser = subparsers.add_parser(
+        "diagnose",
+        help="Analyze pipeline state and identify issues",
+        description=(
+            "Scan pipeline directories to identify empty, missing, or orphaned files. "
+            "Provides a summary of pipeline health and actionable recommendations."
+        ),
+    )
+
+    diagnose_parser.add_argument(
+        "--extracted-dir",
+        type=Path,
+        default=Path("extracted"),
+        help="Directory containing extracted .txt files (default: extracted/)",
+    )
+    diagnose_parser.add_argument(
+        "--chunks-dir",
+        type=Path,
+        default=Path("chunks"),
+        help="Directory containing .jsonl chunk files (default: chunks/)",
+    )
+    diagnose_parser.add_argument(
+        "--embeddings-dir",
+        type=Path,
+        default=Path("embeddings"),
+        help="Directory containing .npy embedding files (default: embeddings/)",
+    )
+    diagnose_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show per-file details for issues",
+    )
+    diagnose_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    diagnose_parser.add_argument(
+        "--validate-content",
+        action="store_true",
+        help="Enable content-level validation (checks for duplicate chunks)",
+    )
+    diagnose_parser.add_argument(
+        "--duplication-threshold",
+        type=float,
+        default=0.1,
+        help="Flag files with duplication ratio above this threshold (default: 0.1 = 10%%)",
+    )
+
+    # =========================================================================
+    # REPAIR SUBCOMMAND
+    # =========================================================================
+    repair_parser = subparsers.add_parser(
+        "repair",
+        help="Fix pipeline issues identified by diagnose",
+        description=(
+            "Repair pipeline issues by reprocessing empty files, deleting orphaned "
+            "outputs, or forcing regeneration of specific stages."
+        ),
+    )
+
+    repair_parser.add_argument(
+        "--extracted-dir",
+        type=Path,
+        default=Path("extracted"),
+        help="Directory containing extracted .txt files (default: extracted/)",
+    )
+    repair_parser.add_argument(
+        "--chunks-dir",
+        type=Path,
+        default=Path("chunks"),
+        help="Directory containing .jsonl chunk files (default: chunks/)",
+    )
+    repair_parser.add_argument(
+        "--embeddings-dir",
+        type=Path,
+        default=Path("embeddings"),
+        help="Directory containing .npy embedding files (default: embeddings/)",
+    )
+    repair_parser.add_argument(
+        "--source-dir",
+        type=Path,
+        default=Path("prolewiki-exports"),
+        help="Source MediaWiki export directory (default: prolewiki-exports/)",
+    )
+    repair_parser.add_argument(
+        "--action",
+        choices=["reprocess-empty", "delete-orphaned", "delete-empty", "delete-corrupt"],
+        required=True,
+        help=(
+            "Repair action: reprocess-empty (re-extract empty files from source), "
+            "delete-orphaned (remove outputs without sources), "
+            "delete-empty (remove 0-byte files), "
+            "delete-corrupt (remove files with excessive duplication)"
+        ),
+    )
+    repair_parser.add_argument(
+        "--stage",
+        choices=["extracted", "chunks", "embeddings", "all"],
+        default="all",
+        help="Which stage to repair (default: all)",
+    )
+    repair_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes",
+    )
+    repair_parser.add_argument(
+        "--duplication-threshold",
+        type=float,
+        default=0.1,
+        help="For delete-corrupt: threshold for excessive duplication (default: 0.1 = 10%%)",
     )
 
     return parser
@@ -515,6 +641,11 @@ def _run_extract_process(args: argparse.Namespace) -> int:
                     "citation_needed_count": article_data.citation_needed_count,
                     "has_blockquote": article_data.has_blockquote,
                     "source_file": str(input_file),
+                    # Phase B: Serialize structured metadata for enriched chunking
+                    "infobox": asdict(article_data.infobox) if article_data.infobox else None,
+                    "library_work": asdict(article_data.library_work)
+                    if article_data.library_work
+                    else None,
                 }
                 meta_output.write_text(
                     json.dumps(meta_dict, indent=2, ensure_ascii=False),
@@ -579,6 +710,7 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
     target_tokens: int = args.target_tokens
     max_tokens: int = args.max_tokens
     overlap_tokens: int = args.overlap_tokens
+    min_words: int = args.min_words
 
     # Validate input directory
     if not input_dir.exists():
@@ -590,6 +722,7 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
         target_tokens=target_tokens,
         max_tokens=max_tokens,
         overlap_tokens=overlap_tokens,
+        min_words=min_words,
     )
 
     # Print header
@@ -601,24 +734,43 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
     print(f"Target:    {target_tokens} tokens")
     print(f"Max:       {max_tokens} tokens")
     print(f"Overlap:   {overlap_tokens} tokens")
+    print(f"Min words: {min_words}")
 
     # Discover input files
     input_files = list(input_dir.rglob("*.txt"))
-    total_files = len(input_files)
+    total_available = len(input_files)
 
-    if total_files == 0:
+    if total_available == 0:
         print("\nNo .txt files found in input directory")
         return 1
 
+    # Filter out files that already have corresponding output (resume support)
+    files_to_process: list[Path] = []
+    skipped_count = 0
+    for input_file in input_files:
+        relative_path = input_file.relative_to(input_dir)
+        output_file = output_dir / relative_path.with_suffix(".jsonl")
+        if output_file.exists():
+            skipped_count += 1
+        else:
+            files_to_process.append(input_file)
+
     # Apply sample limit with random selection
     if sample_count is not None:
-        if sample_count < total_files:
-            input_files = random.sample(input_files, sample_count)
-        total_files = len(input_files)
-        print(f"Sample:    {total_files} files (randomly selected)")
+        if sample_count < len(files_to_process):
+            files_to_process = random.sample(files_to_process, sample_count)
+        print(f"Sample:    {len(files_to_process)} files (randomly selected)")
 
+    total_files = len(files_to_process)
+
+    if skipped_count > 0:
+        print(f"Skipped:   {skipped_count} files (already processed)")
     print(f"Files:     {total_files}")
     print()
+
+    if total_files == 0:
+        print("No files to process (all already chunked)")
+        return 0
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -626,11 +778,13 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
     # Process files
     processed_count = 0
     total_chunks = 0
+    total_micro_filtered = 0
+    total_duplicates_removed = 0
     missing_meta_count = 0
     start_time = time.perf_counter()
 
     try:
-        for i, input_file in enumerate(input_files):
+        for i, input_file in enumerate(files_to_process):
             # Calculate relative path for output structure preservation
             relative_path = input_file.relative_to(input_dir)
             output_file = output_dir / relative_path.with_suffix(".jsonl")
@@ -668,16 +822,22 @@ def _run_chunk_process(args: argparse.Namespace) -> int:
             # Chunk the article
             chunked_article = chunk_article(input_file, metadata, config)
 
-            # Write output
-            write_chunks_jsonl(chunked_article, output_file)
+            # Write output with filtering
+            stats = write_chunks_jsonl(chunked_article, output_file, config)
 
             processed_count += 1
-            total_chunks += len(chunked_article.chunks)
+            total_chunks += stats.chunks_written
+            total_micro_filtered += stats.micro_chunks_filtered
+            total_duplicates_removed += stats.consecutive_duplicates_removed
 
         elapsed = time.perf_counter() - start_time
         print()
         print(f"Complete:  {processed_count} files processed in {elapsed:.1f}s")
         print(f"Chunks:    {total_chunks:,} total")
+        if total_micro_filtered > 0:
+            print(f"Filtered:  {total_micro_filtered:,} micro-chunks (<{min_words} words)")
+        if total_duplicates_removed > 0:
+            print(f"Deduped:   {total_duplicates_removed:,} consecutive duplicates")
         if missing_meta_count > 0:
             print(f"Warnings:  {missing_meta_count} files with missing metadata")
 
@@ -1006,6 +1166,538 @@ def _run_load_process(args: argparse.Namespace) -> int:
         return 130  # Standard exit code for SIGINT
 
 
+def _validate_chunk_content(
+    chunks_dir: Path,
+    threshold: float = 0.1,
+) -> tuple[dict[str, tuple[int, int, int, float]], int, int]:
+    """Validate chunk files for content issues like excessive duplication.
+
+    Scans all JSONL chunk files and detects files where the ratio of
+    duplicate chunks exceeds the given threshold.
+
+    Args:
+        chunks_dir: Directory containing .jsonl chunk files
+        threshold: Flag files with duplication ratio above this (default: 0.1 = 10%)
+
+    Returns:
+        Tuple of:
+        - corrupt_files: dict mapping file_key to (total, unique, dups, ratio)
+        - total_chunks: sum of all chunks across all files
+        - total_duplicates: sum of all duplicate chunks across all files
+    """
+    corrupt_files: dict[str, tuple[int, int, int, float]] = {}
+    total_chunks = 0
+    total_duplicates = 0
+
+    if not chunks_dir.exists():
+        return corrupt_files, total_chunks, total_duplicates
+
+    for jsonl_file in chunks_dir.rglob("*.jsonl"):
+        texts: list[str] = []
+        try:
+            with open(jsonl_file, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        chunk = json.loads(line)
+                        texts.append(chunk.get("text", ""))
+        except (json.JSONDecodeError, OSError):
+            # Skip malformed files
+            continue
+
+        if not texts:
+            continue
+
+        file_total = len(texts)
+        unique_count = len(set(texts))
+        dup_count = file_total - unique_count
+        dup_ratio = dup_count / file_total if file_total > 0 else 0.0
+
+        total_chunks += file_total
+        total_duplicates += dup_count
+
+        if dup_ratio > threshold:
+            # Normalize key to namespace/stem format
+            relative = jsonl_file.relative_to(chunks_dir)
+            file_key = str(relative.with_suffix(""))
+            corrupt_files[file_key] = (file_total, unique_count, dup_count, dup_ratio)
+
+    return corrupt_files, total_chunks, total_duplicates
+
+
+def _run_diagnose_process(args: argparse.Namespace) -> int:
+    """Analyze pipeline state and identify issues.
+
+    Scans pipeline directories to find:
+    - Empty files (0 bytes)
+    - Missing files (exist in one stage but not another)
+    - Orphaned files (output without corresponding input)
+
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        Exit code (0 for healthy, 1 for issues found)
+    """
+    extracted_dir: Path = args.extracted_dir
+    chunks_dir: Path = args.chunks_dir
+    embeddings_dir: Path = args.embeddings_dir
+    verbose: bool = args.verbose
+    output_format: str = args.format
+    validate_content: bool = args.validate_content
+    duplication_threshold: float = args.duplication_threshold
+
+    # Collect file information for each stage
+    def scan_directory(directory: Path, extension: str) -> dict[str, tuple[Path, int, str]]:
+        """Scan directory and collect file metadata as (path, size, namespace) tuples."""
+        files: dict[str, tuple[Path, int, str]] = {}
+        if not directory.exists():
+            return files
+
+        for file_path in directory.rglob(f"*{extension}"):
+            # Skip the articles/ subdirectory (metadata, not content)
+            if "articles" in file_path.parts:
+                continue
+            relative = file_path.relative_to(directory)
+            # Normalize key: namespace/stem (without extension)
+            key = str(relative.with_suffix(""))
+            namespace = relative.parts[0] if len(relative.parts) > 1 else "root"
+            files[key] = (file_path, file_path.stat().st_size, namespace)
+        return files
+
+    # Scan all stages
+    extracted = scan_directory(extracted_dir, ".txt")
+    chunks = scan_directory(chunks_dir, ".jsonl")
+    embeddings = scan_directory(embeddings_dir, ".npy")
+
+    # Calculate statistics (tuple indices: 0=path, 1=size, 2=namespace)
+    extracted_total = len(extracted)
+    extracted_empty = sum(1 for _path, size, _ns in extracted.values() if size == 0)
+    chunks_total = len(chunks)
+    chunks_empty = sum(1 for _path, size, _ns in chunks.values() if size == 0)
+    embeddings_total = len(embeddings)
+    embeddings_empty = sum(1 for _path, size, _ns in embeddings.values() if size == 0)
+
+    # Find missing files
+    extracted_keys = set(extracted.keys())
+    chunks_keys = set(chunks.keys())
+    embeddings_keys = set(embeddings.keys())
+
+    # Files extracted but not chunked
+    missing_chunks = extracted_keys - chunks_keys
+    # Files chunked but not embedded (excluding empty chunks which can't embed)
+    non_empty_chunks = {k for k, (_path, size, _ns) in chunks.items() if size > 0}
+    missing_embeddings = non_empty_chunks - embeddings_keys
+    # Orphaned files (output exists without input)
+    orphaned_chunks = chunks_keys - extracted_keys
+    orphaned_embeddings = embeddings_keys - chunks_keys
+
+    # Group empty files by namespace
+    empty_by_namespace: dict[str, int] = {}
+    for _key, (_path, size, namespace) in extracted.items():
+        if size == 0:
+            empty_by_namespace[namespace] = empty_by_namespace.get(namespace, 0) + 1
+
+    # Content validation (optional)
+    corrupt_files: dict[str, tuple[int, int, int, float]] = {}
+    content_total_duplicates = 0
+    if validate_content:
+        corrupt_files, _, content_total_duplicates = _validate_chunk_content(
+            chunks_dir, duplication_threshold
+        )
+
+    # Determine overall health
+    has_issues = bool(
+        missing_chunks
+        or missing_embeddings
+        or orphaned_chunks
+        or orphaned_embeddings
+        or extracted_empty
+        or corrupt_files  # Add content validation issues
+    )
+
+    if output_format == "json":
+        # JSON output for programmatic use
+        result = {
+            "stages": {
+                "extracted": {
+                    "total": extracted_total,
+                    "non_empty": extracted_total - extracted_empty,
+                    "empty": extracted_empty,
+                },
+                "chunks": {
+                    "total": chunks_total,
+                    "non_empty": chunks_total - chunks_empty,
+                    "empty": chunks_empty,
+                },
+                "embeddings": {
+                    "total": embeddings_total,
+                    "non_empty": embeddings_total - embeddings_empty,
+                    "empty": embeddings_empty,
+                },
+            },
+            "issues": {
+                "missing_chunks": len(missing_chunks),
+                "missing_embeddings": len(missing_embeddings),
+                "orphaned_chunks": len(orphaned_chunks),
+                "orphaned_embeddings": len(orphaned_embeddings),
+            },
+            "empty_by_namespace": empty_by_namespace,
+            "healthy": not has_issues,
+        }
+        # Add content validation results if requested
+        if validate_content:
+            result["content_issues"] = {
+                "excessive_duplicates": len(corrupt_files),
+                "total_duplicate_chunks": content_total_duplicates,
+                "files": [
+                    {
+                        "path": f"{key}.jsonl",
+                        "total": total,
+                        "duplicates": dups,
+                        "ratio": ratio,
+                    }
+                    for key, (total, _unique, dups, ratio) in sorted(
+                        corrupt_files.items(),
+                        key=lambda x: -x[1][3],  # Sort by ratio desc
+                    )
+                ],
+            }
+        if verbose:
+            result["details"] = {
+                "missing_chunks": sorted(missing_chunks)[:50],
+                "missing_embeddings": sorted(missing_embeddings)[:50],
+                "orphaned_chunks": sorted(orphaned_chunks)[:50],
+                "orphaned_embeddings": sorted(orphaned_embeddings)[:50],
+            }
+        print(json.dumps(result, indent=2))
+    else:
+        # Text output for human readability
+        print("Pipeline Diagnosis")
+        print("=" * 50)
+        print()
+        print("Stage Statistics")
+        print("-" * 50)
+        print(f"{'Stage':<15} {'Total':>10} {'Non-Empty':>12} {'Empty':>10}")
+        print("-" * 50)
+        print(
+            f"{'extracted':<15} {extracted_total:>10,} "
+            f"{extracted_total - extracted_empty:>12,} {extracted_empty:>10,}"
+        )
+        print(
+            f"{'chunks':<15} {chunks_total:>10,} "
+            f"{chunks_total - chunks_empty:>12,} {chunks_empty:>10,}"
+        )
+        print(
+            f"{'embeddings':<15} {embeddings_total:>10,} "
+            f"{embeddings_total - embeddings_empty:>12,} {embeddings_empty:>10,}"
+        )
+        print()
+
+        if empty_by_namespace:
+            print("Empty Files by Namespace")
+            print("-" * 50)
+            for ns, count in sorted(empty_by_namespace.items(), key=lambda x: -x[1]):
+                print(f"  {ns}: {count:,}")
+            print()
+
+        # Content validation results
+        if validate_content and corrupt_files:
+            print(f"Content Issues (duplication > {duplication_threshold:.0%})")
+            print("-" * 50)
+            print(f"  Corrupt files: {len(corrupt_files):,}")
+            print(f"  Total duplicate chunks: {content_total_duplicates:,}")
+            if verbose:
+                print()
+                # Show top 10 worst files
+                sorted_corrupt = sorted(
+                    corrupt_files.items(),
+                    key=lambda x: -x[1][3],  # Sort by ratio desc
+                )
+                for key, (total, _unique, dups, ratio) in sorted_corrupt[:10]:
+                    print(f"    {ratio:>6.1%} ({dups:>5}/{total:>5}) {key}.jsonl")
+                if len(corrupt_files) > 10:
+                    print(f"    ... and {len(corrupt_files) - 10} more")
+            print()
+
+        if missing_chunks or missing_embeddings or orphaned_chunks or orphaned_embeddings:
+            print("Issues Found")
+            print("-" * 50)
+            if missing_chunks:
+                print(f"  Missing chunks (extracted without chunks): {len(missing_chunks):,}")
+                if verbose:
+                    for key in sorted(missing_chunks)[:10]:
+                        print(f"    - {key}")
+                    if len(missing_chunks) > 10:
+                        print(f"    ... and {len(missing_chunks) - 10} more")
+            if missing_embeddings:
+                print(
+                    f"  Missing embeddings (non-empty chunks without embeddings): "
+                    f"{len(missing_embeddings):,}"
+                )
+                if verbose:
+                    for key in sorted(missing_embeddings)[:10]:
+                        print(f"    - {key}")
+                    if len(missing_embeddings) > 10:
+                        print(f"    ... and {len(missing_embeddings) - 10} more")
+            if orphaned_chunks:
+                print(f"  Orphaned chunks (chunks without extracted): {len(orphaned_chunks):,}")
+                if verbose:
+                    for key in sorted(orphaned_chunks)[:10]:
+                        print(f"    - {key}")
+                    if len(orphaned_chunks) > 10:
+                        print(f"    ... and {len(orphaned_chunks) - 10} more")
+            if orphaned_embeddings:
+                print(
+                    f"  Orphaned embeddings (embeddings without chunks): "
+                    f"{len(orphaned_embeddings):,}"
+                )
+                if verbose:
+                    for key in sorted(orphaned_embeddings)[:10]:
+                        print(f"    - {key}")
+                    if len(orphaned_embeddings) > 10:
+                        print(f"    ... and {len(orphaned_embeddings) - 10} more")
+            print()
+
+        if has_issues:
+            print("Recommendations")
+            print("-" * 50)
+            if missing_chunks:
+                print("  - Run: pw-ingest chunk  (to generate missing chunks)")
+            if missing_embeddings:
+                print("  - Run: pw-ingest embed  (to generate missing embeddings)")
+            if orphaned_chunks or orphaned_embeddings:
+                print(
+                    "  - Run: pw-ingest repair --action delete-orphaned  "
+                    "(to clean up orphaned files)"
+                )
+            if extracted_empty:
+                print(
+                    f"  - Note: {extracted_empty} empty extracted files are likely "
+                    "intentional (empty library pages)"
+                )
+            if corrupt_files:
+                print(
+                    "  - Run: pw-ingest repair --action delete-corrupt  "
+                    "(to remove corrupted chunk files)"
+                )
+                print("  - Then: pw-ingest chunk && pw-ingest embed  (to regenerate)")
+        else:
+            print("Status: HEALTHY - No issues found")
+
+    return 1 if has_issues else 0
+
+
+def _run_repair_process(args: argparse.Namespace) -> int:
+    """Repair pipeline issues.
+
+    Supports actions:
+    - reprocess-empty: Re-extract files that produced 0-byte output
+    - delete-orphaned: Remove outputs without corresponding inputs
+    - delete-empty: Remove 0-byte files
+    - delete-corrupt: Remove chunk files with excessive duplication
+
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    extracted_dir: Path = args.extracted_dir
+    chunks_dir: Path = args.chunks_dir
+    embeddings_dir: Path = args.embeddings_dir
+    source_dir: Path = args.source_dir
+    action: str = args.action
+    stage: str = args.stage
+    dry_run: bool = args.dry_run
+
+    print("Pipeline Repair")
+    print("=" * 50)
+    print(f"Action:    {action}")
+    print(f"Stage:     {stage}")
+    print(f"Dry run:   {dry_run}")
+    print()
+
+    files_affected = 0
+    errors: list[str] = []
+
+    def collect_files(directory: Path, extension: str) -> list[Path]:
+        """Collect files with given extension."""
+        if not directory.exists():
+            return []
+        return list(directory.rglob(f"*{extension}"))
+
+    if action == "delete-empty":
+        # Delete 0-byte files from specified stage(s)
+        stages_to_check: list[tuple[Path, str]] = []
+        if stage in ("extracted", "all"):
+            stages_to_check.append((extracted_dir, ".txt"))
+        if stage in ("chunks", "all"):
+            stages_to_check.append((chunks_dir, ".jsonl"))
+        if stage in ("embeddings", "all"):
+            stages_to_check.append((embeddings_dir, ".npy"))
+
+        for directory, ext in stages_to_check:
+            for file_path in collect_files(directory, ext):
+                if file_path.stat().st_size == 0:
+                    relative = file_path.relative_to(directory)
+                    if dry_run:
+                        print(f"  Would delete: {directory.name}/{relative}")
+                    else:
+                        try:
+                            file_path.unlink()
+                            print(f"  Deleted: {directory.name}/{relative}")
+                        except OSError as e:
+                            errors.append(f"{relative}: {e}")
+                    files_affected += 1
+
+    elif action == "delete-orphaned":
+        # Delete output files that don't have corresponding input files
+        extracted_keys = {
+            str(p.relative_to(extracted_dir).with_suffix(""))
+            for p in collect_files(extracted_dir, ".txt")
+            if "articles" not in p.parts
+        }
+        chunks_keys = {
+            str(p.relative_to(chunks_dir).with_suffix(""))
+            for p in collect_files(chunks_dir, ".jsonl")
+        }
+
+        if stage in ("chunks", "all"):
+            orphaned_chunks = chunks_keys - extracted_keys
+            for key in orphaned_chunks:
+                file_path = chunks_dir / f"{key}.jsonl"
+                if file_path.exists():
+                    if dry_run:
+                        print(f"  Would delete orphaned chunk: {key}.jsonl")
+                    else:
+                        try:
+                            file_path.unlink()
+                            print(f"  Deleted orphaned chunk: {key}.jsonl")
+                        except OSError as e:
+                            errors.append(f"{key}: {e}")
+                    files_affected += 1
+
+        if stage in ("embeddings", "all"):
+            orphaned_embeddings = {
+                str(p.relative_to(embeddings_dir).with_suffix(""))
+                for p in collect_files(embeddings_dir, ".npy")
+            } - chunks_keys
+            for key in orphaned_embeddings:
+                file_path = embeddings_dir / f"{key}.npy"
+                if file_path.exists():
+                    if dry_run:
+                        print(f"  Would delete orphaned embedding: {key}.npy")
+                    else:
+                        try:
+                            file_path.unlink()
+                            print(f"  Deleted orphaned embedding: {key}.npy")
+                        except OSError as e:
+                            errors.append(f"{key}: {e}")
+                    files_affected += 1
+
+    elif action == "reprocess-empty":
+        # Re-extract files that have 0-byte extracted output
+        from pw_mcp.ingest.extraction import extract_article
+
+        if not source_dir.exists():
+            print(f"Error: Source directory does not exist: {source_dir}")
+            return 1
+
+        # Find empty extracted files
+        empty_extracted: list[Path] = []
+        for file_path in collect_files(extracted_dir, ".txt"):
+            if "articles" in file_path.parts:
+                continue
+            if file_path.stat().st_size == 0:
+                empty_extracted.append(file_path)
+
+        print(f"Found {len(empty_extracted)} empty extracted files")
+
+        for extracted_path in empty_extracted:
+            relative = extracted_path.relative_to(extracted_dir)
+            # Find corresponding source file
+            source_path = source_dir / relative
+            if not source_path.exists():
+                errors.append(f"Source not found: {relative}")
+                continue
+
+            if dry_run:
+                print(f"  Would reprocess: {relative}")
+            else:
+                try:
+                    source_text = source_path.read_text(encoding="utf-8")
+                    article_data = extract_article(source_text, str(source_path))
+                    extracted_path.write_text(article_data.clean_text, encoding="utf-8")
+                    print(f"  Reprocessed: {relative} ({len(article_data.clean_text)} chars)")
+                except Exception as e:
+                    errors.append(f"{relative}: {e}")
+            files_affected += 1
+
+    elif action == "delete-corrupt":
+        # Delete chunk files with excessive duplication and their embeddings
+        duplication_threshold: float = args.duplication_threshold
+        print(f"Threshold: {duplication_threshold:.0%}")
+        print()
+
+        # Find corrupt files using content validation
+        corrupt_files, _, total_duplicates = _validate_chunk_content(
+            chunks_dir, duplication_threshold
+        )
+
+        if not corrupt_files:
+            print("No corrupt files found.")
+        else:
+            print(f"Found {len(corrupt_files):,} corrupt files")
+            print(f"Total duplicate chunks: {total_duplicates:,}")
+            print()
+
+            deleted_chunks = 0
+            deleted_embeddings = 0
+
+            for file_key, (_total, _unique, _dups, ratio) in sorted(
+                corrupt_files.items(),
+                key=lambda x: -x[1][3],  # Sort by ratio desc
+            ):
+                chunk_path = chunks_dir / f"{file_key}.jsonl"
+                embed_path = embeddings_dir / f"{file_key}.npy"
+
+                if dry_run:
+                    print(f"  Would delete: {file_key}.jsonl ({ratio:.1%} duplicates)")
+                else:
+                    try:
+                        if chunk_path.exists():
+                            chunk_path.unlink()
+                            deleted_chunks += 1
+                            print(f"  Deleted: {file_key}.jsonl ({ratio:.1%} duplicates)")
+                        if embed_path.exists():
+                            embed_path.unlink()
+                            deleted_embeddings += 1
+                    except OSError as e:
+                        errors.append(f"{file_key}: {e}")
+                files_affected += 1
+
+            if not dry_run:
+                print()
+                print(f"Deleted {deleted_chunks} chunk files, {deleted_embeddings} embedding files")
+
+    # Summary
+    print()
+    if dry_run:
+        print(f"Dry run complete: {files_affected} files would be affected")
+    else:
+        print(f"Repair complete: {files_affected} files processed")
+
+    if errors:
+        print(f"Errors: {len(errors)}")
+        for err in errors[:5]:
+            print(f"  - {err}")
+        if len(errors) > 5:
+            print(f"  ... and {len(errors) - 5} more")
+        return 1
+
+    return 0
+
+
 def main() -> None:
     """Run the ingestion pipeline."""
     parser = _create_parser()
@@ -1026,6 +1718,14 @@ def main() -> None:
     elif args.command == "load":
         # Handle load subcommand
         exit_code = _run_load_process(args)
+        sys.exit(exit_code)
+    elif args.command == "diagnose":
+        # Handle diagnose subcommand
+        exit_code = _run_diagnose_process(args)
+        sys.exit(exit_code)
+    elif args.command == "repair":
+        # Handle repair subcommand
+        exit_code = _run_repair_process(args)
         sys.exit(exit_code)
     elif args.command is None:
         # No subcommand - legacy behavior or show help

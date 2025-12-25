@@ -410,7 +410,8 @@ class TestJsonlOutput:
         )
 
         output_path = tmp_path / "Main" / "Test.jsonl"
-        write_chunks_jsonl(article, output_path)
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
 
         assert output_path.exists()
 
@@ -443,7 +444,8 @@ class TestJsonlOutput:
         )
 
         output_path = tmp_path / "output.jsonl"
-        write_chunks_jsonl(article, output_path)
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
 
         lines = output_path.read_text().strip().split("\n")
         assert len(lines) == 3
@@ -476,7 +478,8 @@ class TestJsonlOutput:
         )
 
         output_path = tmp_path / "unicode.jsonl"
-        write_chunks_jsonl(article, output_path)
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
 
         content = output_path.read_text(encoding="utf-8")
         assert "Русский" in content
@@ -510,7 +513,8 @@ class TestJsonlOutput:
         )
 
         output_path = tmp_path / "spec.jsonl"
-        write_chunks_jsonl(article, output_path)
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
 
         line = output_path.read_text().strip()
         record = json.loads(line)
@@ -524,3 +528,94 @@ class TestJsonlOutput:
         assert "chunk_index" in record
         assert "line_range" in record
         assert "word_count" in record
+
+    @pytest.mark.unit
+    def test_jsonl_includes_phase_b_fields(self, tmp_path: Path) -> None:
+        """JSONL records should include Phase B metadata fields."""
+        chunks = [
+            Chunk(
+                text="Test content about Marxism.",
+                chunk_index=0,
+                section="Introduction",
+                line_start=1,
+                line_end=5,
+                word_count=4,
+                estimated_tokens=5,
+            )
+        ]
+        article = ChunkedArticle(
+            article_title="Fundamentals",
+            namespace="Library",
+            chunks=chunks,
+            categories=["Marxism"],
+            internal_links=[],
+            infobox={
+                "type": "politician",
+                "fields": {"political_orientation": "Marxism-Leninism"},
+            },
+            library_work={
+                "author": "Vladimir Lenin",
+                "title": "What Is To Be Done?",
+                "work_type": "Book",
+            },
+            is_stub=False,
+            citation_needed_count=0,
+            has_blockquote=False,
+        )
+
+        output_path = tmp_path / "phase_b.jsonl"
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
+
+        line = output_path.read_text().strip()
+        record = json.loads(line)
+
+        # Verify Phase B fields present
+        assert "library_work_author" in record
+        assert record["library_work_author"] == "Vladimir Lenin"
+        assert "infobox_type" in record
+        assert record["infobox_type"] == "politician"
+        assert "political_orientation" in record
+        assert record["political_orientation"] == "Marxism-Leninism"
+
+    @pytest.mark.unit
+    def test_jsonl_phase_b_fields_null_when_missing(self, tmp_path: Path) -> None:
+        """Phase B fields should be null when metadata is absent."""
+        chunks = [
+            Chunk(
+                text="Simple content.",
+                chunk_index=0,
+                section=None,
+                line_start=1,
+                line_end=2,
+                word_count=2,
+                estimated_tokens=2,
+            )
+        ]
+        article = ChunkedArticle(
+            article_title="Simple Article",
+            namespace="Main",
+            chunks=chunks,
+            categories=[],
+            internal_links=[],
+            infobox=None,
+            library_work=None,
+            is_stub=False,
+            citation_needed_count=0,
+            has_blockquote=False,
+        )
+
+        output_path = tmp_path / "no_phase_b.jsonl"
+        config = ChunkConfig(min_words=0)  # Preserve all chunks in test
+        write_chunks_jsonl(article, output_path, config)
+
+        line = output_path.read_text().strip()
+        record = json.loads(line)
+
+        # Verify Phase B fields are null (not missing)
+        assert "library_work_author" in record
+        assert record["library_work_author"] is None
+        assert "infobox_type" in record
+        assert record["infobox_type"] is None
+        assert "political_orientation" in record
+        assert record["political_orientation"] is None

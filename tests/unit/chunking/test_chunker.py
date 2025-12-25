@@ -834,3 +834,278 @@ class TestOversizedLineHandling:
         for i, chunk in enumerate(chunks):
             assert chunk.text.strip(), f"Chunk {i} is empty"
             assert chunk.word_count > 0, f"Chunk {i} has zero word count"
+
+
+# =============================================================================
+# CHUNK DUPLICATION FIX TESTS
+# =============================================================================
+
+
+class TestSplitOversizedTextDuplication:
+    """Tests for preventing duplicate chunks from _split_oversized_text."""
+
+    @pytest.mark.unit
+    def test_no_duplicate_segments(self) -> None:
+        """Split should never produce duplicate segments for varied content."""
+        from pw_mcp.ingest.chunker import _split_oversized_text
+
+        # Create realistic text with varying content (like actual documents)
+        # Each paragraph has unique content so duplicates would indicate a bug
+        paragraphs = [
+            f"Paragraph {i}: The dialectical approach to historical materialism "
+            f"demonstrates that social development follows predictable patterns. "
+            f"This insight from paragraph number {i} is significant."
+            for i in range(50)
+        ]
+        long_text = " ".join(paragraphs)  # ~50 unique paragraphs
+        max_tokens = 100
+
+        segments = _split_oversized_text(long_text, max_tokens)
+
+        # No duplicates should exist when source has varied content
+        unique_segments = set(segments)
+        assert len(segments) == len(
+            unique_segments
+        ), f"Found {len(segments) - len(unique_segments)} duplicate segments"
+
+    @pytest.mark.unit
+    def test_maximum_iterations_bounded(self) -> None:
+        """Loop should complete in reasonable time for large texts."""
+        import time
+
+        from pw_mcp.ingest.chunker import _split_oversized_text
+
+        # Create massive text using realistic sentences (like real Library documents)
+        # This tests performance on real-world-like content, not pathological input
+        sentence = "The dialectical approach to historical materialism. "
+        massive_text = sentence * 5000  # ~250k chars of realistic text
+        max_tokens = 100
+
+        start = time.time()
+        segments = _split_oversized_text(massive_text, max_tokens)
+        elapsed = time.time() - start
+
+        # Should complete in under 10 seconds, not 10+ minutes
+        assert elapsed < 10.0, f"Split took {elapsed:.1f}s, expected < 10s"
+        # Should produce reasonable number of segments
+        assert len(segments) < 5000, f"Produced {len(segments)} segments, expected < 5000"
+
+    @pytest.mark.unit
+    def test_minimum_segment_size_enforced(self) -> None:
+        """Each segment should have at least ~50 characters."""
+        from pw_mcp.ingest.chunker import _split_oversized_text
+
+        long_text = "The quick brown fox jumps. " * 500  # Repeated sentences
+        max_tokens = 50
+
+        segments = _split_oversized_text(long_text, max_tokens)
+
+        MIN_EXPECTED_CHARS = 30  # Allow some tolerance
+        for i, seg in enumerate(segments):
+            assert len(seg.strip()) >= MIN_EXPECTED_CHARS, (
+                f"Segment {i} too short: {len(seg)} chars, " f"expected >= {MIN_EXPECTED_CHARS}"
+            )
+
+
+class TestEmergencySplitPosition:
+    """Tests for optimized _emergency_split_position."""
+
+    @pytest.mark.unit
+    def test_emergency_split_binary_search_efficiency(self) -> None:
+        """Emergency split should use O(log n) not O(n)."""
+        import time
+
+        from pw_mcp.ingest.chunker import _emergency_split_position
+
+        # Create long text that would take forever with O(n)
+        long_text = "word " * 50000  # 250k chars
+        max_tokens = 100
+
+        start = time.time()
+        pos = _emergency_split_position(long_text, max_tokens)
+        elapsed = time.time() - start
+
+        # Binary search should complete in milliseconds
+        assert elapsed < 0.5, f"Emergency split took {elapsed:.3f}s, expected < 0.5s"
+        # Should return valid position
+        assert 1 <= pos <= len(long_text)
+
+    @pytest.mark.unit
+    def test_emergency_split_returns_valid_position(self) -> None:
+        """Emergency split should return position that respects max_tokens."""
+        from pw_mcp.ingest.chunker import _emergency_split_position, count_tokens
+
+        text = "testing word " * 100
+        max_tokens = 20
+
+        pos = _emergency_split_position(text, max_tokens)
+
+        assert pos >= 1
+        assert count_tokens(text[:pos]) <= max_tokens
+
+
+class TestChunkTextNoDuplication:
+    """Integration tests for chunk_text_tiktoken without duplication."""
+
+    @pytest.mark.unit
+    def test_no_duplicate_chunk_text(self) -> None:
+        """chunk_text_tiktoken should not produce duplicate chunk texts."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create realistic text with varied content (like actual Library documents)
+        # Each section has unique identifiers so duplicates would indicate a bug
+        paragraphs = [
+            f"Section {i}: Capitalism at first subjects production to itself "
+            f"just as it finds it. This analysis from section {i} shows how "
+            f"economic development proceeds through distinct phases."
+            for i in range(30)
+        ]
+        long_paragraph = " ".join(paragraphs)
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+
+        chunks = chunk_text_tiktoken(long_paragraph, config)
+
+        # Check for duplicate text content
+        texts = [c.text for c in chunks]
+        unique_texts = set(texts)
+
+        assert len(texts) == len(
+            unique_texts
+        ), f"Found {len(texts) - len(unique_texts)} duplicate chunks"
+
+    @pytest.mark.unit
+    @pytest.mark.regression
+    def test_political_economy_scenario(self) -> None:
+        """Regression test for the Political Economy duplication bug.
+
+        Tests that long documents with varied content don't produce duplicates.
+        """
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create a realistic long document with varied content (like Political Economy)
+        # Each paragraph has unique numbering so duplicates would indicate a bug
+        paragraphs = [
+            f"Chapter {i}: Capitalism at first subjects production to itself just as it "
+            f"finds it, i.e., with the backward technique of handicraft and small-peasant "
+            f"economy. This chapter {i} analysis examines how capitalist production begins "
+            f"when the means of production are concentrated in private hands."
+            for i in range(50)
+        ]
+        problematic_text = " ".join(paragraphs)
+
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(problematic_text, config)
+
+        # Should produce reasonable number of chunks
+        expected_max_chunks = len(problematic_text) // 100 + 50  # rough estimate
+        assert (
+            len(chunks) <= expected_max_chunks
+        ), f"Produced {len(chunks)} chunks, expected <= {expected_max_chunks}"
+
+        # No duplicates (since each paragraph has unique chapter numbers)
+        texts = [c.text for c in chunks]
+        assert len(texts) == len(set(texts)), "Found duplicate chunks"
+
+
+# =============================================================================
+# LINE RANGE ACCURACY TESTS
+# =============================================================================
+
+
+class TestOversizedLineRangeTracking:
+    """Tests for accurate line range tracking when splitting oversized text."""
+
+    @pytest.mark.unit
+    def test_multi_line_oversized_has_distinct_line_ranges(self) -> None:
+        """Chunks from multi-line oversized text should have distinct line_range."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Create 10 lines that together exceed max_tokens
+        lines = [f"This is line number {i} with substantial content. " * 20 for i in range(10)]
+        text = "\n".join(lines)
+
+        config = ChunkConfig(max_tokens=200, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(text, config)
+
+        # Collect unique line ranges
+        line_ranges = [f"{c.line_start}-{c.line_end}" for c in chunks]
+        unique_ranges = set(line_ranges)
+
+        # Should have multiple distinct ranges, not all the same
+        assert len(unique_ranges) > 1, f"All chunks have same line_range: {line_ranges[0]}"
+
+    @pytest.mark.unit
+    def test_multi_line_oversized_line_ranges_are_monotonic(self) -> None:
+        """Line ranges should be monotonically increasing across chunks."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        lines = [f"Line {i}: " + "content " * 100 for i in range(20)]
+        text = "\n".join(lines)
+
+        config = ChunkConfig(max_tokens=150, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(text, config)
+
+        # Line starts should be monotonically non-decreasing
+        for i in range(1, len(chunks)):
+            assert chunks[i].line_start >= chunks[i - 1].line_start, (
+                f"Chunk {i} line_start ({chunks[i].line_start}) < "
+                f"chunk {i-1} line_start ({chunks[i-1].line_start})"
+            )
+
+    @pytest.mark.unit
+    def test_single_line_split_uses_same_line_number(self) -> None:
+        """When a single oversized line is split, all chunks have same line_range."""
+        from pw_mcp.ingest.chunker import chunk_text_tiktoken
+
+        # Single very long line
+        single_line = "word " * 1000
+
+        config = ChunkConfig(max_tokens=100, overlap_tokens=0)
+        chunks = chunk_text_tiktoken(single_line, config)
+
+        # All chunks should reference line 1 (the only line)
+        for chunk in chunks:
+            assert chunk.line_start == 1
+            assert chunk.line_end == 1
+
+    @pytest.mark.unit
+    def test_helper_build_char_to_line_map(self) -> None:
+        """Test the character-to-line mapping helper."""
+        from pw_mcp.ingest.chunker import _build_char_to_line_map
+
+        lines = ["abc", "defgh", "ij"]
+        # Joined: "abc\ndefgh\nij"
+        # Positions: abc=0-2, defgh=4-8, ij=10-11
+
+        mapping = _build_char_to_line_map(lines)
+
+        assert mapping[0] == (0, 3, 0)  # "abc" at 0-3
+        assert mapping[1] == (4, 9, 1)  # "defgh" at 4-9
+        assert mapping[2] == (10, 12, 2)  # "ij" at 10-12
+
+    @pytest.mark.unit
+    def test_helper_find_line_range_for_segment(self) -> None:
+        """Test finding line range for a character segment."""
+        from pw_mcp.ingest.chunker import (
+            _build_char_to_line_map,
+            _find_line_range_for_segment,
+        )
+
+        lines = ["abc", "defgh", "ij"]
+        mapping = _build_char_to_line_map(lines)
+
+        # Segment spanning first line only
+        first, last = _find_line_range_for_segment(0, 2, mapping)
+        assert first == 0 and last == 0
+
+        # Segment spanning second line only
+        first, last = _find_line_range_for_segment(4, 8, mapping)
+        assert first == 1 and last == 1
+
+        # Segment spanning first and second lines
+        first, last = _find_line_range_for_segment(0, 5, mapping)
+        assert first == 0 and last == 1
+
+        # Segment spanning all three lines
+        first, last = _find_line_range_for_segment(0, 11, mapping)
+        assert first == 0 and last == 2
