@@ -188,6 +188,7 @@ class ArticleData:
         clean_text: Article text with all markup removed (infoboxes, refs,
             categories, formatting). Internal links are converted to plain text.
         infobox: Parsed infobox data if present, None otherwise.
+        library_work: Parsed Library work template data if present, None otherwise.
         citations: All citations extracted from <ref> tags and templates.
         internal_links: All internal [[links]] found in the article.
         categories: List of category names (from [[Category:X]] links).
@@ -201,6 +202,7 @@ class ArticleData:
 
     clean_text: str
     infobox: InfoboxData | None
+    library_work: LibraryWorkData | None
     citations: list[Citation]
     internal_links: list[Link]
     categories: list[str]

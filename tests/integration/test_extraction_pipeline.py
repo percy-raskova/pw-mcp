@@ -292,3 +292,60 @@ class TestFileBasedExtraction:
             text = corpus_path.read_text()
             result = extract_article(text)
             assert result.infobox is not None
+
+
+class TestPhaseBMetadataExtraction:
+    """Tests for Phase B metadata extraction (library_work, political_orientation)."""
+
+    @pytest.mark.integration
+    def test_extraction_includes_library_work(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Verify library_work is extracted for Library namespace articles."""
+        text = load_fixture("library_work", "book_full.txt")
+        text += "\n\nThis is the book content about Marxism-Leninism."
+        result = extract_article(text, source_path="Library/Fundamentals.txt")
+
+        # Verify library_work extracted
+        assert result.library_work is not None
+        assert result.library_work.author == "Otto Kuusinen"
+        assert result.library_work.title == "Fundamentals of Marxism Leninism"
+        assert result.library_work.work_type == "Book"
+
+    @pytest.mark.integration
+    def test_extraction_includes_political_orientation(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Verify political_orientation is extracted from infobox."""
+        text = load_fixture("infoboxes", "politician.txt")
+        text += "\n\nAbraham Lincoln was a president."
+        result = extract_article(text)
+
+        # Verify infobox has political_orientation
+        assert result.infobox is not None
+        assert "political_orientation" in result.infobox.fields
+        # Field may be string or list depending on parsing
+        orientation = result.infobox.fields["political_orientation"]
+        assert orientation is not None
+
+    @pytest.mark.integration
+    def test_library_work_template_removed_from_clean_text(
+        self, load_fixture: "Callable[[str, str], str]"
+    ) -> None:
+        """Verify library_work template is removed from clean text."""
+        text = load_fixture("library_work", "book_full.txt")
+        text += "\n\nBook content here."
+        result = extract_article(text)
+
+        # Template should be removed from clean text
+        assert "{{Library work" not in result.clean_text
+        assert "Book content here" in result.clean_text
+
+    @pytest.mark.integration
+    def test_library_work_none_for_non_library_articles(self) -> None:
+        """Verify library_work is None for articles without template."""
+        text = "Simple Main namespace article without templates."
+        result = extract_article(text, source_path="Main/Article.txt")
+
+        assert result.library_work is None
+        assert result.namespace == "Main"

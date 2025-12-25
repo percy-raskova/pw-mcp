@@ -26,9 +26,10 @@ from pw_mcp.ingest.parsers import (
     Link,
     parse_citations,
     parse_infobox,
+    parse_library_work,
     parse_links,
 )
-from pw_mcp.ingest.parsers.types import InfoboxData
+from pw_mcp.ingest.parsers.types import InfoboxData, LibraryWorkData
 
 # Compile patterns once at module level for performance
 
@@ -275,11 +276,13 @@ def _strip_all_templates(text: str) -> str:
 def _generate_clean_text(
     text: str,
     infobox: InfoboxData | None,
+    library_work: LibraryWorkData | None,
 ) -> str:
     """Generate clean text from MediaWiki markup.
 
     Removes:
     - Infobox (uses remaining_text from parsed infobox)
+    - Library work template (uses remaining_text from parsed library_work)
     - ALL {{templates}} (using mwparserfromhell)
     - [[Category:X]] links
     - <ref>...</ref> tags
@@ -297,12 +300,18 @@ def _generate_clean_text(
     Args:
         text: Original MediaWiki markup.
         infobox: Parsed infobox data (provides remaining_text).
+        library_work: Parsed library work data (provides remaining_text).
 
     Returns:
         Clean text suitable for embedding.
     """
     # Start with infobox-removed text if available
     clean = infobox.remaining_text if infobox is not None else text
+
+    # Then use library_work-removed text if available
+    # (library_work template may appear in infobox-removed text)
+    if library_work is not None and library_work.remaining_text:
+        clean = library_work.remaining_text
 
     # Remove <ref>...</ref> tags
     clean = REF_TAG_PATTERN.sub("", clean)
@@ -387,6 +396,11 @@ def extract_article(
     # Parse infobox (may be None)
     infobox = parse_infobox(text)
 
+    # Parse library work template (may be None)
+    # Use infobox.remaining_text if available to avoid re-parsing infobox
+    text_for_library_work = infobox.remaining_text if infobox is not None else text
+    library_work = parse_library_work(text_for_library_work)
+
     # Parse citations
     citations: list[Citation] = parse_citations(text)
 
@@ -415,11 +429,12 @@ def extract_article(
     is_stub, citation_needed_count, has_blockquote = _detect_quality_flags(text)
 
     # Generate clean text
-    clean_text = _generate_clean_text(text, infobox)
+    clean_text = _generate_clean_text(text, infobox, library_work)
 
     return ArticleData(
         clean_text=clean_text,
         infobox=infobox,
+        library_work=library_work,
         citations=citations,
         internal_links=internal_links,
         categories=categories,
