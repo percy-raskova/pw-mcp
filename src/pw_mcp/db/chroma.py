@@ -79,7 +79,8 @@ def serialize_metadata(chunk: dict[str, Any]) -> dict[str, Any]:
         "library_work_type": chunk.get("library_work_type") or "",
         "library_work_published_year": chunk.get("library_work_published_year") or -1,
         "infobox_type": chunk.get("infobox_type") or "",
-        "political_orientation": chunk.get("political_orientation") or "",
+        # political_orientation is a list from infobox - serialize as JSON
+        "political_orientation": json.dumps(chunk.get("political_orientation") or []),
         "primary_category": chunk.get("primary_category") or "",
         "category_count": chunk.get("category_count", 0),
     }
@@ -109,13 +110,15 @@ def deserialize_metadata(
         result["categories"] = json.loads(result["categories"])
     if "internal_links" in result and isinstance(result["internal_links"], str):
         result["internal_links"] = json.loads(result["internal_links"])
+    # political_orientation is also a JSON array (from infobox ideologies)
+    if "political_orientation" in result and isinstance(result["political_orientation"], str):
+        result["political_orientation"] = json.loads(result["political_orientation"])
 
     # Restore None for empty Phase B string fields
     for field_name in [
         "library_work_author",
         "library_work_type",
         "infobox_type",
-        "political_orientation",
         "primary_category",
     ]:
         if result.get(field_name) == "":
