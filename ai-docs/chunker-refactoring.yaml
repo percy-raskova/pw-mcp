@@ -1,0 +1,440 @@
+# Chunker Module Refactoring Plan
+# Purpose: Mikado-method plan for decomposing chunker.py into focused modules
+# Status: COMPLETE - executed 2025-12-24
+# Created: 2025-12-24
+# Reference: Mikado Method (Ola Ellnestam, Daniel Brolund)
+
+overview:
+  original_state:
+    file: src/pw_mcp/ingest/chunker.py
+    lines: 1278
+    concerns: 9 distinct responsibilities
+    tests: 107 (all passing)
+
+  goal: |
+    Decompose chunker.py into focused modules with <300 lines each.
+    Maintain backward compatibility via re-exports.
+    Each module has single clear responsibility.
+
+  final_outcome:
+    total_lines: 1459 (across 9 files)
+    max_module_size: 532 lines (core.py - main chunking algorithms)
+    avg_module_size: 162 lines
+    public_api: Preserved via __init__.py re-exports
+    tests: 133 passing (107 unit + 26 integration)
+
+  modules_created:
+    core.py: 532  # Main chunking algorithms (chunk_text, chunk_text_tiktoken)
+    jsonl_writer.py: 206  # JSONL output, filtering, chunk_article
+    text_splitting.py: 198  # Oversized text splitting with semantic-text-splitter
+    line_mapping.py: 130  # Character-to-line mapping for citations
+    models.py: 108  # Dataclasses (Chunk, ChunkConfig, ChunkedArticle, FilterStats)
+    __init__.py: 90  # Re-exports for backward compatibility
+    chunk_factory.py: 82  # Chunk construction helpers
+    token_counting.py: 58  # tiktoken utilities
+    section_detection.py: 55  # MediaWiki header detection
+
+# =============================================================================
+# CURRENT CONCERNS (9 responsibilities in one file)
+# =============================================================================
+
+concerns:
+  token_counting:
+    lines: "27-66"
+    functions: [_get_encoder, count_tokens, estimate_tokens]
+    dependencies: []
+    description: Tiktoken integration for accurate token counting
+
+  section_detection:
+    lines: "29-202"
+    functions: [SECTION_HEADER_PATTERN, is_section_header, extract_section_title]
+    dependencies: []
+    description: MediaWiki section header detection (== ... ==)
+
+  data_models:
+    lines: "68-161"
+    dataclasses: [ChunkConfig, Chunk, ChunkedArticle, FilterStats]
+    dependencies: []
+    description: Core dataclasses for chunking pipeline
+
+  chunk_factory:
+    lines: "243-278, 818-849"
+    functions: [_make_chunk, _make_chunk_tiktoken]
+    dependencies: [token_counting, data_models]
+    description: Factory functions for creating Chunk objects
+
+  structured_chunking:
+    lines: "479-696"
+    functions: [chunk_text_tiktoken]
+    dependencies: [token_counting, section_detection, chunk_factory, line_mapping]
+    description: Line-by-line chunking for documents with section headers
+
+  headerless_chunking:
+    lines: "415-476"
+    functions: [_chunk_without_headers]
+    dependencies: [text_splitting, line_mapping, chunk_factory]
+    description: Fast path for documents without section headers (uses semantic-text-splitter)
+
+  text_splitting:
+    lines: "932-1113"
+    functions:
+      - _split_oversized_text
+      - _split_oversized_text_fallback
+      - _find_text_split_position
+      - _emergency_split_position
+    dependencies: [token_counting]
+    description: Splitting oversized text into segments under token limits
+
+  line_mapping:
+    lines: "699-816"
+    functions:
+      - _build_char_to_line_map
+      - _find_line_range_for_segment
+      - _create_chunks_from_oversized
+    dependencies: [chunk_factory, text_splitting]
+    description: Character-to-line mapping for accurate citations
+
+  jsonl_output:
+    lines: "1116-1278"
+    functions: [chunk_article, write_chunks_jsonl, generate_chunk_id]
+    dependencies: [data_models]
+    description: JSONL serialization with filtering (micro-chunks, duplicates)
+
+# =============================================================================
+# PUBLIC API (must remain stable)
+# =============================================================================
+
+public_api:
+  functions:
+    - chunk_text_tiktoken: "Main chunking function"
+    - chunk_text: "Backward-compatible wrapper"
+    - chunk_article: "File-based chunking with metadata"
+    - write_chunks_jsonl: "JSONL output with filtering"
+    - count_tokens: "Token counting utility"
+    - is_section_header: "Section detection utility"
+    - extract_section_title: "Title extraction utility"
+    - estimate_tokens: "Word-based token estimation"
+    - generate_chunk_id: "URL-safe chunk ID generation"
+
+  dataclasses:
+    - ChunkConfig: "Frozen configuration"
+    - Chunk: "Single chunk with metadata"
+    - ChunkedArticle: "Article with chunks and metadata"
+    - FilterStats: "Filtering statistics"
+
+  backward_compatibility: |
+    All public symbols re-exported from chunker/__init__.py.
+    Existing imports continue to work:
+      from pw_mcp.ingest.chunker import chunk_text_tiktoken, ChunkConfig
+
+# =============================================================================
+# DEPENDENCY GRAPH
+# =============================================================================
+
+dependency_graph: |
+  chunk_text_tiktoken (main entry point)
+      |
+      +-- is_section_header / extract_section_title  [Section Detection]
+      |
+      +-- count_tokens  [Token Counting]
+      |       |
+      |       +-- _get_encoder (tiktoken singleton)
+      |
+      +-- _chunk_without_headers (fast path)  [Headerless Path]
+      |       |
+      |       +-- _split_oversized_text
+      |       +-- _build_char_to_line_map
+      |       +-- _find_line_range_for_segment
+      |       +-- _make_chunk_tiktoken
+      |
+      +-- _make_chunk_tiktoken  [Chunk Factory]
+      |
+      +-- _create_chunks_from_oversized  [Line Range Mapping]
+      |       |
+      |       +-- _build_char_to_line_map
+      |       +-- _split_oversized_text
+      |       +-- _find_line_range_for_segment
+      |       +-- _make_chunk_tiktoken
+      |
+      +-- _get_overlap_lines
+      |       |
+      |       +-- count_tokens
+      |
+      +-- _find_split_point
+      |       |
+      |       +-- count_tokens
+
+  _split_oversized_text
+      |
+      +-- count_tokens
+      +-- semantic_text_splitter (external)
+      +-- _split_oversized_text_fallback (fallback)
+
+  write_chunks_jsonl
+      |
+      +-- generate_chunk_id
+      +-- FilterStats (dataclass)
+
+# =============================================================================
+# MIKADO REFACTORING PLAN
+# =============================================================================
+
+mikado_plan:
+  goal: "Decompose chunker.py into focused modules with <300 lines each"
+
+  visualization: |
+    MIKADO GOAL: Modular chunker with <300 lines per file
+        |
+        +-- [PHASE 1 - LEAF NODES]
+        |       |
+        |       +-- 1A: token_counting.py (can start)
+        |       +-- 1B: section_detection.py (can start)
+        |       +-- 1C: models.py (RECOMMENDED FIRST)
+        |
+        +-- [PHASE 2 - SINGLE DEPENDENCY]
+        |       |
+        |       +-- 2A: chunk_factory.py (blocked by 1A, 1C)
+        |       +-- 2B: text_splitting.py (blocked by 1A)
+        |
+        +-- [PHASE 3 - MULTI DEPENDENCY]
+        |       |
+        |       +-- 3A: line_mapping.py (blocked by 2A, 2B)
+        |       +-- 3B: jsonl_writer.py (blocked by 1C)
+        |
+        +-- [PHASE 4 - CONSOLIDATION]
+                |
+                +-- 4A: Slim core.py (blocked by all above)
+                +-- 4B: __init__.py re-exports (blocked by all above)
+
+  phases:
+    phase_1:
+      name: "Extract Leaf Nodes (No Dependencies)"
+      parallel: true
+      steps:
+        - id: 1A
+          module: token_counting.py
+          functions: [_get_encoder, count_tokens, estimate_tokens]
+          lines: ~45
+          dependencies: []
+          rationale: "No internal dependencies, used by many other functions"
+
+        - id: 1B
+          module: section_detection.py
+          functions: [SECTION_HEADER_PATTERN, is_section_header, extract_section_title]
+          lines: ~40
+          dependencies: []
+          rationale: "No internal dependencies, isolated regex-based logic"
+
+        - id: 1C
+          module: models.py
+          dataclasses: [ChunkConfig, Chunk, ChunkedArticle, FilterStats]
+          lines: ~95
+          dependencies: []
+          rationale: "RECOMMENDED FIRST - highest fan-out, simplifies all subsequent extractions"
+
+    phase_2:
+      name: "Extract Functions with Single-Layer Dependencies"
+      parallel: false
+      steps:
+        - id: 2A
+          module: chunk_factory.py
+          functions: [_make_chunk, _make_chunk_tiktoken]
+          lines: ~60
+          dependencies: [token_counting, models]
+          blocked_by: [1A, 1C]
+
+        - id: 2B
+          module: text_splitting.py
+          functions:
+            - _split_oversized_text
+            - _split_oversized_text_fallback
+            - _find_text_split_position
+            - _emergency_split_position
+          lines: ~150
+          dependencies: [token_counting]
+          blocked_by: [1A]
+
+    phase_3:
+      name: "Extract Functions with Multi-Layer Dependencies"
+      parallel: false
+      steps:
+        - id: 3A
+          module: line_mapping.py
+          functions:
+            - _build_char_to_line_map
+            - _find_line_range_for_segment
+            - _create_chunks_from_oversized
+          lines: ~120
+          dependencies: [chunk_factory, text_splitting]
+          blocked_by: [2A, 2B]
+
+        - id: 3B
+          module: jsonl_writer.py
+          functions: [write_chunks_jsonl, generate_chunk_id, chunk_article]
+          lines: ~180
+          dependencies: [models]
+          blocked_by: [1C]
+
+    phase_4:
+      name: "Consolidate Core Chunking Logic"
+      parallel: false
+      steps:
+        - id: 4A
+          module: core.py
+          description: "Slim down chunker.py to ~300 lines"
+          keeps:
+            - chunk_text_tiktoken
+            - chunk_text
+            - _chunk_without_headers
+            - _strip_trailing_blank_lines
+            - _find_split_point
+            - _get_overlap_lines
+          lines: ~280
+          imports_from: [token_counting, section_detection, models, chunk_factory, text_splitting, line_mapping]
+
+        - id: 4B
+          module: __init__.py
+          description: "Re-exports for backward compatibility"
+          lines: ~30
+
+# =============================================================================
+# EXPECTED FINAL STRUCTURE
+# =============================================================================
+
+final_structure:
+  directory: src/pw_mcp/ingest/chunker/
+  files:
+    __init__.py:
+      lines: ~30
+      purpose: "Re-exports for backward compatibility"
+
+    models.py:
+      lines: ~95
+      purpose: "ChunkConfig, Chunk, ChunkedArticle, FilterStats"
+
+    token_counting.py:
+      lines: ~45
+      purpose: "_get_encoder, count_tokens, estimate_tokens"
+
+    section_detection.py:
+      lines: ~40
+      purpose: "Header pattern matching"
+
+    chunk_factory.py:
+      lines: ~60
+      purpose: "_make_chunk, _make_chunk_tiktoken"
+
+    text_splitting.py:
+      lines: ~150
+      purpose: "Oversized text handling with semantic-text-splitter"
+
+    line_mapping.py:
+      lines: ~120
+      purpose: "Character-to-line mapping for citations"
+
+    jsonl_writer.py:
+      lines: ~180
+      purpose: "JSONL output, chunk_article, filtering"
+
+    core.py:
+      lines: ~280
+      purpose: "chunk_text_tiktoken, _chunk_without_headers, main logic"
+
+# =============================================================================
+# RISK ASSESSMENT
+# =============================================================================
+
+risks:
+  circular_imports:
+    likelihood: medium
+    impact: high
+    mitigation: "Use TYPE_CHECKING imports for type hints only"
+
+  breaking_external_api:
+    likelihood: low
+    impact: high
+    mitigation: "Re-export all public symbols from __init__.py"
+
+  test_failures:
+    likelihood: low
+    impact: medium
+    mitigation: "Run full test suite after each extraction step"
+
+  performance_regression:
+    likelihood: low
+    impact: low
+    mitigation: "Profile before/after; import overhead is minimal"
+
+# =============================================================================
+# EXECUTION STRATEGY
+# =============================================================================
+
+execution:
+  methodology: "Mikado Method - attempt, fail fast, revert, analyze, retry"
+
+  per_step_workflow:
+    - step: 1
+      action: "Attempt extraction"
+      detail: "Move functions/classes to new module"
+
+    - step: 2
+      action: "Update imports"
+      detail: "Fix imports in chunker.py and new module"
+
+    - step: 3
+      action: "Run tests"
+      command: "uv run pytest tests/unit/chunking/ -v"
+
+    - step: 4
+      action: "Evaluate"
+      if_green: "Commit and proceed to next step"
+      if_red: "Revert, analyze failures, add to dependency graph, retry"
+
+  recommended_first_step:
+    step: 1C
+    module: models.py
+    rationale: |
+      1. Dataclasses have ZERO internal dependencies
+      2. They are imported by ALL other functions (highest fan-out)
+      3. Extracting them first simplifies all subsequent extractions
+      4. Easy to verify: tests only check dataclass structure
+
+  test_command: "uv run pytest tests/unit/chunking/ -v"
+  full_test_command: "uv run pytest tests/unit/chunking tests/integration/ -v"
+
+# =============================================================================
+# BENEFITS
+# =============================================================================
+
+benefits:
+  testability: "Each module can be tested in isolation"
+  maintainability: "Changes to token counting don't affect JSONL writing"
+  readability: "~110 lines per file vs 1,278 lines"
+  parallel_development: "Multiple developers can work on different modules"
+  caching_opportunities: "Could add memoization per-module (e.g., token counts)"
+
+# =============================================================================
+# RELATED WORK (2025-12-24)
+# =============================================================================
+
+recent_changes:
+  performance_fix:
+    date: 2025-12-24
+    description: "Added fast path for headerless documents"
+    impact: "Political Economy (1.9MB) now processes in 3.11s (was timeout)"
+    changes:
+      - "_chunk_without_headers() - uses semantic-text-splitter directly"
+      - "Detects documents with no section headers"
+      - "Avoids O(n^2) line-by-line processing"
+
+  semantic_text_splitter:
+    date: 2025-12-24
+    description: "Integrated Rust/SIMD optimized text splitter"
+    package: "semantic-text-splitter>=0.28.0"
+    benefit: "10-100x faster than custom Python splitting"
+
+  filter_stats:
+    date: 2025-12-24
+    description: "Added filtering statistics to write_chunks_jsonl"
+    new_dataclass: FilterStats
+    fields: [total_chunks, micro_chunks_filtered, consecutive_duplicates_removed, chunks_written]

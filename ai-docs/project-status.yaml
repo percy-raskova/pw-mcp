@@ -208,16 +208,34 @@ phases:
       Pipeline: extract → chunk → embed → load (4 stages)
 
   phase_4_chunking:
-    status: COMPLETE (MAJOR REFACTOR 2025-12-16)
+    status: COMPLETE (PERFORMANCE FIX 2025-12-24)
     completed_date: 2025-12-16
+    enhanced_date: 2025-12-24
     description: Tiktoken-based text chunking (replaced sembr dependency)
     reference_doc: ai-docs/chunking.yaml
+    refactoring_plan: ai-docs/chunker-refactoring.yaml
     dependencies: Phase 2 only (ArticleData) - no sembr needed
     test_counts:
-      chunker_unit: 67
-      oversized_line_handling: 7  # New TDD tests for splitting
+      chunker_unit: 107  # Updated with fast path tests
       cli_chunk: 18
-      total: 74
+      integration: 26
+      total: 133
+
+    performance_fix_2025_12_24:
+      problem: "O(n²) string operations caused timeout on large headerless documents"
+      example: "Political Economy (1.9MB, 8,009 lines) was timing out"
+      solution: |
+        Added fast path for headerless documents using semantic-text-splitter:
+        - Detects documents without section headers (== ... ==)
+        - Uses Rust/SIMD-optimized semantic-text-splitter directly
+        - Avoids O(n²) line-by-line string reconstruction
+        - Character-to-line mapping for accurate citations
+      result: "Political Economy now processes in 3.11 seconds with zero duplicates"
+      new_dependency: "semantic-text-splitter>=0.28.0"
+      files_modified:
+        - src/pw_mcp/ingest/chunker.py  # Added _chunk_without_headers()
+        - tests/unit/chunking/test_chunker.py  # Updated with realistic test data
+        - pyproject.toml  # Added semantic-text-splitter dependency
 
     key_changes_2025_12_16:
       - "Replaced word-based estimation with tiktoken (cl100k_base)"
@@ -599,6 +617,27 @@ current_focus:
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
+    2025-12-24 Summary (MIKADO REFACTORING COMPLETE):
+    - REFACTORING COMPLETE: Decomposed 1,278-line chunker.py into 9 focused modules
+      * Executed 4-phase Mikado Method refactoring plan
+      * core.py: 532 lines (main chunking algorithms)
+      * jsonl_writer.py: 206 lines (JSONL output, filtering)
+      * text_splitting.py: 198 lines (semantic-text-splitter integration)
+      * line_mapping.py: 130 lines (character-to-line mapping)
+      * models.py: 108 lines (dataclasses)
+      * chunk_factory.py: 82 lines (chunk construction)
+      * token_counting.py: 58 lines (tiktoken utilities)
+      * section_detection.py: 55 lines (header detection)
+      * __init__.py: 90 lines (backward-compatible re-exports)
+    - All 133 tests passing (107 unit + 26 integration)
+    - All lint (ruff) and type checks (mypy) passing
+    - Full backward compatibility maintained via package re-exports
+
+    Previous (2025-12-24 morning - PERFORMANCE FIX):
+    - CRITICAL FIX: Resolved O(n²) timeout on large headerless documents
+    - Added fast path using semantic-text-splitter (Rust/SIMD)
+    - Political Economy (1.9MB) now processes in 3.11 seconds
+
     2025-12-20 Summary (PHASE B PLANNING SESSION):
     - CRITICAL DISCOVERY: parse_library_work() exists but is NEVER CALLED
       in extraction pipeline. This is incomplete Phase A work.

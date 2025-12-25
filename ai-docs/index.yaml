@@ -186,13 +186,15 @@ files:
       - finding file locations
       - running common commands
     recent_updates:
-      - "2025-12-19: synthetic_benign_input_handling.jsonl (95 pairs) - prevent chatbot mode on casual inputs"
-      - "2025-12-19: Identified persona drift failure mode - model switches to emoji soup on benign inputs"
-      - "2025-12-19: Designed 4 new reward functions for register consistency (pending implementation)"
+      - "2025-12-24: MIKADO REFACTORING COMPLETE - Decomposed 1,278-line chunker.py into 9 modules"
+      - "2025-12-24: Created chunker package with core.py (532), jsonl_writer.py (206), text_splitting.py (198), etc."
+      - "2025-12-24: All 133 tests passing, full backward compatibility via __init__.py re-exports"
+      - "2025-12-24: PERFORMANCE FIX - Added fast path for headerless documents (semantic-text-splitter)"
+      - "2025-12-19: synthetic_benign_input_handling.jsonl (95 pairs) - prevent chatbot mode"
+      - "2025-12-19: Identified persona drift failure mode - emoji soup on benign inputs"
+      - "2025-12-19: Designed 4 new reward functions for register consistency (pending)"
       - "2025-12-18: Test audit + 25 new tests (79 total GRPO reward tests)"
       - "2025-12-18: Anti-hallucination system (entity whitelist + 3 new reward functions)"
-      - "2025-12-18: ideological_firmness_reward - combat reactionary claims with ML analysis"
-      - "2025-12-18: entity_verification_reward - NER + 24,040 entity whitelist"
       - "2025-12-17: Added interconnection_depth_reward (anti-buzzword-salad)"
       - "2025-12-17: Added W&B logging integration (wandb_logging.py)"
       - "2025-12-16: MAJOR REFACTOR - Replaced sembr with tiktoken-based chunking"
@@ -355,6 +357,35 @@ files:
       - writing chunking tests
       - configuring chunk sizes
       - using pw-ingest chunk CLI
+
+  chunker-refactoring.yaml:
+    status: COMPLETE - executed 2025-12-24
+    purpose: Mikado-method plan for decomposing chunker.py into focused modules
+    created: 2025-12-24
+    completed: 2025-12-24
+    topics:
+      - 9 distinct concerns in 1,278-line monolith (now decomposed)
+      - Mikado Method incremental refactoring
+      - 4-phase extraction executed successfully
+      - Result: 9 modules (largest 532 lines)
+      - Backward compatibility via re-exports
+      - 133 passing tests (107 unit + 26 integration)
+    sections:
+      overview: Original state, goal, final outcome with line counts
+      concerns: 9 responsibilities separated into modules
+      public_api: Functions/classes preserved via __init__.py
+      dependency_graph: Visualization of internal dependencies
+      mikado_plan: 4-phase extraction plan (all phases complete)
+      final_structure: Actual directory structure (9 files)
+      risks: Circular imports, breaking changes (all mitigated)
+      execution: Per-step workflow, test commands
+      benefits: Testability, maintainability, readability
+      recent_changes: 2025-12-24 refactoring complete
+    use_when:
+      - understanding chunker package architecture
+      - adding new chunker functionality
+      - debugging chunker dependencies
+      - referencing module decomposition decisions
 
   reward-modeling.yaml:
     status: IMPLEMENTED - multi-layer coherence rewards with W&B logging

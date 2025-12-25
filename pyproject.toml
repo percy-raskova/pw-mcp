@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "spacy>=3.8.11",
+    "semantic-text-splitter>=0.28.0",
 ]
 
 [dependency-groups]
@@ -143,6 +144,7 @@ module = [
     "openai",
     "openai.*",
     "dotenv.*",
+    "semantic_text_splitter",
     # ML training libraries
     "transformers",
     "transformers.*",
