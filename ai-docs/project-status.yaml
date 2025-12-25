@@ -465,241 +465,74 @@ phases:
       - Add MCP protocol tests
 
   phase_8_finetune:
-    status: IN_PROGRESS
+    status: MOVED TO prolewiki-llm
     description: GRPO fine-tuning with multi-layer anti-hacking reward system
-    reference_docs:
-      - ai-docs/reward-modeling.yaml  # Reward function design and anti-hacking measures
-      - ai-docs/finetune.yaml  # Overall fine-tuning methodology
-    dependencies: Curated Q&A dataset (training_data/curated_qa.jsonl)
-    updated: 2025-12-17
-
-    overview:
-      goal: Fine-tune DeepSeek-R1-0528-Qwen3-8B for Marxist-Leninist theory responses
-      method: GRPO (Group Relative Policy Optimization) via Unsloth + TRL
-      dataset: 128 curated Q&A pairs (training_data/grpo_dataset.jsonl)
-      output: LoRA adapter → GGUF for Ollama deployment
-      hardware: A40 48GB (RunPod) or similar
-
-    methodology_rationale: |
-      GRPO chosen over SFT because:
-      - Political theory has no single "correct" answer (unlike math)
-      - Open-ended prose requires semantic similarity, not exact match
-      - Reward functions can encode domain expertise
-      - Multi-layer rewards defeat adversarial "word soup" attacks
-
-    tasks:
-      - id: 8.1
-        name: Dataset Preparation
-        status: COMPLETE
-        completed_date: 2025-12-17
-        details: |
-          - Curated 128 Q&A pairs (training_data/curated_qa.jsonl)
-          - Transformed to GRPO format (training_data/grpo_dataset.jsonl)
-          - Format: {"prompt": [...messages...], "answer": "..."}
-          - Topics: revisionism, surplus value, imperialism, dialectics, etc.
-        files:
-          - training_data/curated_qa.jsonl
-          - training_data/grpo_dataset.jsonl
-
-      - id: 8.2
-        name: Reward Function System
-        status: COMPLETE
-        completed_date: 2025-12-17
-        tests: 60 passing
-        details: |
-          Multi-layer reward system defeating word soup attacks:
-          1. Format rewards (exact/approximate </think> pattern)
-          2. Semantic similarity (sentence-transformers embeddings)
-          3. Terminology (Marxist lexicon bonus)
-          4. NLI coherence (BART-large-MNLI entailment check)
-          5. Self-consistency (no internal contradictions)
-          6. Structural coherence (terms in syntactic roles)
-          7. Topic relevance (question→answer concept coverage)
-          8. Interconnection depth (anti-buzzword-salad)
-          9. Completeness (key concept coverage)
-
-          Anti-hacking measures:
-          - HOLLOW_BUZZWORDS penalty (activist jargon without substance)
-          - DEPTH_MARKERS bonus (historical specificity)
-          - EXPLANATORY_PHRASES detection (causal reasoning)
-          - Depth ratio scoring (words per concept)
-        files:
-          - src/pw_mcp/ai_training/grpo_rewards.py
-          - tests/unit/training/test_grpo_rewards.py
-
-      - id: 8.3
-        name: W&B Logging Integration
-        status: COMPLETE
-        completed_date: 2025-12-17
-        tests: 17 passing
-        details: |
-          Weights & Biases integration for training observability:
-          - WandbSampleLogger for periodic sample tables
-          - Per-reward metric logging (mean, min, max)
-          - create_logging_reward() factory for GRPOTrainer
-          - Graceful degradation without wandb installed
-        files:
-          - src/pw_mcp/ai_training/wandb_logging.py
-          - tests/unit/training/test_wandb_logging.py
-
-      - id: 8.4
-        name: Training Notebook
-        status: COMPLETE
-        completed_date: 2025-12-17
-        details: |
-          Self-contained Jupyter notebook for RunPod execution:
-          - Model loading (DeepSeek-R1-0528-Qwen3-8B via Unsloth)
-          - All reward functions inline (no external imports)
-          - W&B logging integration
-          - A40-optimized configuration
-          - LoRA training and saving
-          - GGUF export instructions
-        files:
-          - training_data/Marxist_GRPO_Training.ipynb
-
-      - id: 8.5
-        name: Training Execution
-        status: PLANNED
-        details: |
-          Remaining work:
-          - Execute notebook on RunPod A40
-          - Monitor W&B metrics during training
-          - Evaluate model outputs
-          - Export to GGUF and test with Ollama
-
-      - id: 8.6
-        name: Model Evaluation
-        status: PLANNED
-        details: |
-          - Manual evaluation on test questions
-          - Check for reward hacking (word soup detection)
-          - Verify Marxist-Leninist accuracy
-          - Iterate on reward weights if needed
-
-    model_info:
-      base_model: DeepSeek-R1-0528-Qwen3-8B
-      huggingface: unsloth/DeepSeek-R1-0528-Qwen3-8B
-      params: 8B
-      context_length: 2048 (training max_completion_length)
-      lora_rank: 64
-      lora_alpha: 64
-
-    training_config:
-      max_steps: 250
-      batch_size: 2
-      gradient_accumulation: 2
-      learning_rate: 5e-6
-      num_generations: 4
-      temperature: 1.0
-      gpu_memory_utilization: 0.85
-
-    module_location: src/pw_mcp/ai_training/
-    module_files:
-      grpo_rewards.py: "13+ reward functions with anti-hacking measures"
-      wandb_logging.py: "W&B integration for training observability"
-      __init__.py: "Public API exports"
+    moved_date: 2025-12-25
+    new_location: ~/projects/pw-llm/
+    note: |
+      Phase 8 (AI fine-tuning) was extracted to a separate repository:
+      - Repository: prolewiki-llm (~/projects/pw-llm/)
+      - Reason: Different release artifact (HuggingFace models vs GitHub DB releases)
+      - All GRPO reward functions, training data, and notebooks moved
+      - See ai-docs/repository-split.yaml for full details
 
 # =============================================================================
 # CURRENT FOCUS
 # =============================================================================
 
 current_focus:
-  phase: "6 (ChromaDB Loading) + 8 (GRPO Fine-tuning)"
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5, 8.1, 8.2, 8.3, 8.4]
+  phase: "6 (ChromaDB Loading) + 7 (MCP Server)"
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5]
   removed: [3.1, 3.2, 3.3, 3.4]  # sembr phases removed 2025-12-16
+  moved_to_prolewiki_llm: [8.1, 8.2, 8.3, 8.4, 8.5, 8.6]  # training moved 2025-12-25
   next_tasks:
     - 6.1 - Phase B Implementation - COMPLETE (2025-12-25)
-    - 6.2 - Re-run pipeline with Phase B metadata (re-extract, re-chunk, re-load)
-    - 6.3 - Phase A Schema Implementation (ChromaDB loader)
-    - 8.5 - Training Execution (RunPod A40)
+    - 6.2 - Re-run pipeline with Phase B metadata - COMPLETE (46,054 chunks loaded)
+    - 6.3 - Verify MCP server can query ChromaDB
+    - 7.1 - Implement search tool
+    - 7.2 - Implement get_article tool
   references:
     - ai-docs/phase-b-implementation.yaml  # Phase B COMPLETE
     - ai-docs/chromadb-schema.yaml
-    - ai-docs/reward-modeling.yaml
+    - ai-docs/repository-split.yaml  # EXECUTED: repo split complete
 
   today_summary: |
-    2025-12-25 Summary (PHASE B METADATA IMPLEMENTATION COMPLETE):
+    2025-12-25 Summary (PHASE B + REPOSITORY SPLIT EXECUTED):
     - PHASE B COMPLETE: Implemented 7 enriched metadata fields for ChromaDB
       * Fixed CLI namespace bug - passes relative paths to extract_article()
       * Added _extract_year() helper for parsing publication years
-      * Extended jsonl_writer.py with 4 new fields:
-        - library_work_type, library_work_published_year
-        - primary_category, category_count
+      * Extended jsonl_writer.py with 4 new fields
       * Extended chroma.py serialize/deserialize with all 7 Phase B fields
-      * ChromaDB-safe value handling (None→"", None→-1)
-    - Tests: 52 passing in affected modules (chroma + chunk_metadata)
-    - New test classes: TestExtractYear (5 tests), Phase B serialization tests
-    - All 422 tests passing, all lint/type checks passing
-    - Files modified:
-      * src/pw_mcp/ingest/cli.py (namespace bug fix)
-      * src/pw_mcp/ingest/chunker/jsonl_writer.py (Phase B fields + year extraction)
-      * src/pw_mcp/db/chroma.py (serialize/deserialize Phase B fields)
-      * tests/unit/chunking/test_chunk_metadata.py (extended Phase B tests)
-      * tests/unit/db/test_chroma.py (Phase B roundtrip tests)
+    - ChromaDB fully loaded: 46,054 chunks with Phase B metadata (0 errors)
+    - REPOSITORY SPLIT EXECUTED:
+      * Created prolewiki-llm repository at ~/projects/pw-llm/
+      * Moved: ai_training/, training_data/, tests/unit/training/
+      * Moved: ai-docs (finetune.yaml, reward-modeling.yaml, runpod.yaml, etc.)
+      * Updated all imports from pw_mcp.ai_training → prolewiki_llm
+      * prolewiki-llm verified: lint passes, types pass, 68 tests pass
+      * pw-mcp cleaned: removed moved files, updated pyproject.toml, updated ai-docs/
+    - Tests: ~343 passing (after removing 79 training tests moved to prolewiki-llm)
 
     Previous (2025-12-24 - MIKADO REFACTORING COMPLETE):
     - Decomposed 1,278-line chunker.py into 9 focused modules
     - All 133 tests passing, full backward compatibility maintained
 
-    2025-12-20 Summary (PHASE B PLANNING SESSION):
-    - CRITICAL DISCOVERY: parse_library_work() exists but is NEVER CALLED
-      in extraction pipeline. This is incomplete Phase A work.
-    - Documented four-layer fix needed:
-      1. types.py: Add library_work field to ArticleData
-      2. extraction.py: Call parse_library_work()
-      3. CLI: Serialize infobox + library_work to metadata JSON
-      4. chunker.py: Add Phase B fields to JSONL output
-    - Created ai-docs/phase-b-implementation.yaml with full gap analysis
-    - Confirmed 539 tests across 17 files (baseline verified)
-    - Key insight: No re-embedding needed! Only re-extract + re-chunk + re-load
-    - Methodology: Refactoring with targeted tests (not TDD)
-    - Phase B fields: library_work_author, infobox_type, political_orientation
-
-    2025-12-19 Summary (PERSONA DRIFT PREVENTION + SYNTHETIC TRAINING DATA):
-    - Identified critical failure mode: model switches to saccharine emoji-soup
-      chatbot mode when receiving casual/benign inputs ("mama mia!" → "Aww teehee 💙")
-    - Created synthetic_benign_input_handling.jsonl (95 training pairs) covering:
-      * Greetings (hi, hey, yo, sup, hello)
-      * Emotional exclamations (wow, lol, mama mia)
-      * Off-topic requests (weather, jokes, songs)
-      * Personal questions, farewells, nonsense inputs
-    - Designed 4 new reward functions (pending implementation via TDD):
-      * emoji_penalty_reward - penalize emoji usage
-      * saccharine_language_reward - detect chatbot patterns
-      * register_consistency_reward - maintain professional register
-      * scope_maintenance_reward - redirect off-topic inputs professionally
-    - Updated MODEL_CARD.yaml with comprehensive synthetic_datasets section
-    - Documented failure mode and mitigation strategy
-
-    Previous (2025-12-18) - ANTI-HALLUCINATION + IDEOLOGICAL FIRMNESS:
-    - Implemented anti-hallucination system with entity whitelist (24,040 entities)
-    - Added ideological_firmness_reward (combat reactionary claims with ML analysis)
-    - Added entity_verification_reward (NER + whitelist anti-hallucination)
-    - Test audit: added 25 tests for 3 previously untested reward functions
-    - 79 GRPO reward tests passing (was 54), 432 total tests
-
   next_action: |
-    Phase 8 (GRPO Training) - Iteration 3 Preparation:
-    - New synthetic data: synthetic_benign_input_handling.jsonl (95 pairs)
-    - 4 new reward functions pending TDD implementation:
-      * emoji_penalty_reward (tests ready)
-      * saccharine_language_reward (tests ready)
-      * register_consistency_reward (tests ready)
-      * scope_maintenance_reward (tests ready)
-    - After reward implementation: Execute iteration 3 training on RunPod A40
+    Phase 7 (MCP Server) - Next Priority:
+    - Implement search tool (semantic search over ChromaDB)
+    - Implement get_article tool (full article retrieval)
+    - Implement list_categories tool
+    - Add MCP protocol tests
 
-    Phase 6 (ChromaDB Loading) - Still Pending:
-    - Implement Phase A schema (13 fields from chunker output)
-    - Create ChromaDB loader module
-    - Batch upsert with metadata
+    Phase 6 Verification:
+    - Verify MCP server can query ChromaDB with Phase B metadata
+    - Test filtering by infobox_type, political_orientation, etc.
 
-    Key Implementations (Phase 8):
-    - src/pw_mcp/ai_training/grpo_rewards.py: 17+ reward functions
-    - src/pw_mcp/ai_training/wandb_logging.py: W&B integration
-    - training_data/synthetic_benign_input_handling.jsonl: Persona consistency training
+    For AI Training work, see: ~/projects/pw-llm/ (prolewiki-llm repository)
 
   # How Implementation Phases map to Pipeline Stages
   # NOTE: Phase 3 (sembr) was REMOVED - pipeline is now 4 stages
+  # NOTE: Phase 8 (fine-tuning) was MOVED to prolewiki-llm repo
   phase_to_stage_mapping: |
     Implementation Phases (work order)     Pipeline Stages (data flow)
     ─────────────────────────────────      ─────────────────────────────
@@ -708,9 +541,9 @@ current_focus:
     Phase 3: Sembr                         REMOVED (2025-12-16)
     Phase 4: Chunking (tiktoken)     ────► Stage 2: Chunking
     Phase 5: Embedding               ────► Stage 3: Embedding
-    Phase 6: Loading                 ────► Stage 4: ChromaDB Loading
-    Phase 7: MCP Server                    (consumer of database)
-    Phase 8: Fine-tuning             ────► IN_PROGRESS (GRPO rewards complete)
+    Phase 6: Loading                 ────► Stage 4: ChromaDB Loading (COMPLETE)
+    Phase 7: MCP Server                    (consumer of database) - NEXT
+    Phase 8: Fine-tuning                   MOVED to prolewiki-llm (2025-12-25)
     (Optional) Graph                       (deferred enhancement)
 
   test_status:
@@ -730,10 +563,10 @@ current_focus:
     openai_embedder: 10 passing
     embed_cli: 10 passing
     embed_slow: 4 passing
-    # Training tests
-    grpo_rewards: 79 passing  # Multi-layer + anti-hallucination + ideological firmness (25 new)
-    wandb_logging: 17 passing  # W&B integration
-    total: 432 passing  # Updated 2025-12-18
+    # ChromaDB tests
+    chroma: 10 passing  # Added with Phase B
+    # Training tests moved to prolewiki-llm (79 grpo + 17 wandb = 96 tests)
+    total: ~343 passing  # Updated 2025-12-25 (after repo split)
 
 # =============================================================================
 # KEY DECISIONS

@@ -1,0 +1,345 @@
+# Repository Split Plan
+# Status: APPROVED - ready for execution
+# Created: 2025-12-25
+# Purpose: Document clean separation of pw-mcp and prolewiki-llm repositories
+
+# =============================================================================
+# EXECUTIVE SUMMARY
+# =============================================================================
+
+summary:
+  goal: |
+    Separate AI training code (GRPO, rewards, fine-tuning) from MCP server
+    and ChromaDB pipeline into two focused repositories.
+
+  approach: Fresh Copy with Attribution
+
+  rationale: |
+    - Training code is recent (~1 month old, Dec 2025) - history not critical
+    - Files scattered across 4+ directories - not a clean subtree for git filter-repo
+    - Fresh start allows proper Python package structure
+    - Simpler execution, less git complexity risk
+
+  repositories:
+    pw-mcp:
+      purpose: MCP server + ChromaDB ingestion pipeline
+      artifact: ChromaDB database (~1GB)
+      distribution: GitHub Releases
+
+    prolewiki-llm:
+      purpose: GRPO fine-tuning, reward functions, model training
+      artifact: Fine-tuned GGUF models (4-16GB)
+      distribution: Hugging Face Hub
+
+# =============================================================================
+# FILE MIGRATION MAPPING
+# =============================================================================
+
+migration:
+  from_pw_mcp_to_prolewiki_llm:
+    source_code:
+      - from: src/pw_mcp/ai_training/grpo_rewards.py
+        to: src/prolewiki_llm/rewards/
+        note: Split into modular files (format.py, semantic.py, coherence.py, etc.)
+
+      - from: src/pw_mcp/ai_training/wandb_logging.py
+        to: src/prolewiki_llm/training/wandb_logging.py
+
+      - from: src/pw_mcp/ai_training/transform_to_grpo.py
+        to: src/prolewiki_llm/data/transform.py
+
+      - from: src/pw_mcp/ai_training/__init__.py
+        to: src/prolewiki_llm/__init__.py
+        note: Update exports for new structure
+
+    training_data:
+      - from: training_data/curated_qa.jsonl
+        to: training_data/curated_qa.jsonl
+
+      - from: training_data/grpo_dataset.jsonl
+        to: training_data/grpo_dataset.jsonl
+
+      - from: training_data/synthetic_*.jsonl
+        to: training_data/synthetic_*.jsonl
+
+      - from: training_data/sources/
+        to: training_data/sources/
+
+      - from: training_data/MODEL_CARD.yaml
+        to: training_data/MODEL_CARD.yaml
+
+      - from: training_data/Marxist_GRPO_Training.ipynb
+        to: notebooks/Marxist_GRPO_Training.ipynb
+
+    tests:
+      - from: tests/unit/training/test_grpo_rewards.py
+        to: tests/unit/test_rewards.py
+
+      - from: tests/unit/training/test_wandb_logging.py
+        to: tests/unit/test_wandb.py
+
+    ai_docs:
+      - from: ai-docs/finetune.yaml
+        to: ai-docs/finetune.yaml
+
+      - from: ai-docs/reward-modeling.yaml
+        to: ai-docs/reward-modeling.yaml
+
+      - from: ai-docs/runpod.yaml
+        to: ai-docs/runpod.yaml
+
+      - from: ai-docs/chatbot-ideology.yaml
+        to: ai-docs/chatbot-ideology.yaml
+
+      - from: ai-docs/training-schema.yaml
+        to: ai-docs/training-schema.yaml
+
+  remains_in_pw_mcp:
+    - src/pw_mcp/server.py
+    - src/pw_mcp/config.py
+    - src/pw_mcp/ingest/  # Full ingestion pipeline
+    - src/pw_mcp/db/      # ChromaDB interface
+    - tests/unit/extraction/
+    - tests/unit/chunking/
+    - tests/unit/embedding/
+    - tests/unit/db/
+    - tests/unit/cli/
+    - tests/integration/
+    - ai-docs/chromadb*.yaml
+    - ai-docs/chunking.yaml
+    - ai-docs/embedding.yaml
+    - ai-docs/pipeline.yaml
+    - ai-docs/project-status.yaml
+    - ai-docs/phase-b-implementation.yaml
+
+# =============================================================================
+# NEW REPOSITORY STRUCTURE
+# =============================================================================
+
+prolewiki_llm_structure:
+  description: |
+    Clean Python package structure with modular reward system
+    and proper separation of concerns.
+
+  layout: |
+    prolewiki-llm/
+    ├── src/prolewiki_llm/
+    │   ├── __init__.py
+    │   ├── rewards/
+    │   │   ├── __init__.py          # Public API exports
+    │   │   ├── format.py            # Format rewards (think tags)
+    │   │   ├── semantic.py          # Semantic similarity
+    │   │   ├── coherence.py         # NLI, self-consistency, structural
+    │   │   ├── terminology.py       # Marxist lexicon
+    │   │   ├── ideology.py          # Ideological firmness
+    │   │   ├── anti_hallucination.py  # Entity verification
+    │   │   └── combined.py          # full_coherence_reward
+    │   ├── training/
+    │   │   ├── __init__.py
+    │   │   ├── config.py            # GRPO training configuration
+    │   │   └── wandb_logging.py     # W&B integration
+    │   └── data/
+    │       ├── __init__.py
+    │       └── transform.py         # Dataset transformation
+    ├── training_data/
+    │   ├── curated_qa.jsonl         # 1,058 Q&A pairs
+    │   ├── grpo_dataset.jsonl       # GRPO-formatted data
+    │   ├── synthetic_benign_input_handling.jsonl
+    │   ├── sources/
+    │   │   └── list.md
+    │   └── MODEL_CARD.yaml
+    ├── notebooks/
+    │   └── Marxist_GRPO_Training.ipynb
+    ├── tests/
+    │   ├── conftest.py
+    │   └── unit/
+    │       ├── test_rewards.py
+    │       └── test_wandb.py
+    ├── ai-docs/
+    │   ├── index.yaml
+    │   ├── finetune.yaml
+    │   ├── reward-modeling.yaml
+    │   ├── chatbot-ideology.yaml
+    │   ├── training-schema.yaml
+    │   └── runpod.yaml
+    ├── pyproject.toml
+    ├── README.md
+    ├── ATTRIBUTION.md               # Credits pw-mcp origin
+    └── .pre-commit-config.yaml
+
+# =============================================================================
+# EXECUTION PHASES
+# =============================================================================
+
+execution:
+  prerequisites:
+    - description: Verify ChromaDB reload completed successfully
+      command: uv run pw-ingest query "test query"
+      status: pending
+
+    - description: Ensure MCP server can perform searches
+      status: pending
+
+  phase_1:
+    name: Create prolewiki-llm repository
+    steps:
+      - Create new GitHub repo (prolewiki/prolewiki-llm or personal org)
+      - Clone empty repo locally
+      - Set up pyproject.toml with metadata and dependencies
+      - Create directory structure
+      - Copy files from pw-mcp (do NOT delete from pw-mcp yet)
+      - Adapt imports to new namespace (prolewiki_llm.*)
+      - Add ATTRIBUTION.md crediting pw-mcp
+      - Set up pre-commit, mypy, ruff configs
+
+    new_dependencies:
+      required:
+        - transformers
+        - sentence-transformers
+        - torch
+        - wandb
+        - spacy
+      training_only:
+        - unsloth
+        - trl
+        - peft
+        - bitsandbytes
+
+  phase_2:
+    name: Verify prolewiki-llm works
+    steps:
+      - Run all tests (pytest)
+      - Verify pre-commit hooks pass
+      - Verify mypy type checking passes
+      - Test reward function imports
+      - Initial commit and push
+
+  phase_3:
+    name: Clean up pw-mcp
+    steps:
+      - Remove src/pw_mcp/ai_training/ directory
+      - Remove training_data/ directory
+      - Remove tests/unit/training/ directory
+      - Remove training ai-docs (finetune.yaml, etc.)
+      - Update pyproject.toml (remove training dependencies)
+      - Update ai-docs/index.yaml
+      - Update ai-docs/project-status.yaml
+      - Commit as "refactor: Extract AI training to prolewiki-llm repo"
+
+  phase_4:
+    name: Update documentation
+    steps:
+      - Add section in pw-mcp README pointing to prolewiki-llm
+      - Write prolewiki-llm README explaining purpose and relationship
+      - Update any cross-references between repos
+
+# =============================================================================
+# DEPENDENCY SEPARATION
+# =============================================================================
+
+dependencies:
+  pw_mcp_after_split:
+    core:
+      - chromadb
+      - openai
+      - tiktoken
+      - mwparserfromhell
+      - fastmcp
+      - pydantic
+      - httpx
+    dev:
+      - pytest
+      - ruff
+      - mypy
+      - pre-commit
+    note: |
+      Significantly lighter dependency footprint after removing
+      transformers, torch, sentence-transformers, spacy, wandb.
+
+  prolewiki_llm:
+    core:
+      - transformers
+      - sentence-transformers
+      - torch
+      - wandb
+      - spacy
+      - pydantic
+    training:
+      - unsloth
+      - trl
+      - peft
+      - bitsandbytes
+    dev:
+      - pytest
+      - ruff
+      - mypy
+      - pre-commit
+
+# =============================================================================
+# RELEASE STRATEGY
+# =============================================================================
+
+releases:
+  pw_mcp:
+    artifact: ChromaDB database
+    size: ~1GB
+    distribution: GitHub Releases
+    versioning: Semantic (v1.0.0)
+    example_release: |
+      gh release create v1.0.0 \
+        --title "ProleWiki ChromaDB v1.0.0" \
+        --notes "Initial release with 46,054 chunks, Phase B metadata" \
+        pw-mcp-chromadb-v1.0.0.tar.gz
+
+  prolewiki_llm:
+    artifact: Fine-tuned GGUF models
+    size: 4-16GB
+    distribution: Hugging Face Hub
+    versioning: By training iteration (v1, v2, etc.)
+    example_release: |
+      # Push to Hugging Face
+      huggingface-cli upload prolewiki/marxist-llm-v1 \
+        ./model-v1.gguf
+
+# =============================================================================
+# RISKS AND MITIGATIONS
+# =============================================================================
+
+risks:
+  - risk: Breaking existing workflows during transition
+    mitigation: |
+      Copy files first, verify new repo works, then delete from pw-mcp.
+      Never delete before verifying.
+
+  - risk: Losing git history for training code
+    mitigation: |
+      ATTRIBUTION.md documents origin. History not critical for
+      1-month-old code. Could use git filter-repo if needed later.
+
+  - risk: Import confusion between packages
+    mitigation: |
+      Clean namespace separation: pw_mcp.* vs prolewiki_llm.*
+      No cross-dependencies between repos.
+
+  - risk: Documentation drift between repos
+    mitigation: |
+      Each repo is self-contained for its domain.
+      README cross-references for discoverability.
+
+# =============================================================================
+# TIMING
+# =============================================================================
+
+timing:
+  trigger: After ChromaDB reload verified and MCP server functional
+
+  estimated_effort:
+    phase_1: 2-3 hours (create new repo, copy files, adapt imports)
+    phase_2: 30 minutes (verify tests pass)
+    phase_3: 30 minutes (clean up pw-mcp)
+    phase_4: 30 minutes (update documentation)
+    total: ~4 hours
+
+  current_blockers:
+    - ChromaDB reload in progress (Phase B3)
+    - MCP server search functionality not yet verified

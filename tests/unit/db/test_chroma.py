@@ -133,7 +133,7 @@ class TestSerializeMetadata:
         assert result["library_work_type"] == "Book"
         assert result["library_work_published_year"] == 1917
         assert result["infobox_type"] == ""  # None → ""
-        assert result["political_orientation"] == ""  # None → ""
+        assert result["political_orientation"] == "[]"  # None/empty → JSON "[]"
         assert result["primary_category"] == "Marxism-Leninism"
         assert result["category_count"] == 1
 
@@ -160,7 +160,7 @@ class TestSerializeMetadata:
         assert result["library_work_author"] == ""
         assert result["library_work_type"] == ""
         assert result["infobox_type"] == ""
-        assert result["political_orientation"] == ""
+        assert result["political_orientation"] == "[]"  # List field → JSON "[]"
         assert result["primary_category"] == ""
         # Integer field should become -1
         assert result["library_work_published_year"] == -1

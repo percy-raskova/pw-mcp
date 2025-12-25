@@ -8,7 +8,6 @@ requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]>=1.21.0",
     "chromadb>=1.0.0",
-    "sentence-transformers>=3.0.0",
     "mwparserfromhell>=0.6.6",
     "httpx>=0.28.0",
     "tiktoken>=0.7.0",
@@ -16,7 +15,6 @@ dependencies = [
     "ollama>=0.4.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
-    "spacy>=3.8.11",
     "semantic-text-splitter>=0.28.0",
 ]
 
@@ -99,12 +97,6 @@ ignore = [
     "ARG002",  # unused method arguments (fixtures) are common in tests
     "SIM117",  # nested with statements for multiple mocks are clearer
 ]
-"src/pw_mcp/ai_training/**/*.py" = [
-    "ARG001",  # **kwargs required by GRPOTrainer reward function interface
-]
-"training_data/*.ipynb" = [
-    "ARG001",  # **kwargs required by GRPOTrainer reward function interface
-]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pw_mcp"]
@@ -136,7 +128,6 @@ exclude = ["tests/", "build/", "dist/", "prolewiki-exports/"]
 module = [
     "mcp.*",
     "chromadb.*",
-    "sentence_transformers.*",
     "mwparserfromhell.*",
     "tiktoken.*",
     "ollama",
@@ -145,26 +136,6 @@ module = [
     "openai.*",
     "dotenv.*",
     "semantic_text_splitter",
-    # ML training libraries
-    "transformers",
-    "transformers.*",
-    "spacy",
-    "spacy.*",
-    "torch",
-    "torch.*",
-    "wandb",
-    "wandb.*",
-    # GRPO training dependencies (optional)
-    "datasets",
-    "datasets.*",
-    "trl",
-    "trl.*",
-    "unsloth",
-    "unsloth.*",
-    "vllm",
-    "vllm.*",
-    "peft",
-    "peft.*",
 ]
 ignore_missing_imports = true
 

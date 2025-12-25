@@ -112,7 +112,12 @@ def deserialize_metadata(
         result["internal_links"] = json.loads(result["internal_links"])
     # political_orientation is also a JSON array (from infobox ideologies)
     if "political_orientation" in result and isinstance(result["political_orientation"], str):
-        result["political_orientation"] = json.loads(result["political_orientation"])
+        po_str = result["political_orientation"]
+        # Handle empty string (from older data) and "[]" (current format)
+        if po_str == "" or po_str == "[]":
+            result["political_orientation"] = None
+        else:
+            result["political_orientation"] = json.loads(po_str)
 
     # Restore None for empty Phase B string fields
     for field_name in [
