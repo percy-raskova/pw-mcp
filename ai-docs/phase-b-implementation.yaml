@@ -1,10 +1,11 @@
 # Phase B Implementation Guide
-# Status: PLANNING - ready for implementation
+# Status: COMPLETE - implemented 2025-12-25
 # Created: 2025-12-20
+# Completed: 2025-12-25
 # Purpose: Document Phase B schema implementation for ChromaDB enrichment
 #
 # This document captures discoveries from the 2025-12-20 planning session
-# and provides a concrete implementation roadmap.
+# and the implementation completed on 2025-12-25.
 
 # =============================================================================
 # EXECUTIVE SUMMARY
@@ -16,10 +17,22 @@ summary:
     political_orientation) to ChromaDB chunks for richer RAG queries
     and training data validation.
 
+  status: COMPLETE (2025-12-25)
+
   key_discovery: |
     The library_work parser EXISTS but is NEVER CALLED in the extraction
     pipeline. This is incomplete Phase A work that must be fixed before
     Phase B serialization can work.
+    RESOLVED: library_work now integrated (commit d26ac35).
+
+  implementation_summary: |
+    1. Fixed CLI namespace bug - passes relative path to extract_article()
+    2. Added _extract_year() helper for parsing publication years
+    3. Extended jsonl_writer.py with 4 new fields:
+       - library_work_type, library_work_published_year
+       - primary_category, category_count
+    4. Extended chroma.py serialize/deserialize with 7 Phase B fields
+    5. Added comprehensive tests (52 passing in affected modules)
 
   methodology: Refactoring with targeted tests (not TDD)
 
@@ -256,63 +269,57 @@ implementation:
   phases:
     phase_b1:
       name: Fix Extraction Gap
+      status: COMPLETE (commit d26ac35, 2025-12-25)
       changes:
         - file: src/pw_mcp/ingest/parsers/types.py
           change: Add library_work field to ArticleData dataclass
-          line: ~212
-          code: "library_work: LibraryWorkData | None = None"
+          status: DONE
 
         - file: src/pw_mcp/ingest/extraction.py
           change: Call parse_library_work() in extract_article()
-          line: ~390 (after infobox parsing)
-          code: |
-            # After infobox extraction
-            library_work = parse_library_work(text)
-            # Use library_work.remaining_text if library_work exists
+          status: DONE
 
         - file: src/pw_mcp/ingest/cli.py
-          change: Serialize infobox and library_work to metadata JSON
-          location: _run_extract_process() metadata dict
-          code: |
-            metadata = {
-                # ... existing fields ...
-                "infobox": asdict(article_data.infobox) if article_data.infobox else None,
-                "library_work": asdict(article_data.library_work) if article_data.library_work else None,
-            }
-
-      tests:
-        - test_extraction_includes_library_work()
-        - test_metadata_json_contains_infobox()
-        - test_metadata_json_contains_library_work()
+          change: |
+            1. Fixed namespace bug - pass relative path to extract_article()
+            2. Serialize infobox and library_work to metadata JSON
+          status: DONE
 
     phase_b2:
       name: Update Chunker Serialization
+      status: COMPLETE (commit 3f6d9fd, 2025-12-25)
       changes:
-        - file: src/pw_mcp/ingest/chunker.py
-          change: Add Phase B fields to write_chunks_jsonl()
-          location: lines 950-968
-          code: |
-            # After existing record fields
-            record["library_work_author"] = (
-                article.library_work.get("author")
-                if article.library_work else None
-            )
-            record["infobox_type"] = (
-                article.infobox.get("type")
-                if article.infobox else None
-            )
-            record["political_orientation"] = (
-                article.infobox.get("fields", {}).get("political_orientation")
-                if article.infobox else None
-            )
+        - file: src/pw_mcp/ingest/chunker/jsonl_writer.py
+          change: |
+            Added Phase B fields:
+            - library_work_author (existing)
+            - library_work_type (NEW)
+            - library_work_published_year (NEW with _extract_year helper)
+            - infobox_type (existing)
+            - political_orientation (existing)
+            - primary_category (NEW)
+            - category_count (NEW)
+          status: DONE
 
-      tests:
-        - test_chunks_jsonl_includes_library_work_author()
-        - test_chunks_jsonl_includes_infobox_type()
-        - test_chunks_jsonl_includes_political_orientation()
+        - file: src/pw_mcp/db/chroma.py
+          change: |
+            Extended serialize_metadata() and deserialize_metadata()
+            with all 7 Phase B fields for ChromaDB storage.
+          status: DONE
+
+      tests_added:
+        - test_jsonl_includes_extended_phase_b_fields()
+        - test_phase_b_fields_serialization()
+        - test_phase_b_fields_deserialization()
+        - test_roundtrip_phase_b_fields()
+        - TestExtractYear (5 tests for year parsing)
 
     phase_b3:
       name: Corpus Re-ingestion
+      status: PENDING
+      note: |
+        Code is ready. User needs to run pipeline to regenerate chunks
+        with enriched metadata and reload to ChromaDB.
       steps:
         - Re-run extraction (capture library_work data)
         - Re-run chunking (serialize new fields)
@@ -321,6 +328,7 @@ implementation:
 
     phase_b4:
       name: Training Data Integration (Optional)
+      status: FUTURE
       steps:
         - Add chunk_ids to training records for provenance
         - Implement validation reward function

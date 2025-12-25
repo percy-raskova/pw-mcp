@@ -1,7 +1,7 @@
 # ProleWiki ChromaDB Schema Definition
-# Status: Phase A (MVP) IMPLEMENTED, using OpenAI embeddings
+# Status: Phase A (MVP) + Phase B (Enriched Metadata) IMPLEMENTED
 # Purpose: Contract for what gets loaded into ChromaDB
-# Updated: 2025-12 - switched from Ollama to OpenAI embeddings
+# Updated: 2025-12-25 - Phase B metadata fields implemented
 
 # =============================================================================
 # SCHEMA PHASES
@@ -12,7 +12,7 @@
 schema_phases:
   overview: |
     Phase A: MVP schema - IMPLEMENTED (13 fields from chunker)
-    Phase B: Rich metadata - FUTURE (propagate more extraction data)
+    Phase B: Rich metadata - IMPLEMENTED (2025-12-25, 7 additional fields)
     Phase C: Reference metadata - FUTURE (enhance extraction for citations)
     Phase D: Graph metadata - DEFERRED (optional graph computation)
 
@@ -48,31 +48,40 @@ schema_phases:
 
   phase_b:
     name: Rich Metadata
-    status: FUTURE ENHANCEMENT
+    status: IMPLEMENTED
+    implemented_date: 2025-12-25
     description: |
-      Propagate already-extracted data from ArticleData.
-      Requires extending chunker to serialize more fields.
-      Enables filtering by infobox type, author, political orientation.
-      NOTE: Data already extracted in Stage 1, needs chunker extension.
-    fields:
-      infobox:
-        - infobox_type    # politician, country, party, etc.
+      Propagate already-extracted data from ArticleData to ChromaDB.
+      Enables filtering by infobox type, author, political orientation,
+      work type, and category-based queries.
+    implemented_fields:
+      tier_1_mcp_filtering:
+        - library_work_author      # IMPLEMENTED - enables "works by X" queries
+        - library_work_type        # IMPLEMENTED - Book, Speech, Article, etc.
+        - library_work_published_year  # IMPLEMENTED - year extraction from dates
+        - infobox_type             # IMPLEMENTED - politician, country, etc.
+        - political_orientation    # IMPLEMENTED - ideological filtering
+        - primary_category         # IMPLEMENTED - first category for exact match
+        - category_count           # IMPLEMENTED - filter by category richness
+    future_fields:
+      tier_2_biographical:
         - subject_name    # canonical name from infobox
         - birth_year      # for date range queries
         - death_year
         - nationality
-        - political_orientation  # JSON array - HIGHLY valuable!
-        - political_party        # JSON array
-      library_work:
-        - library_work_title
-        - library_work_author
-        - library_work_type
-        - library_work_published_year
-      additional:
+        - political_party  # JSON array
+      tier_3_provenance:
         - has_foreword
         - source_file
-    total_fields: 14 additional
-    source: ArticleData (already extracted, needs serialization)
+    total_implemented: 7 fields
+    total_future: 7 fields
+    implementation_files:
+      - src/pw_mcp/ingest/cli.py (namespace bug fix - relative paths)
+      - src/pw_mcp/ingest/chunker/jsonl_writer.py (Phase B field serialization)
+      - src/pw_mcp/db/chroma.py (serialize/deserialize metadata)
+    tests_added:
+      - tests/unit/chunking/test_chunk_metadata.py (TestExtractYear, extended Phase B tests)
+      - tests/unit/db/test_chroma.py (Phase B serialization roundtrip tests)
 
   phase_c:
     name: Reference Metadata
@@ -106,8 +115,8 @@ schema_phases:
     blocking: false
 
   implementation_order: |
-    1. Phase A: Ship with MVP (current chunker output)
-    2. Phase B: After MVP works, extend chunker for rich metadata
+    1. Phase A: Ship with MVP (current chunker output) - DONE
+    2. Phase B: Extend chunker for rich metadata - DONE (2025-12-25)
     3. Phase C: When citation-based filtering is needed
     4. Phase D: When importance ranking is needed (optional)
 
@@ -1092,13 +1101,11 @@ migration:
 
 open_questions:
   - question: "Primary category field?"
-    context: |
-      Categories is a JSON array. For exact match filtering,
-      might want a single `primary_category` field.
-    options:
-      - Add primary_category (first category)
-      - Keep only array, use $contains
-      - Both
+    status: RESOLVED (2025-12-25)
+    resolution: |
+      Added both `primary_category` (first category) and `category_count`
+      fields to enable exact match filtering and category richness queries.
+      The `categories` JSON array is preserved for full category access.
 
   - question: "Store embeddings in chunks JSONL?"
     context: |

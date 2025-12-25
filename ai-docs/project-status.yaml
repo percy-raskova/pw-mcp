@@ -608,35 +608,38 @@ current_focus:
   completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5, 8.1, 8.2, 8.3, 8.4]
   removed: [3.1, 3.2, 3.3, 3.4]  # sembr phases removed 2025-12-16
   next_tasks:
-    - 6.1 - Phase B Implementation (fix library_work extraction gap)
-    - 6.2 - Phase A Schema Implementation (ChromaDB)
+    - 6.1 - Phase B Implementation - COMPLETE (2025-12-25)
+    - 6.2 - Re-run pipeline with Phase B metadata (re-extract, re-chunk, re-load)
+    - 6.3 - Phase A Schema Implementation (ChromaDB loader)
     - 8.5 - Training Execution (RunPod A40)
   references:
-    - ai-docs/phase-b-implementation.yaml  # NEW: Phase B planning
+    - ai-docs/phase-b-implementation.yaml  # Phase B COMPLETE
     - ai-docs/chromadb-schema.yaml
     - ai-docs/reward-modeling.yaml
 
   today_summary: |
-    2025-12-24 Summary (MIKADO REFACTORING COMPLETE):
-    - REFACTORING COMPLETE: Decomposed 1,278-line chunker.py into 9 focused modules
-      * Executed 4-phase Mikado Method refactoring plan
-      * core.py: 532 lines (main chunking algorithms)
-      * jsonl_writer.py: 206 lines (JSONL output, filtering)
-      * text_splitting.py: 198 lines (semantic-text-splitter integration)
-      * line_mapping.py: 130 lines (character-to-line mapping)
-      * models.py: 108 lines (dataclasses)
-      * chunk_factory.py: 82 lines (chunk construction)
-      * token_counting.py: 58 lines (tiktoken utilities)
-      * section_detection.py: 55 lines (header detection)
-      * __init__.py: 90 lines (backward-compatible re-exports)
-    - All 133 tests passing (107 unit + 26 integration)
-    - All lint (ruff) and type checks (mypy) passing
-    - Full backward compatibility maintained via package re-exports
+    2025-12-25 Summary (PHASE B METADATA IMPLEMENTATION COMPLETE):
+    - PHASE B COMPLETE: Implemented 7 enriched metadata fields for ChromaDB
+      * Fixed CLI namespace bug - passes relative paths to extract_article()
+      * Added _extract_year() helper for parsing publication years
+      * Extended jsonl_writer.py with 4 new fields:
+        - library_work_type, library_work_published_year
+        - primary_category, category_count
+      * Extended chroma.py serialize/deserialize with all 7 Phase B fields
+      * ChromaDB-safe value handling (None→"", None→-1)
+    - Tests: 52 passing in affected modules (chroma + chunk_metadata)
+    - New test classes: TestExtractYear (5 tests), Phase B serialization tests
+    - All 422 tests passing, all lint/type checks passing
+    - Files modified:
+      * src/pw_mcp/ingest/cli.py (namespace bug fix)
+      * src/pw_mcp/ingest/chunker/jsonl_writer.py (Phase B fields + year extraction)
+      * src/pw_mcp/db/chroma.py (serialize/deserialize Phase B fields)
+      * tests/unit/chunking/test_chunk_metadata.py (extended Phase B tests)
+      * tests/unit/db/test_chroma.py (Phase B roundtrip tests)
 
-    Previous (2025-12-24 morning - PERFORMANCE FIX):
-    - CRITICAL FIX: Resolved O(n²) timeout on large headerless documents
-    - Added fast path using semantic-text-splitter (Rust/SIMD)
-    - Political Economy (1.9MB) now processes in 3.11 seconds
+    Previous (2025-12-24 - MIKADO REFACTORING COMPLETE):
+    - Decomposed 1,278-line chunker.py into 9 focused modules
+    - All 133 tests passing, full backward compatibility maintained
 
     2025-12-20 Summary (PHASE B PLANNING SESSION):
     - CRITICAL DISCOVERY: parse_library_work() exists but is NEVER CALLED
