@@ -16,24 +16,25 @@ mcp: FastMCP = FastMCP("prolewiki")
 MIN_LIMIT: int = 1
 MAX_LIMIT: int = 20
 DEFAULT_LIMIT: int = 5
-CHROMA_DATA_PATH: Path = Path(__file__).parent.parent.parent.parent / "chroma_data"
+CHROMA_DATA_PATH: Path = Path(__file__).parent.parent.parent / "chroma_data"
 
 # Embedding configuration - reused across queries
+# Must match the model used to embed the corpus (Ollama embeddinggemma)
 _EMBED_CONFIG: EmbedConfig = EmbedConfig(
-    provider="openai",
-    model="text-embedding-3-large",
-    dimensions=1536,
+    provider="ollama",
+    model="embeddinggemma",
+    dimensions=768,
 )
 
 
 def embed_query(query: str) -> list[float]:
-    """Embed a single query string using OpenAI text-embedding-3-large.
+    """Embed a single query string using Ollama embeddinggemma.
 
     Args:
         query: The search query to embed.
 
     Returns:
-        A 1536-dimensional embedding vector.
+        A 768-dimensional embedding vector.
     """
     embeddings = embed_texts([query], _EMBED_CONFIG)
     return cast(list[float], embeddings[0].tolist())
