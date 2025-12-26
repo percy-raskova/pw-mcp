@@ -456,13 +456,46 @@ phases:
       - (Later) Extend chunker for Phase B fields
 
   phase_7_mcp:
-    status: future
+    status: DESIGN COMPLETE - Implementation next
     description: MCP server implementation
-    tasks:
-      - Implement search tool
-      - Implement get_article tool
-      - Implement list_categories tool
-      - Add MCP protocol tests
+    reference_doc: ai-docs/mcp-server.yaml
+    design_date: 2025-12-25
+
+    phases:
+      phase_7_1:
+        name: Minimal search tool
+        status: NEXT
+        tasks:
+          - Implement search(query, limit) tool in server.py
+          - Wire up ChromaDB connection with query embedding
+          - Format results as markdown with attribution
+          - Test manually with 10-20 queries
+        success_criteria:
+          - Can query ChromaDB via MCP
+          - Results are relevant to query
+          - Latency <1s
+
+      phase_7_2:
+        name: Article retrieval
+        status: PLANNED
+        tasks:
+          - Implement get_article(title) tool
+          - Handle "not found" gracefully
+
+      phase_7_3:
+        name: Filtering and discovery
+        status: PLANNED
+        tasks:
+          - Add namespace/category filters to search
+          - Implement list_categories() tool
+
+      phase_7_4:
+        name: Retrieval quality testing
+        status: PLANNED
+        tasks:
+          - Build golden test set (50-100 queries)
+          - Implement P@K and MRR metrics
+          - Run baseline evaluation
 
   phase_8_finetune:
     status: MOVED TO prolewiki-llm
@@ -481,54 +514,50 @@ phases:
 # =============================================================================
 
 current_focus:
-  phase: "6 (ChromaDB Loading) + 7 (MCP Server)"
-  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5]
+  phase: "7 (MCP Server Implementation)"
+  completed: [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2]
   removed: [3.1, 3.2, 3.3, 3.4]  # sembr phases removed 2025-12-16
   moved_to_prolewiki_llm: [8.1, 8.2, 8.3, 8.4, 8.5, 8.6]  # training moved 2025-12-25
   next_tasks:
-    - 6.1 - Phase B Implementation - COMPLETE (2025-12-25)
-    - 6.2 - Re-run pipeline with Phase B metadata - COMPLETE (46,054 chunks loaded)
-    - 6.3 - Verify MCP server can query ChromaDB
-    - 7.1 - Implement search tool
-    - 7.2 - Implement get_article tool
+    - 7.1 - Implement search(query, limit) tool - DESIGN COMPLETE
+    - 7.2 - Implement get_article(title) tool
+    - 7.3 - Add namespace/category filters + list_categories()
+    - 7.4 - Build golden test set and retrieval metrics
   references:
-    - ai-docs/phase-b-implementation.yaml  # Phase B COMPLETE
+    - ai-docs/mcp-server.yaml  # NEW: Full MCP server design
     - ai-docs/chromadb-schema.yaml
     - ai-docs/repository-split.yaml  # EXECUTED: repo split complete
 
   today_summary: |
-    2025-12-25 Summary (PHASE B + REPOSITORY SPLIT EXECUTED):
-    - PHASE B COMPLETE: Implemented 7 enriched metadata fields for ChromaDB
-      * Fixed CLI namespace bug - passes relative paths to extract_article()
-      * Added _extract_year() helper for parsing publication years
-      * Extended jsonl_writer.py with 4 new fields
-      * Extended chroma.py serialize/deserialize with all 7 Phase B fields
-    - ChromaDB fully loaded: 46,054 chunks with Phase B metadata (0 errors)
+    2025-12-25 Summary (PHASE B + REPO SPLIT + MCP DESIGN):
+    - PHASE B COMPLETE: 46,054 chunks with enriched metadata loaded
     - REPOSITORY SPLIT EXECUTED:
-      * Created prolewiki-llm repository at ~/projects/pw-llm/
-      * Moved: ai_training/, training_data/, tests/unit/training/
-      * Moved: ai-docs (finetune.yaml, reward-modeling.yaml, runpod.yaml, etc.)
-      * Updated all imports from pw_mcp.ai_training → prolewiki_llm
-      * prolewiki-llm verified: lint passes, types pass, 68 tests pass
-      * pw-mcp cleaned: removed moved files, updated pyproject.toml, updated ai-docs/
-    - Tests: ~343 passing (after removing 79 training tests moved to prolewiki-llm)
+      * prolewiki-llm created at ~/projects/pw-llm/
+      * pw-mcp cleaned (405 tests passing)
+    - MCP SERVER DESIGN COMPLETE:
+      * Created ai-docs/mcp-server.yaml with full specification
+      * 4-phase implementation plan (search → article → filters → quality)
+      * Tool specs, output format, validation strategy documented
+      * Failure modes and mitigations identified
+      * Key insight: Start simple (one search tool), learn from usage, iterate
 
-    Previous (2025-12-24 - MIKADO REFACTORING COMPLETE):
-    - Decomposed 1,278-line chunker.py into 9 focused modules
-    - All 133 tests passing, full backward compatibility maintained
+    Previous (2025-12-24):
+    - Mikado refactoring complete (chunker.py → 9 modules)
 
   next_action: |
-    Phase 7 (MCP Server) - Next Priority:
-    - Implement search tool (semantic search over ChromaDB)
-    - Implement get_article tool (full article retrieval)
-    - Implement list_categories tool
-    - Add MCP protocol tests
+    Phase 7.1 (Minimal Search Tool) - NEXT:
+    1. Implement search(query, limit) in server.py
+    2. Wire up ChromaDB connection with query embedding
+    3. Format results as markdown with attribution
+    4. Test manually with 10-20 representative queries
 
-    Phase 6 Verification:
-    - Verify MCP server can query ChromaDB with Phase B metadata
-    - Test filtering by infobox_type, political_orientation, etc.
+    Success criteria:
+    - Can query ChromaDB via MCP protocol
+    - Results are relevant to query
+    - Attribution clear (title, section, lines)
+    - Latency <1s
 
-    For AI Training work, see: ~/projects/pw-llm/ (prolewiki-llm repository)
+    Reference: ai-docs/mcp-server.yaml#phases.phase_7_1
 
   # How Implementation Phases map to Pipeline Stages
   # NOTE: Phase 3 (sembr) was REMOVED - pipeline is now 4 stages

@@ -17,6 +17,32 @@ files:
       - writing query/search logic
       - optimizing performance
 
+  mcp-server.yaml:
+    status: DESIGN COMPLETE - Ready for Phase 1 implementation
+    purpose: MCP server tool design and implementation plan
+    created: 2025-12-25
+    topics:
+      - Tool specifications (search, get_article, list_categories)
+      - Output format (markdown with attribution)
+      - Query quality criteria (useful vs not useful)
+      - Failure modes and mitigations
+      - Validation strategy (golden test set, P@K, MRR)
+      - 5-phase implementation plan
+    sections:
+      overview: Design principles and key insights
+      usage_scenarios: How LLMs will use the tools
+      tools: Full specifications for each MCP tool
+      output_format: Markdown template with examples
+      validation: Golden test set and metrics
+      phases: Phase 1-5 implementation roadmap
+      existing_code: What's already built
+      open_questions: Decisions still to make
+    use_when:
+      - implementing MCP server tools
+      - designing tool interfaces
+      - building retrieval quality tests
+      - understanding the phased approach
+
   repository-split.yaml:
     status: EXECUTED - 2025-12-25
     purpose: Historical record of repository split

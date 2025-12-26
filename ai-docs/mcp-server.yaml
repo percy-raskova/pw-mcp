@@ -1,0 +1,383 @@
+# MCP Server Design
+# Purpose: Design specification for ProleWiki MCP server tools
+# Created: 2025-12-25
+# Status: DESIGN COMPLETE - Ready for Phase 1 implementation
+
+# =============================================================================
+# OVERVIEW
+# =============================================================================
+
+overview:
+  goal: Expose ProleWiki ChromaDB corpus to LLMs via MCP protocol
+  corpus: 46,054 chunks from 4,841 articles (Main, Library, Essays, ProleWiki)
+  primary_use_case: LLM retrieves relevant content to answer user questions about Marxist-Leninist theory
+  design_principle: Start simple, learn from usage, iterate
+
+  key_insight: |
+    The LLM is an intermediary between human questions and the corpus.
+    We can't design the perfect retrieval system in advance - we need to
+    build a minimal version, use it with real queries, and iterate based
+    on what fails.
+
+# =============================================================================
+# USAGE SCENARIOS
+# =============================================================================
+
+usage_scenarios:
+  semantic_search:
+    example: "What is Lenin's theory of imperialism?"
+    need: Semantic search for conceptually relevant chunks
+    tool: search(query)
+
+  article_lookup:
+    example: "What does ProleWiki say about Stalin?"
+    need: Direct article retrieval + semantic search
+    tool: get_article(title) + search(query)
+
+  multi_topic:
+    example: "Compare Marx and Lenin on the state"
+    need: Retrieve from multiple topic areas
+    tool: Multiple search() calls or search with broad query
+
+  corpus_discovery:
+    example: "What topics does ProleWiki cover?"
+    need: Meta-information about corpus contents
+    tool: list_categories() or list_articles()
+
+# =============================================================================
+# QUERY QUALITY CRITERIA
+# =============================================================================
+
+useful_queries:
+  - Return content that actually answers the question
+  - Return the RIGHT chunks (not just keyword matches)
+  - Return enough context (not sentence fragments)
+  - Return diverse perspectives when topic has multiple angles
+  - Include metadata for attribution (title, section, lines)
+  - Return relevance scores for confidence assessment
+
+not_useful_queries:
+  - Return chunks that mention keywords but aren't about the topic
+  - Return too much (flooding context window)
+  - Return too little (missing key information)
+  - Return duplicative content (same info repeated)
+  - Lose provenance (can't cite where info came from)
+
+# =============================================================================
+# FAILURE MODES & MITIGATIONS
+# =============================================================================
+
+failure_modes:
+  dedicated_article_missed:
+    example: "Tell me about the Paris Commune"
+    problem: Semantic search returns various commune/revolution chunks, misses dedicated article
+    mitigation: Add get_article(title) for direct lookup
+
+  meta_questions:
+    example: "What topics does ProleWiki cover?"
+    problem: Semantic search can't answer corpus meta-questions
+    mitigation: Add list_categories() or list_articles()
+
+  obscure_topic:
+    example: "What does ProleWiki say about X? (X not covered)"
+    problem: LLM doesn't know if topic isn't covered vs bad query
+    mitigation: Return confidence scores, clear empty result messaging
+
+  context_overflow:
+    example: User asks broad question, LLM retrieves too much
+    problem: Wastes context window on marginally relevant content
+    mitigation: Smart defaults, token limits, limit parameter
+
+# =============================================================================
+# TOOL SPECIFICATIONS
+# =============================================================================
+
+tools:
+  search:
+    phase: 1
+    signature: "search(query: str, limit: int = 5) -> str"
+    description: |
+      Search the ProleWiki Marxist-Leninist encyclopedia.
+      Returns relevant excerpts with source attribution.
+      Use for questions about communist theory, history, figures, and movements.
+    parameters:
+      query:
+        type: str
+        required: true
+        description: Natural language search query
+      limit:
+        type: int
+        required: false
+        default: 5
+        description: Maximum number of results to return (1-20)
+    returns: Markdown-formatted results with attribution
+    implementation: Wraps ProleWikiDB.search() with formatting
+
+  get_article:
+    phase: 2
+    signature: "get_article(title: str) -> str"
+    description: |
+      Retrieve a specific ProleWiki article by title.
+      Use when you know the exact article name from prior search results.
+    parameters:
+      title:
+        type: str
+        required: true
+        description: Exact article title (case-sensitive)
+    returns: Full article content or "Article not found" message
+    implementation: Wraps ProleWikiDB.get_article_chunks() with concatenation
+
+  list_categories:
+    phase: 3
+    signature: "list_categories() -> str"
+    description: |
+      List all categories in the ProleWiki corpus.
+      Use to discover what topics are covered before searching.
+    returns: Alphabetized list of categories with article counts
+    implementation: Query ChromaDB metadata for distinct categories
+
+  search_filtered:
+    phase: 3
+    signature: "search(query: str, limit: int = 5, namespace: str = None, category: str = None) -> str"
+    description: Extended search with optional filters
+    parameters:
+      namespace:
+        type: str
+        required: false
+        options: [Main, Library, Essays, ProleWiki]
+        description: Filter by content type
+      category:
+        type: str
+        required: false
+        description: Filter by category (use list_categories to discover)
+
+# =============================================================================
+# OUTPUT FORMAT
+# =============================================================================
+
+output_format:
+  rationale: |
+    LLMs are trained on markdown and parse it naturally.
+    Blockquotes signal "this is retrieved content" (not LLM generation).
+    Inline metadata allows citation in responses.
+    Human-readable for debugging.
+
+  template: |
+    **{article_title}** ({namespace}, §{section}, lines {line_range}) [score: {score:.2f}]:
+    > {chunk_text}
+
+  example: |
+    **Five-Year Plans** (Main, §Overview, lines 45-62) [score: 0.87]:
+    > The Five-Year Plans were a series of nationwide centralized economic plans
+    > in the Soviet Union, beginning in the late 1920s. The plans were developed
+    > by Gosplan and became the prototype for socialist economic planning.
+
+    **Planned Economy** (Main, §Soviet Model, lines 12-28) [score: 0.82]:
+    > The Soviet planned economy operated through Gosplan, the State Planning
+    > Committee, which set production targets for all sectors of the economy.
+
+  empty_result: |
+    No results found for "{query}".
+
+    This topic may not be covered in ProleWiki, or try rephrasing your query.
+    You can use list_categories() to see what topics are available.
+
+# =============================================================================
+# VALIDATION STRATEGY
+# =============================================================================
+
+validation:
+  golden_test_set:
+    description: Manual question → expected-article pairs
+    size: 50-100 queries
+    sources:
+      - Sample questions from ProleWiki FAQ/common topics
+      - Generate from article titles ("Who was X?", "What is Y?")
+      - Real user questions (if available)
+    examples:
+      - query: "What is dialectical materialism?"
+        expected_articles: [Dialectical materialism, Marxist philosophy]
+      - query: "Who was Rosa Luxemburg?"
+        expected_articles: [Rosa Luxemburg]
+      - query: "Explain surplus value"
+        expected_articles: [Surplus value, Das Kapital, Exploitation]
+      - query: "What caused the fall of the Soviet Union?"
+        expected_articles: [Dissolution of the Soviet Union, Revisionism]
+
+  metrics:
+    precision_at_k:
+      description: Of top K results, how many are relevant?
+      formula: relevant_in_top_k / k
+      target: ">0.6 for P@5"
+    mrr:
+      description: Mean Reciprocal Rank - where does first relevant result appear?
+      formula: 1/rank_of_first_relevant
+      target: ">0.5"
+    recall:
+      description: Of all relevant chunks, how many were retrieved?
+      note: Harder to measure (need to know all relevant chunks)
+
+  manual_review:
+    description: Eyeball first 20 queries
+    checklist:
+      - Would these results help answer the question?
+      - Is attribution clear enough to cite?
+      - Are there obvious missing results?
+      - Is latency acceptable (<1s)?
+
+# =============================================================================
+# IMPLEMENTATION PHASES
+# =============================================================================
+
+phases:
+  phase_1:
+    name: Minimal working MCP server
+    status: NEXT
+    goal: One tool (search) that returns relevant results
+    tasks:
+      - Implement search tool in server.py
+      - Wire up ChromaDB connection
+      - Format results as markdown
+      - Test with MCP inspector
+    success_criteria:
+      - Can query ChromaDB via MCP
+      - Results are relevant to query
+      - Attribution is clear
+      - Latency <1s
+    deliverables:
+      - src/pw_mcp/server.py (updated)
+      - Manual test with 10-20 queries
+
+  phase_2:
+    name: Article retrieval
+    status: PLANNED
+    goal: Direct article lookup by title
+    tasks:
+      - Implement get_article tool
+      - Handle "not found" gracefully
+      - Concatenate chunks into full article
+    success_criteria:
+      - Can retrieve article by exact title
+      - Full content returned (all chunks)
+      - Clear error for missing articles
+
+  phase_3:
+    name: Filtering and discovery
+    status: PLANNED
+    goal: Enable targeted searches
+    tasks:
+      - Add namespace filter to search
+      - Add category filter to search
+      - Implement list_categories tool
+    success_criteria:
+      - Can filter by namespace (Main/Library/Essays)
+      - Can filter by category
+      - LLM can discover what categories exist
+
+  phase_4:
+    name: Retrieval quality testing
+    status: PLANNED
+    goal: Measure and improve retrieval quality
+    tasks:
+      - Build golden test set (50-100 queries)
+      - Implement P@K and MRR metrics
+      - Run baseline evaluation
+      - Identify failure modes
+      - Tune if needed (query expansion, reranking)
+    success_criteria:
+      - P@5 > 0.6
+      - MRR > 0.5
+      - Known failure modes documented
+
+  phase_5:
+    name: Advanced features
+    status: FUTURE
+    goal: Enhanced retrieval capabilities
+    potential_features:
+      - Multi-query retrieval (compare topics)
+      - Citation extraction (sources cited by articles)
+      - Related articles (graph-based recommendations)
+      - Query expansion (synonyms, related terms)
+      - Hybrid search (semantic + keyword)
+
+# =============================================================================
+# EXISTING INFRASTRUCTURE
+# =============================================================================
+
+existing_code:
+  chromadb:
+    file: src/pw_mcp/db/chroma.py
+    class: ProleWikiDB
+    methods:
+      search: "search(query_embedding, limit) -> results with metadata"
+      get_article_chunks: "get_article_chunks(title) -> all chunks for article"
+      load_article: "load_article(chunks, embeddings) -> upsert to collection"
+    note: Need to add embedding generation for query
+
+  server:
+    file: src/pw_mcp/server.py
+    status: Skeleton exists, needs tool implementation
+    framework: FastMCP
+
+  embedder:
+    file: src/pw_mcp/ingest/embedder.py
+    function: embed_texts(texts, config) -> embeddings
+    providers: OpenAI (primary), Ollama (fallback)
+    note: Can reuse for query embedding
+
+  config:
+    file: src/pw_mcp/config.py
+    contains: Pydantic models for configuration
+    chromadb_path: Configured via environment or pyproject.toml
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  runtime:
+    - chromadb: Vector database
+    - mcp: MCP protocol library
+    - openai: For query embedding (or ollama)
+
+  testing:
+    - pytest: Test framework
+    - pytest-asyncio: Async test support
+
+# =============================================================================
+# OPEN QUESTIONS
+# =============================================================================
+
+open_questions:
+  query_embedding:
+    question: Should we embed queries with same model as corpus?
+    answer: Yes, must use same model (OpenAI text-embedding-3-large)
+    implication: Need OpenAI API key at runtime
+
+  caching:
+    question: Should we cache query embeddings?
+    answer: Probably not initially - queries are unique
+    reconsider: If same queries repeat frequently
+
+  streaming:
+    question: Should results stream or return all at once?
+    answer: Return all at once for Phase 1
+    reconsider: If results are very large
+
+  authentication:
+    question: Should MCP server require authentication?
+    answer: No for local use, reconsider for hosted deployment
+
+# =============================================================================
+# REFERENCES
+# =============================================================================
+
+references:
+  internal:
+    - ai-docs/chromadb-schema.yaml  # Metadata schema
+    - ai-docs/chromadb.yaml  # ChromaDB patterns
+    - ai-docs/testing-plan.yaml  # Retrieval tests section
+    - ai-docs/embedding.yaml  # Embedding configuration
+  external:
+    - https://modelcontextprotocol.io/  # MCP specification
+    - https://github.com/jlowin/fastmcp  # FastMCP library
