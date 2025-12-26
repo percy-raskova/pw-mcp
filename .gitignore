@@ -71,3 +71,4 @@ huggingface/
 
 # Weights & Biases
 wandb/
+embeddings-openai/
